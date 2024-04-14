@@ -4,14 +4,64 @@
 
 void Parser::Parse()
 {
-    ASTNode* expr = ParseExpression();
+    while(!IsEnd())
+    {
+        ASTNode* expr = ParseExpression();
+        m_ast.expressions.push_back(expr);
+    }
 
-    std::visit<void>(ASTPrinter{}, ASTNode(*expr));
+
+    for(auto* expr : m_ast.expressions)
+        std::visit<void>(ASTPrinter{}, ASTNode(*expr));
 }
 
 ASTNode* Parser::ParseExpression()
 {
-    return ParseTerm();
+    return ParseEquality();
+}
+
+ASTNode* Parser::ParseEquality()
+{
+    ASTNode* expr = ParseComparison();
+
+    while(Match(TokenType::EQUAL) || Match(TokenType::NOT_EQUAL))
+    {
+        Op op          = Previous().type == TokenType::EQUAL ? Op::EQUAL : Op::NOT_EQUAL;
+        ASTNode* right = ParseComparison();
+        expr           = MakeNode(BinaryExpression{expr, op, right});
+    }
+
+    return expr;
+}
+
+ASTNode* Parser::ParseComparison()
+{
+    ASTNode* expr = ParseTerm();
+
+    while(Match(TokenType::LT) || Match(TokenType::GT) || Match(TokenType::LEQ) || Match(TokenType::GEQ))
+    {
+        Op op = Op::LT;
+        switch(Previous().type)
+        {
+        case TokenType::LT:
+            op = Op::LT;
+            break;
+        case TokenType::GT:
+            op = Op::GT;
+            break;
+        case TokenType::LEQ:
+            op = Op::LEQ;
+            break;
+        case TokenType::GEQ:
+            op = Op::GEQ;
+            break;
+        }
+
+        ASTNode* right = ParseTerm();
+        expr           = MakeNode(BinaryExpression{expr, op, right});
+    }
+
+    return expr;
 }
 
 ASTNode* Parser::ParseTerm()
@@ -66,7 +116,7 @@ ASTNode* Parser::ParsePrimary()
         ASTNode* expr = ParseExpression();
         if(!Match(TokenType::RPAREN))
         {
-            std::print("{}:{} Expected ')'", Previous().line, Previous().col);
+            std::println(stderr, "{}:{} Expected ')'", Previous().line, Previous().col);
             exit(1);
         }
         return expr;

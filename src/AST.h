@@ -65,18 +65,18 @@ struct NumberLiteral
     }
 };
 
-class AST
-{
-public:
-    std::vector<Expression*> expressions;
-};
-
 using ASTNode = std::variant<BinaryExpression, NumberLiteral, UnaryExpression>;
 
 inline ASTNode* MakeNode(ASTNode&& node)
 {
     return new ASTNode(std::move(node));
 }
+class AST
+{
+public:
+    std::vector<ASTNode*> expressions;
+};
+
 
 template<typename... Node>
 struct NodeVisitor : Node...
@@ -92,7 +92,8 @@ struct std::formatter<Op>
         return ctx.begin();
     }
 
-    auto format(Op op, std::format_context& ctx) const
+    template<typename FormatContext>
+    auto format(Op op, FormatContext& ctx) const
     {
         std::string str;
         switch(op)
@@ -153,7 +154,7 @@ struct ASTPrinter
     {
         PrintIndented(m_indent, "BinaryExpression");
         visit(expr.left);
-        PrintIndented(m_indent + 1, "Op: {}", expr.op);
+        PrintIndented(m_indent, "Op: {}", expr.op);
         visit(expr.right);
     }
     void operator()(const NumberLiteral& expr)

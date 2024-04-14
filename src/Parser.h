@@ -12,8 +12,15 @@ public:
     }
     void Parse();
 
+    [[nodiscard]] const AST& GetAST() const
+    {
+        return m_ast;
+    }
+
 private:
     ASTNode* ParseExpression();
+    ASTNode* ParseEquality();
+    ASTNode* ParseComparison();
     ASTNode* ParseTerm();
     ASTNode* ParseFactor();
     ASTNode* ParseUnary();
@@ -28,5 +35,6 @@ private:
 
     std::string_view m_src;
     std::span<const Token> m_tokens;
+    AST m_ast;
     size_t m_current = 0;
 };
