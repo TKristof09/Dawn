@@ -28,81 +28,6 @@ enum class ExpressionKind
     LITERAL,
     IDENTIFIER,
 };
-
-struct BinaryExpression;
-struct NumberLiteral;
-struct UnaryExpression;
-struct If;
-struct Block;
-
-using Expression = std::variant<BinaryExpression, NumberLiteral, UnaryExpression, If, Block>;
-
-
-struct UnaryExpression
-{
-    Op op;
-    Expression* expr;
-
-    UnaryExpression(Op op, Expression* expr) : op(op), expr(expr)
-    {
-    }
-};
-
-struct BinaryExpression
-{
-    Expression* left;
-    Op op;
-    Expression* right;
-
-    BinaryExpression(Expression* left, Op op, Expression* right) : left(left), op(op), right(right)
-    {
-    }
-};
-
-struct NumberLiteral
-{
-    int value;
-
-    NumberLiteral(int value) : value(value)
-    {
-    }
-};
-
-
-struct If
-{
-    Expression* condition;
-    Expression* body;
-    Expression* elseBlock;
-
-    If(Expression* condition, Expression* body, Expression* elseBlock) : condition(condition), body(body), elseBlock(elseBlock) {}
-};
-
-struct Block
-{
-    Expression* body;  // TODO: this is temporary, in the fufture blocks will be able to have more than one expression in them
-    Block(Expression* body) : body(body) {}
-};
-
-// TODO: figure out a better way for this and the Expression type
-using ASTNode = std::variant<BinaryExpression, NumberLiteral, UnaryExpression, If, Block>;
-
-template<typename T>
-concept is_ast_node = std::constructible_from<ASTNode, T>;
-
-template<typename T>
-ASTNode* MakeNode(T&& node)
-    requires(is_ast_node<T>)
-{
-    return new ASTNode(std::move(node));
-}
-class AST
-{
-public:
-    std::vector<ASTNode*> expressions;
-};
-
-
 template<>
 struct std::formatter<Op>
 {
@@ -164,54 +89,131 @@ void PrintIndented(int indent, std::format_string<Args...> format_str, Args&&...
     std::print("{:{}}|", "", indent * 4);
     std::println(format_str, std::forward<Args>(args)...);
 }
-struct ASTPrinter
+
+struct ASTNode
 {
-    ASTPrinter(uint8_t indent = 0) : m_indent(indent)
+    virtual void Print(int indent)                             = 0;
+    virtual void GenerateCode(std::string& buffer, int indent) = 0;
+};
+
+struct AST
+{
+    std::vector<ASTNode*> expressions;
+
+    void Print(int indent)
     {
+        for(auto& expr : expressions)
+            expr->Print(indent);
     }
-    void operator()(const BinaryExpression& expr)
+    void GenerateCode(std::string& buffer, int indent)
     {
-        PrintIndented(m_indent, "BinaryExpression");
-        visit(expr.left);
-        PrintIndented(m_indent, "Op: {}", expr.op);
-        visit(expr.right);
+        for(auto& expr : expressions)
+            expr->GenerateCode(buffer, indent);
     }
-    void operator()(const UnaryExpression& expr)
+};
+
+struct Expression : ASTNode
+{
+    void Print(int indent) override
     {
-        PrintIndented(m_indent, "Unary expression op: {}", expr.op);
-        visit(expr.expr);
+        PrintIndented(indent, "Unknown expression type");
     }
-    void operator()(const NumberLiteral& expr)
+    void GenerateCode(std::string&, int) override
     {
-        PrintIndented(m_indent, "NumberLiteral {} ", expr.value);
+        std::println(stderr, "Unknown expression type");
     }
-    void operator()(const Expression& expr)
+};
+
+
+struct UnaryExpression : Expression
+{
+    Op op;
+    Expression* expr;
+
+    UnaryExpression(Op op, Expression* expr) : op(op), expr(expr)
     {
-        PrintIndented(m_indent, "Unknown expression type");
-    }
-    void operator()(const If& expr)
-    {
-        PrintIndented(m_indent, "If");
-        PrintIndented(m_indent, "Condition:");
-        visit(expr.condition);
-        PrintIndented(m_indent, "Body:");
-        visit(expr.body);
-        if(expr.elseBlock)
-        {
-            PrintIndented(m_indent, "Else Body:");
-            visit(expr.elseBlock);
-        }
-    }
-    void operator()(const Block& expr)
-    {
-        PrintIndented(m_indent, "Block");
-        visit(expr.body);
     }
 
-private:
-    void visit(ASTNode* node)
+    void Print(int indent) override
     {
-        std::visit<void>(ASTPrinter(m_indent + 1), *node);
+        PrintIndented(indent, "Unary expression op: {}", op);
+        expr->Print(indent + 1);
     }
-    uint8_t m_indent;
+    void GenerateCode(std::string& buffer, int indent) override;
+};
+
+struct BinaryExpression : Expression
+{
+    Expression* left;
+    Op op;
+    Expression* right;
+
+    BinaryExpression(Expression* left, Op op, Expression* right) : left(left), op(op), right(right)
+    {
+    }
+
+    void Print(int indent) override
+    {
+        PrintIndented(indent, "BinaryExpression");
+        left->Print(indent + 1);
+        PrintIndented(indent, "Op: {}", op);
+        right->Print(indent + 1);
+    }
+
+    void GenerateCode(std::string& buffer, int indent) override;
+};
+
+struct NumberLiteral : Expression
+{
+    int value;
+
+    NumberLiteral(int value) : value(value)
+    {
+    }
+
+    void Print(int indent) override
+    {
+        PrintIndented(indent, "NumberLiteral {} ", value);
+    }
+
+    void GenerateCode(std::string& buffer, int indent) override;
+};
+
+
+struct Block : Expression
+{
+    Expression* body;  // TODO: this is temporary, in the fufture blocks will be able to have more than one expression in them
+    Block(Expression* body) : body(body) {}
+
+    void Print(int indent) override
+    {
+        PrintIndented(indent, "Block");
+        body->Print(indent + 1);
+    }
+
+    void GenerateCode(std::string& buffer, int indent) override;
+};
+struct If : Expression
+{
+    Expression* condition;
+    Block* body;
+    Block* elseBlock;
+
+    If(Expression* condition, Block* body, Block* elseBlock) : condition(condition), body(body), elseBlock(elseBlock) {}
+
+    void Print(int indent) override
+    {
+        PrintIndented(indent, "If");
+        PrintIndented(indent, "Condition:");
+        condition->Print(indent + 1);
+        PrintIndented(indent, "Body:");
+        body->Print(indent + 1);
+        if(elseBlock)
+        {
+            PrintIndented(indent, "Else Body:");
+            elseBlock->Print(indent + 1);
+        }
+    }
+
+    void GenerateCode(std::string& buffer, int indent) override;
 };
