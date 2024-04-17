@@ -51,7 +51,10 @@ Token Lexer::Next()
         return MakeToken(TokenType::LPAREN);
     case ')':
         return MakeToken(TokenType::RPAREN);
-
+    case '{':
+        return MakeToken(TokenType::LBRACE);
+    case '}':
+        return MakeToken(TokenType::RBRACE);
     case '=':
         return MakeToken(Match('=') ? TokenType::EQUAL : TokenType::ASSIGN);
     case '!':

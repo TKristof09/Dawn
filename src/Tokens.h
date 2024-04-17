@@ -1,5 +1,5 @@
 #pragma once
-#include <iostream>
+#include <print>
 enum class TokenType
 {
     NUMBER,
@@ -28,11 +28,14 @@ enum class TokenType
 
     LPAREN,
     RPAREN,
+    LBRACE,
+    RBRACE,
 
     IF,
     ELSE,
     WHILE,
     FOR,
+
 
     RETURN,
     BREAK,
@@ -49,96 +52,111 @@ struct Token
     size_t col;
     size_t line;
 };
-
-inline std::ostream& operator<<(std::ostream& os, const Token& token)
+template<>
+struct std::formatter<TokenType>
 {
-    os << token.line << ":" << token.col << ": ";
-    switch(token.type)
+    constexpr auto parse(std::format_parse_context& ctx)
     {
-    case TokenType::NUMBER:
-        os << "NUMBER";
-        break;
-    case TokenType::IDENTIFIER:
-        os << "IDENTIFIER";
-        break;
-    case TokenType::STRING:
-        os << "STRING";
-        break;
-    case TokenType::TRUE:
-        os << "TRUE";
-        break;
-    case TokenType::FALSE:
-        os << "FALSE";
-        break;
-    case TokenType::NULLPTR:
-        os << "NULLPTR";
-        break;
-    case TokenType::PLUS:
-        os << "PLUS";
-        break;
-    case TokenType::MINUS:
-        os << "MINUS";
-        break;
-    case TokenType::MUL:
-        os << "MUL";
-        break;
-    case TokenType::DIV:
-        os << "DIV";
-        break;
-    case TokenType::EQUAL:
-        os << "EQUAL";
-        break;
-    case TokenType::NOT_EQUAL:
-        os << "NOT_EQUAL";
-        break;
-    case TokenType::LT:
-        os << "LT";
-        break;
-    case TokenType::GT:
-        os << "GT";
-        break;
-    case TokenType::LEQ:
-        os << "LEQ";
-        break;
-    case TokenType::GEQ:
-        os << "GEQ";
-        break;
-    case TokenType::NOT:
-        os << "NOT";
-        break;
-    case TokenType::ASSIGN:
-        os << "ASSIGN";
-        break;
-    case TokenType::LPAREN:
-        os << "LPAREN";
-        break;
-    case TokenType::RPAREN:
-        os << "RPAREN";
-        break;
-    case TokenType::IF:
-        os << "IF";
-        break;
-    case TokenType::ELSE:
-        os << "ELSE";
-        break;
-    case TokenType::WHILE:
-        os << "WHILE";
-        break;
-    case TokenType::FOR:
-        os << "FOR";
-        break;
-    case TokenType::RETURN:
-        os << "RETURN";
-        break;
-    case TokenType::BREAK:
-        os << "BREAK";
-        break;
-    case TokenType::CONTINUE:
-        os << "CONTINUE";
-        break;
-    case TokenType::END_FILE:
-        os << "END_FILE";
-        break;
+        return ctx.begin();
     }
-    return os;
-}
+
+    template<typename FormatContext>
+    auto format(const TokenType& token, FormatContext& ctx) const
+    {
+        std::string str;
+        switch(token)
+        {
+        case TokenType::NUMBER:
+            str = "NUMBER";
+            break;
+        case TokenType::IDENTIFIER:
+            str = "IDENTIFIER";
+            break;
+        case TokenType::STRING:
+            str = "STRING";
+            break;
+        case TokenType::TRUE:
+            str = "TRUE";
+            break;
+        case TokenType::FALSE:
+            str = "FALSE";
+            break;
+        case TokenType::NULLPTR:
+            str = "NULLPTR";
+            break;
+        case TokenType::PLUS:
+            str = "PLUS";
+            break;
+        case TokenType::MINUS:
+            str = "MINUS";
+            break;
+        case TokenType::MUL:
+            str = "MUL";
+            break;
+        case TokenType::DIV:
+            str = "DIV";
+            break;
+        case TokenType::EQUAL:
+            str = "EQUAL";
+            break;
+        case TokenType::NOT_EQUAL:
+            str = "NOT_EQUAL";
+            break;
+        case TokenType::LT:
+            str = "LT";
+            break;
+        case TokenType::GT:
+            str = "GT";
+            break;
+        case TokenType::LEQ:
+            str = "LEQ";
+            break;
+        case TokenType::GEQ:
+            str = "GEQ";
+            break;
+        case TokenType::NOT:
+            str = "NOT";
+            break;
+        case TokenType::ASSIGN:
+            str = "ASSIGN";
+            break;
+        case TokenType::LPAREN:
+            str = "LPAREN";
+            break;
+        case TokenType::RPAREN:
+            str = "RPAREN";
+            break;
+        case TokenType::LBRACE:
+            str = "LBRACE";
+            break;
+        case TokenType::RBRACE:
+            str = "RBRACE";
+            break;
+        case TokenType::IF:
+            str = "IF";
+            break;
+        case TokenType::ELSE:
+            str = "ELSE";
+            break;
+        case TokenType::WHILE:
+            str = "WHILE";
+            break;
+        case TokenType::FOR:
+            str = "FOR";
+            break;
+        case TokenType::RETURN:
+            str = "RETURN";
+            break;
+        case TokenType::BREAK:
+            str = "BREAK";
+            break;
+        case TokenType::CONTINUE:
+            str = "CONTINUE";
+            break;
+        case TokenType::END_FILE:
+            str = "END_FILE";
+            break;
+        }
+        return std::format_to(ctx.out(), "{}", str);
+    }
+};

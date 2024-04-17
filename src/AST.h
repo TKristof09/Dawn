@@ -32,8 +32,11 @@ enum class ExpressionKind
 struct BinaryExpression;
 struct NumberLiteral;
 struct UnaryExpression;
+struct If;
+struct Block;
 
-using Expression = std::variant<BinaryExpression, NumberLiteral, UnaryExpression>;
+using Expression = std::variant<BinaryExpression, NumberLiteral, UnaryExpression, If, Block>;
+
 
 struct UnaryExpression
 {
@@ -65,9 +68,31 @@ struct NumberLiteral
     }
 };
 
-using ASTNode = std::variant<BinaryExpression, NumberLiteral, UnaryExpression>;
 
-inline ASTNode* MakeNode(ASTNode&& node)
+struct If
+{
+    Expression* condition;
+    Expression* body;
+    Expression* elseBlock;
+
+    If(Expression* condition, Expression* body, Expression* elseBlock) : condition(condition), body(body), elseBlock(elseBlock) {}
+};
+
+struct Block
+{
+    Expression* body;  // TODO: this is temporary, in the fufture blocks will be able to have more than one expression in them
+    Block(Expression* body) : body(body) {}
+};
+
+// TODO: figure out a better way for this and the Expression type
+using ASTNode = std::variant<BinaryExpression, NumberLiteral, UnaryExpression, If, Block>;
+
+template<typename T>
+concept is_ast_node = std::constructible_from<ASTNode, T>;
+
+template<typename T>
+ASTNode* MakeNode(T&& node)
+    requires(is_ast_node<T>)
 {
     return new ASTNode(std::move(node));
 }
@@ -77,12 +102,6 @@ public:
     std::vector<ASTNode*> expressions;
 };
 
-
-template<typename... Node>
-struct NodeVisitor : Node...
-{
-    using Node::operator()...;
-};
 
 template<>
 struct std::formatter<Op>
@@ -157,13 +176,36 @@ struct ASTPrinter
         PrintIndented(m_indent, "Op: {}", expr.op);
         visit(expr.right);
     }
+    void operator()(const UnaryExpression& expr)
+    {
+        PrintIndented(m_indent, "Unary expression op: {}", expr.op);
+        visit(expr.expr);
+    }
     void operator()(const NumberLiteral& expr)
     {
         PrintIndented(m_indent, "NumberLiteral {} ", expr.value);
     }
     void operator()(const Expression& expr)
     {
-        PrintIndented(m_indent, "Expression");
+        PrintIndented(m_indent, "Unknown expression type");
+    }
+    void operator()(const If& expr)
+    {
+        PrintIndented(m_indent, "If");
+        PrintIndented(m_indent, "Condition:");
+        visit(expr.condition);
+        PrintIndented(m_indent, "Body:");
+        visit(expr.body);
+        if(expr.elseBlock)
+        {
+            PrintIndented(m_indent, "Else Body:");
+            visit(expr.elseBlock);
+        }
+    }
+    void operator()(const Block& expr)
+    {
+        PrintIndented(m_indent, "Block");
+        visit(expr.body);
     }
 
 private:

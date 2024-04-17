@@ -19,6 +19,8 @@ public:
 
 private:
     ASTNode* ParseExpression();
+    ASTNode* ParseIf();
+    ASTNode* ParseBlock();
     ASTNode* ParseEquality();
     ASTNode* ParseComparison();
     ASTNode* ParseTerm();

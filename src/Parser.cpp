@@ -7,6 +7,12 @@ void Parser::Parse()
     while(!IsEnd())
     {
         ASTNode* expr = ParseExpression();
+        if(!expr)
+        {
+            std::println(stderr, "Skipping unexpected token {} at {}:{}", Peek().type, Peek().line, Peek().col);
+            Advance();
+            continue;
+        }
         m_ast.expressions.push_back(expr);
     }
 
@@ -17,7 +23,67 @@ void Parser::Parse()
 
 ASTNode* Parser::ParseExpression()
 {
-    return ParseEquality();
+    ASTNode* expr = ParseEquality();
+    if(expr)
+        return expr;
+
+    expr = ParseIf();
+    if(expr)
+        return expr;
+
+    expr = ParseBlock();
+    if(expr)
+        return expr;
+
+    return nullptr;
+}
+
+ASTNode* Parser::ParseIf()
+{
+    if(Match(TokenType::IF))
+    {
+        ASTNode* condition = ParseExpression();
+        if(!condition)
+        {
+            std::println(stderr, "{}:{}: Expected expression for if condition", Peek().line, Peek().col);
+            exit(1);
+        }
+
+        ASTNode* body = ParseBlock();
+        if(!body)
+        {
+            std::println(stderr, "{}:{}: Expected block expression for if body", Peek().line, Peek().col);
+            exit(1);
+        }
+        ASTNode* elseBlock = nullptr;
+        if(Match(TokenType::ELSE))
+        {
+            elseBlock = ParseBlock();
+
+            if(!elseBlock)
+            {
+                std::println(stderr, "{}:{}: Expected block expression for else body", Peek().line, Peek().col);
+                exit(1);
+            }
+        }
+        return MakeNode(If{condition, body, elseBlock});
+    }
+    return nullptr;
+}
+
+ASTNode* Parser::ParseBlock()
+{
+    if(Match(TokenType::LBRACE))
+    {
+        ASTNode* expr = ParseExpression();
+        if(!Match(TokenType::RBRACE))
+        {
+            std::println(stderr, "{}:{}: Expected closing brace for block expression", Peek().line, Peek().col);
+            exit(1);
+        }
+        return MakeNode(Block(expr));
+    }
+    return nullptr;
 }
 
 ASTNode* Parser::ParseEquality()
@@ -98,6 +164,11 @@ ASTNode* Parser::ParseUnary()
     {
         ASTNode* expr = ParsePrimary();
         return MakeNode(UnaryExpression{Op::U_MINUS, expr});
+    }
+    if(Match(TokenType::NOT))
+    {
+        ASTNode* expr = ParsePrimary();
+        return MakeNode(UnaryExpression{Op::NOT, expr});
     }
 
     return ParsePrimary();
