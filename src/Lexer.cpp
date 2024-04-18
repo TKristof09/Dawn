@@ -55,6 +55,8 @@ Token Lexer::Next()
         return MakeToken(TokenType::LBRACE);
     case '}':
         return MakeToken(TokenType::RBRACE);
+    case ',':
+        return MakeToken(TokenType::COMMA);
     case '=':
         return MakeToken(Match('=') ? TokenType::EQUAL : TokenType::ASSIGN);
     case '!':

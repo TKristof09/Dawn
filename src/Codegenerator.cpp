@@ -33,6 +33,10 @@ void BinaryExpression::GenerateCode(std::string& buffer, int indent)
     case Op::MUL:
         PrintASMIndented(buffer, indent, "imul rax, rbx");
         break;
+    case Op::DIV:
+        PrintASMIndented(buffer, indent, "xor rdx, rdx");
+        PrintASMIndented(buffer, indent, "div rbx");  // TODO: this also gives remainder, so look into that in the future
+        break;
 
     // TODO: the register needs to be cleaned if we want to use the whole register (eg. casting the result into an int instead of bool) since `set__` only sets the first 8bits of it
     case Op::EQUAL:
@@ -116,4 +120,16 @@ void If::GenerateCode(std::string& buffer, int indent)
 void Block::GenerateCode(std::string& buffer, int indent)
 {
     body->GenerateCode(buffer, indent + 1);
+}
+
+void FnCall::GenerateCode(std::string& buffer, int indent)
+{
+    PrintASMIndented(buffer, indent, "; fn call");
+
+    // TODO: handle register allocations correctly, for now this will just keep overwriting rax
+    for(auto* argument : arguments)
+        argument->GenerateCode(buffer, indent + 1);
+
+    PrintASMIndented(buffer, indent, "mov rdi, rax");
+    PrintASMIndented(buffer, indent, "call {}", name);
 }

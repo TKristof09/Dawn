@@ -161,15 +161,45 @@ ASTNode* Parser::ParseUnary()
 {
     if(Match(TokenType::MINUS))
     {
-        Expression* expr = static_cast<Expression*>(ParsePrimary());
+        Expression* expr = static_cast<Expression*>(ParseUnary());
         return new UnaryExpression{Op::U_MINUS, expr};
     }
     if(Match(TokenType::NOT))
     {
-        Expression* expr = static_cast<Expression*>(ParsePrimary());
+        Expression* expr = static_cast<Expression*>(ParseUnary());
         return new UnaryExpression{Op::NOT, expr};
     }
 
+    return ParseFnCall();
+}
+
+
+ASTNode* Parser::ParseFnCall()
+{
+    // TODO: instead of requiring IDENTIFIER we should ParsePrimary to be able to do stuff like f()() where f returns a function, etc...
+    if(Match(TokenType::IDENTIFIER))
+    {
+        Token token           = Previous();
+        std::string_view name = m_src.substr(token.start, token.len);
+        if(Match(TokenType::LPAREN))
+        {
+            std::vector<Expression*> arguments;
+            arguments.push_back(static_cast<Expression*>(ParseExpression()));
+            while(Match(TokenType::COMMA))
+            {
+                arguments.push_back(static_cast<Expression*>(ParseExpression()));
+            }
+            if(Match(TokenType::RPAREN))
+            {
+                return new FnCall({name, std::move(arguments)});
+            }
+            else
+            {
+                std::println(stderr, "{}:{} Expected closing paranthesis for funtion arguments", Previous().line, Previous().col);
+                exit(1);
+            }
+        }
+    }
     return ParsePrimary();
 }
 

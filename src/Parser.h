@@ -26,6 +26,7 @@ private:
     ASTNode* ParseTerm();
     ASTNode* ParseFactor();
     ASTNode* ParseUnary();
+    ASTNode* ParseFnCall();
     ASTNode* ParsePrimary();
 
     bool IsEnd();

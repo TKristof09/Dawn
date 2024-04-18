@@ -31,6 +31,8 @@ enum class TokenType
     LBRACE,
     RBRACE,
 
+    COMMA,
+
     IF,
     ELSE,
     WHILE,
@@ -131,6 +133,9 @@ struct std::formatter<TokenType>
             break;
         case TokenType::RBRACE:
             str = "RBRACE";
+            break;
+        case TokenType::COMMA:
+            str = "COMMA";
             break;
         case TokenType::IF:
             str = "IF";

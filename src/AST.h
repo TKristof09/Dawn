@@ -19,6 +19,8 @@ enum class Op
     LEQ,
     GEQ,
     NOT,
+
+    CALL,
 };
 
 enum class ExpressionKind
@@ -78,6 +80,9 @@ struct std::formatter<Op>
         case Op::NOT:
             str = "NOT";
             break;
+        case Op::CALL:
+            str = "CALL";
+            break;
         }
         return std::format_to(ctx.out(), "{}", str);
     }
@@ -92,7 +97,7 @@ void PrintIndented(int indent, std::format_string<Args...> format_str, Args&&...
 
 struct ASTNode
 {
-    virtual void Print(int indent)                             = 0;
+    virtual void Print(int indent) const                       = 0;
     virtual void GenerateCode(std::string& buffer, int indent) = 0;
 };
 
@@ -100,7 +105,7 @@ struct AST
 {
     std::vector<ASTNode*> expressions;
 
-    void Print(int indent)
+    void Print(int indent) const
     {
         for(auto& expr : expressions)
             expr->Print(indent);
@@ -114,14 +119,6 @@ struct AST
 
 struct Expression : ASTNode
 {
-    void Print(int indent) override
-    {
-        PrintIndented(indent, "Unknown expression type");
-    }
-    void GenerateCode(std::string&, int) override
-    {
-        std::println(stderr, "Unknown expression type");
-    }
 };
 
 
@@ -134,7 +131,7 @@ struct UnaryExpression : Expression
     {
     }
 
-    void Print(int indent) override
+    void Print(int indent) const override
     {
         PrintIndented(indent, "Unary expression op: {}", op);
         expr->Print(indent + 1);
@@ -152,7 +149,7 @@ struct BinaryExpression : Expression
     {
     }
 
-    void Print(int indent) override
+    void Print(int indent) const override
     {
         PrintIndented(indent, "BinaryExpression");
         left->Print(indent + 1);
@@ -171,7 +168,7 @@ struct NumberLiteral : Expression
     {
     }
 
-    void Print(int indent) override
+    void Print(int indent) const override
     {
         PrintIndented(indent, "NumberLiteral {} ", value);
     }
@@ -185,7 +182,7 @@ struct Block : Expression
     Expression* body;  // TODO: this is temporary, in the fufture blocks will be able to have more than one expression in them
     Block(Expression* body) : body(body) {}
 
-    void Print(int indent) override
+    void Print(int indent) const override
     {
         PrintIndented(indent, "Block");
         body->Print(indent + 1);
@@ -201,7 +198,7 @@ struct If : Expression
 
     If(Expression* condition, Block* body, Block* elseBlock) : condition(condition), body(body), elseBlock(elseBlock) {}
 
-    void Print(int indent) override
+    void Print(int indent) const override
     {
         PrintIndented(indent, "If");
         PrintIndented(indent, "Condition:");
@@ -213,6 +210,25 @@ struct If : Expression
             PrintIndented(indent, "Else Body:");
             elseBlock->Print(indent + 1);
         }
+    }
+
+    void GenerateCode(std::string& buffer, int indent) override;
+};
+
+struct FnCall : Expression
+{
+    std::string name;
+    // TODO: implement multiple arguments
+    std::vector<Expression*> arguments;
+
+    FnCall(std::string_view name, std::vector<Expression*>&& args) : name(name), arguments(std::move(args)) {}
+
+    void Print(int indent) const override
+    {
+        PrintIndented(indent, "Function call: {}", name);
+        PrintIndented(indent, "Arguments: {}", arguments.size());
+        for(const auto* argument : arguments)
+            argument->Print(indent + 1);
     }
 
     void GenerateCode(std::string& buffer, int indent) override;
