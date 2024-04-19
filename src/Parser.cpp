@@ -6,14 +6,14 @@ void Parser::Parse()
 {
     while(!IsEnd())
     {
-        ASTNode* expr = ParseExpression();
+        ASTNode* expr = ParseStatement();
         if(!expr)
         {
             std::println(stderr, "Skipping unexpected token {} at {}:{}", Peek().type, Peek().line, Peek().col);
             Advance();
             continue;
         }
-        m_ast.expressions.push_back(expr);
+        m_ast.statements.push_back(expr);
     }
 
 
@@ -37,6 +37,23 @@ ASTNode* Parser::ParseExpression()
     expr = static_cast<Expression*>(ParseBlock());
     if(expr)
         return expr;
+
+    return nullptr;
+}
+
+ASTNode* Parser::ParseStatement(bool reportSemicolonError)
+{
+    while(Peek().type == TokenType::SEMICOLON)
+        Advance();
+
+    Statement* statement = static_cast<Statement*>(ParseVariableDeclaration());
+    if(statement)
+        return statement;
+
+    statement = static_cast<Statement*>(ParseExpressionStatement(reportSemicolonError));
+    if(statement)
+        return statement;
+
 
     return nullptr;
 }
@@ -103,13 +120,25 @@ ASTNode* Parser::ParseBlock()
 {
     if(Match(TokenType::LBRACE))
     {
+        std::vector<Statement*> statements;
+        Statement* statement = static_cast<Statement*>(ParseStatement(false));
+        while(statement)
+        {
+            statements.push_back(statement);
+            statement = static_cast<Statement*>(ParseStatement(false));
+        }
+
         Expression* expr = static_cast<Expression*>(ParseExpression());
+
         if(!Match(TokenType::RBRACE))
         {
             std::println(stderr, "{}:{}: Expected closing brace for block expression", Peek().line, Peek().col);
             exit(1);
         }
-        return new Block(expr);
+        if(statements.empty())
+            return new Block(expr);
+        else
+            return new Block(expr, std::move(statements));
     }
     return nullptr;
 }
@@ -253,6 +282,55 @@ ASTNode* Parser::ParsePrimary()
 
     return nullptr;
 }
+
+
+ASTNode* Parser::ParseExpressionStatement(bool reportSemicolonError)
+{
+    size_t start     = m_current;
+    Expression* expr = static_cast<Expression*>(ParseExpression());
+    if(Match(TokenType::SEMICOLON))
+    {
+        return new ExpressionStatement{expr};
+    }
+
+
+    // We don't want to report this error if we are parsing a list of statements like in a block where the last one can be a normal expression (without the semicolon)
+    if(reportSemicolonError)
+    {
+        std::println(stderr, "{}:{} Expected ';'", Previous().line, Previous().col);
+        exit(1);
+    }
+    m_current = start;  // revert back to the start of the expression so that it can be parsed as an expression in another function
+    return nullptr;
+}
+
+ASTNode* Parser::ParseVariableDeclaration()
+{
+    if(Match(TokenType::LET))
+    {
+        if(!Match(TokenType::IDENTIFIER))
+        {
+            std::println(stderr, "{}:{} Expected identifier after let", Previous().line, Previous().col);
+            exit(1);
+        }
+        Token token           = Previous();
+        std::string_view name = m_src.substr(token.start, token.len);
+        if(!Match(TokenType::ASSIGN))
+        {
+            std::println(stderr, "{}:{} Expected '=' after variable declaration", Previous().line, Previous().col);
+            exit(1);
+        }
+        Expression* expr = static_cast<Expression*>(ParseExpression());
+        if(!Match(TokenType::SEMICOLON))
+        {
+            std::println(stderr, "{}:{} Expected ';'", Previous().line, Previous().col);
+            exit(1);
+        }
+        return new VariableDeclaration{name, expr};
+    }
+    return nullptr;
+}
+
 
 bool Parser::IsEnd()
 {

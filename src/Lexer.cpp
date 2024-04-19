@@ -12,6 +12,7 @@ static const std::unordered_map<std::string_view, TokenType> reservedKeywords = 
     {  "return",   TokenType::RETURN},
     {   "break",    TokenType::BREAK},
     {"continue", TokenType::CONTINUE},
+    {     "let",      TokenType::LET},
 };
 void Lexer::Lex()
 {
@@ -57,6 +58,8 @@ Token Lexer::Next()
         return MakeToken(TokenType::RBRACE);
     case ',':
         return MakeToken(TokenType::COMMA);
+    case ';':
+        return MakeToken(TokenType::SEMICOLON);
     case '=':
         return MakeToken(Match('=') ? TokenType::EQUAL : TokenType::ASSIGN);
     case '!':

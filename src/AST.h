@@ -98,17 +98,17 @@ struct ASTNode
 
 struct AST
 {
-    std::vector<ASTNode*> expressions;
+    std::vector<ASTNode*> statements;
 
     void Print(int indent) const
     {
-        for(auto& expr : expressions)
-            expr->Print(indent);
+        for(auto& statement : statements)
+            statement->Print(indent);
     }
     void GenerateCode(std::string& buffer, int indent)
     {
-        for(auto& expr : expressions)
-            expr->GenerateCode(buffer, indent);
+        for(auto& statement : statements)
+            statement->GenerateCode(buffer, indent);
     }
 };
 
@@ -116,6 +116,9 @@ struct Expression : ASTNode
 {
 };
 
+struct Statement : ASTNode
+{
+};
 
 struct UnaryExpression : Expression
 {
@@ -174,13 +177,17 @@ struct NumberLiteral : Expression
 
 struct Block : Expression
 {
-    Expression* body;  // TODO: this is temporary, in the fufture blocks will be able to have more than one expression in them
-    Block(Expression* body) : body(body) {}
+    Expression* expr;
+    std::vector<Statement*> statements;
+    Block(Expression* expr) : expr(expr) {}
+    Block(Expression* expr, std::vector<Statement*>&& statements) : expr(expr), statements(std::move(statements)) {}
 
     void Print(int indent) const override
     {
         PrintIndented(indent, "Block");
-        body->Print(indent + 1);
+        for(const auto* statement : statements)
+            statement->Print(indent + 1);
+        expr->Print(indent + 1);
     }
 
     void GenerateCode(std::string& buffer, int indent) override;
@@ -243,6 +250,36 @@ struct FnCall : Expression
         PrintIndented(indent, "Arguments: {}", arguments.size());
         for(const auto* argument : arguments)
             argument->Print(indent + 1);
+    }
+
+    void GenerateCode(std::string& buffer, int indent) override;
+};
+
+struct ExpressionStatement : Statement
+{
+    Expression* expr;
+
+    ExpressionStatement(Expression* expr) : expr(expr) {}
+
+    void Print(int indent) const override
+    {
+        expr->Print(indent);
+    }
+
+    void GenerateCode(std::string& buffer, int indent) override;
+};
+
+struct VariableDeclaration : Statement
+{
+    std::string name;
+    Expression* value;
+
+    VariableDeclaration(std::string_view name, Expression* value) : name(name), value(value) {}
+
+    void Print(int indent) const override
+    {
+        PrintIndented(indent, "Variable declaration: {}", name);
+        value->Print(indent + 1);
     }
 
     void GenerateCode(std::string& buffer, int indent) override;

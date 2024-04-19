@@ -32,6 +32,7 @@ enum class TokenType
     RBRACE,
 
     COMMA,
+    SEMICOLON,
 
     IF,
     ELSE,
@@ -42,6 +43,8 @@ enum class TokenType
     RETURN,
     BREAK,
     CONTINUE,
+
+    LET,
 
 
     END_FILE
@@ -137,6 +140,9 @@ struct std::formatter<TokenType>
         case TokenType::COMMA:
             str = "COMMA";
             break;
+        case TokenType::SEMICOLON:
+            str = "SEMICOLON";
+            break;
         case TokenType::IF:
             str = "IF";
             break;
@@ -157,6 +163,9 @@ struct std::formatter<TokenType>
             break;
         case TokenType::CONTINUE:
             str = "CONTINUE";
+            break;
+        case TokenType::LET:
+            str = "LET";
             break;
         case TokenType::END_FILE:
             str = "END_FILE";

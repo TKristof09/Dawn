@@ -1,5 +1,6 @@
 #include "Codegenerator.h"
 #include "AST.h"
+#include <cassert>
 
 static void PrintASMLabel(std::string& buffer, int labelNum)
 {
@@ -132,7 +133,9 @@ void IfElse::GenerateCode(std::string& buffer, int indent)
 }
 void Block::GenerateCode(std::string& buffer, int indent)
 {
-    body->GenerateCode(buffer, indent + 1);
+    for(auto* statement : statements)
+        statement->GenerateCode(buffer, indent);
+    expr->GenerateCode(buffer, indent + 1);
 }
 
 void FnCall::GenerateCode(std::string& buffer, int indent)
@@ -145,4 +148,15 @@ void FnCall::GenerateCode(std::string& buffer, int indent)
 
     PrintASMIndented(buffer, indent, "mov rdi, rax");
     PrintASMIndented(buffer, indent, "call {}", name);
+}
+
+void ExpressionStatement::GenerateCode(std::string& buffer, int indent)
+{
+    expr->GenerateCode(buffer, indent);
+}
+
+void VariableDeclaration::GenerateCode(std::string& buffer, int indent)
+{
+    PrintASMIndented(buffer, indent, "; variable declaration");
+    assert(false && "Not implemented yet");
 }

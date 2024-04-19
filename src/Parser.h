@@ -19,6 +19,7 @@ public:
 
 private:
     ASTNode* ParseExpression();
+    ASTNode* ParseStatement(bool reportSemicolonError = true);
 
     ASTNode* ParseWhile();
     ASTNode* ParseIf();
@@ -32,6 +33,9 @@ private:
     ASTNode* ParseUnary();
     ASTNode* ParseFnCall();
     ASTNode* ParsePrimary();
+
+    ASTNode* ParseExpressionStatement(bool reportSemicolonError = true);
+    ASTNode* ParseVariableDeclaration();
 
     bool IsEnd();
     Token Peek();
