@@ -19,12 +19,16 @@ public:
 
 private:
     ASTNode* ParseExpression();
+
+    ASTNode* ParseWhile();
     ASTNode* ParseIf();
     ASTNode* ParseBlock();
+
     ASTNode* ParseEquality();
     ASTNode* ParseComparison();
     ASTNode* ParseTerm();
     ASTNode* ParseFactor();
+
     ASTNode* ParseUnary();
     ASTNode* ParseFnCall();
     ASTNode* ParsePrimary();

@@ -26,6 +26,10 @@ ASTNode* Parser::ParseExpression()
     if(expr)
         return expr;
 
+    expr = static_cast<Expression*>(ParseWhile());
+    if(expr)
+        return expr;
+
     expr = static_cast<Expression*>(ParseIf());
     if(expr)
         return expr;
@@ -34,6 +38,31 @@ ASTNode* Parser::ParseExpression()
     if(expr)
         return expr;
 
+    return nullptr;
+}
+
+ASTNode* Parser::ParseWhile()
+{
+    if(Match(TokenType::WHILE))
+    {
+        Expression* condition = static_cast<Expression*>(ParseExpression());
+
+        if(!condition)
+        {
+            std::println(stderr, "{}:{}: Expected expression for while condition", Peek().line, Peek().col);
+            exit(1);
+        }
+
+        Block* body = static_cast<Block*>(ParseBlock());
+
+        if(!body)
+        {
+            std::println(stderr, "{}:{}: Expected block expression for while body", Peek().line, Peek().col);
+            exit(1);
+        }
+
+        return new WhileLoop{condition, body};
+    }
     return nullptr;
 }
 
@@ -65,7 +94,7 @@ ASTNode* Parser::ParseIf()
                 exit(1);
             }
         }
-        return new If{condition, body, elseBlock};
+        return new IfElse{condition, body, elseBlock};
     }
     return nullptr;
 }

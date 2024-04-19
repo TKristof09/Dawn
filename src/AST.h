@@ -19,8 +19,6 @@ enum class Op
     LEQ,
     GEQ,
     NOT,
-
-    CALL,
 };
 
 enum class ExpressionKind
@@ -79,9 +77,6 @@ struct std::formatter<Op>
             break;
         case Op::NOT:
             str = "NOT";
-            break;
-        case Op::CALL:
-            str = "CALL";
             break;
         }
         return std::format_to(ctx.out(), "{}", str);
@@ -190,13 +185,13 @@ struct Block : Expression
 
     void GenerateCode(std::string& buffer, int indent) override;
 };
-struct If : Expression
+struct IfElse : Expression
 {
     Expression* condition;
     Block* body;
     Block* elseBlock;
 
-    If(Expression* condition, Block* body, Block* elseBlock) : condition(condition), body(body), elseBlock(elseBlock) {}
+    IfElse(Expression* condition, Block* body, Block* elseBlock) : condition(condition), body(body), elseBlock(elseBlock) {}
 
     void Print(int indent) const override
     {
@@ -210,6 +205,25 @@ struct If : Expression
             PrintIndented(indent, "Else Body:");
             elseBlock->Print(indent + 1);
         }
+    }
+
+    void GenerateCode(std::string& buffer, int indent) override;
+};
+
+struct WhileLoop : Expression
+{
+    Expression* condition;
+    Block* body;
+
+    WhileLoop(Expression* condition, Block* body) : condition(condition), body(body) {}
+
+    void Print(int indent) const override
+    {
+        PrintIndented(indent, "While loop");
+        PrintIndented(indent, "Condition:");
+        condition->Print(indent + 1);
+        PrintIndented(indent, "Body:");
+        body->Print(indent + 1);
     }
 
     void GenerateCode(std::string& buffer, int indent) override;

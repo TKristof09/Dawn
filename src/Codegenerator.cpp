@@ -92,7 +92,20 @@ void NumberLiteral::GenerateCode(std::string& buffer, int indent)
     PrintASMIndented(buffer, indent, "mov rax, {}", value);
 }
 
-void If::GenerateCode(std::string& buffer, int indent)
+void WhileLoop::GenerateCode(std::string& buffer, int indent)
+{
+    PrintASMIndented(buffer, indent, "; while");
+    uint32_t whileStartLabel = GetLabelNum();
+    uint32_t whileEndLabel   = GetLabelNum();
+    PrintASMLabel(buffer, whileStartLabel);
+    condition->GenerateCode(buffer, indent + 1);
+    PrintASMIndented(buffer, indent, "test rax, rax");
+    PrintASMIndented(buffer, indent, "jz .L{}", whileEndLabel);
+    body->GenerateCode(buffer, indent);
+    PrintASMIndented(buffer, indent, "jmp .L{}", whileStartLabel);
+    PrintASMLabel(buffer, whileEndLabel);
+}
+void IfElse::GenerateCode(std::string& buffer, int indent)
 {
     PrintASMIndented(buffer, indent, "; if ");
     condition->GenerateCode(buffer, indent + 1);
