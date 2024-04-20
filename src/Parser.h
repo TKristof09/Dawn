@@ -3,6 +3,7 @@
 #include "AST.h"
 #include "Tokens.h"
 #include <span>
+
 class Parser
 {
 public:
@@ -39,10 +40,18 @@ private:
 
     bool IsEnd();
     Token Peek();
+    Token Peek2();
     Token Advance();
     bool Match(TokenType type);
     Token Previous();
 
+    template<typename T, typename... Args>
+    T* MakeNode(Location loc, Args&&... args)
+    {
+        T* res   = new T{std::forward<Args>(args)...};
+        res->loc = loc;
+        return res;
+    }
 
     std::string_view m_src;
     std::span<const Token> m_tokens;

@@ -1,5 +1,7 @@
 #pragma once
 #include <print>
+#include "Location.h"
+
 enum class TokenType
 {
     NUMBER,
@@ -32,6 +34,7 @@ enum class TokenType
     RBRACE,
 
     COMMA,
+    COLON,
     SEMICOLON,
 
     IF,
@@ -54,8 +57,7 @@ struct Token
     TokenType type;
     size_t start;
     size_t len;
-    size_t col;
-    size_t line;
+    Location loc;
 };
 template<>
 struct std::formatter<TokenType>
@@ -139,6 +141,9 @@ struct std::formatter<TokenType>
             break;
         case TokenType::COMMA:
             str = "COMMA";
+            break;
+        case TokenType::COLON:
+            str = "COLON";
             break;
         case TokenType::SEMICOLON:
             str = "SEMICOLON";

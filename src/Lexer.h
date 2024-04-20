@@ -37,7 +37,9 @@ private:
 
     inline Token MakeToken(TokenType type)
     {
-        return {type, m_start, m_current - m_start, m_col, m_line};
+        return {
+            type, m_start, m_current - m_start, {m_line, m_col}
+        };
     }
 
     std::string_view m_src;
@@ -47,5 +49,4 @@ private:
     size_t m_col     = 0;
 
     std::vector<Token> m_tokens;
-
 };

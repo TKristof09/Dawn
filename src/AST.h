@@ -1,7 +1,9 @@
 #pragma once
+#include "Stack.h"
 #include <print>
 #include <variant>
 #include <vector>
+#include "Location.h"
 
 enum class Op
 {
@@ -92,8 +94,10 @@ void PrintIndented(int indent, std::format_string<Args...> format_str, Args&&...
 
 struct ASTNode
 {
-    virtual void Print(int indent) const                       = 0;
-    virtual void GenerateCode(std::string& buffer, int indent) = 0;
+    Location loc;
+
+    virtual void Print(int indent) const                                     = 0;
+    virtual void GenerateCode(Stack& stack, std::string& buffer, int indent) = 0;
 };
 
 struct AST
@@ -105,10 +109,10 @@ struct AST
         for(auto& statement : statements)
             statement->Print(indent);
     }
-    void GenerateCode(std::string& buffer, int indent)
+    void GenerateCode(Stack& stack, std::string& buffer, int indent)
     {
         for(auto& statement : statements)
-            statement->GenerateCode(buffer, indent);
+            statement->GenerateCode(stack, buffer, indent);
     }
 };
 
@@ -134,7 +138,7 @@ struct UnaryExpression : Expression
         PrintIndented(indent, "Unary expression op: {}", op);
         expr->Print(indent + 1);
     }
-    void GenerateCode(std::string& buffer, int indent) override;
+    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
 };
 
 struct BinaryExpression : Expression
@@ -155,7 +159,7 @@ struct BinaryExpression : Expression
         right->Print(indent + 1);
     }
 
-    void GenerateCode(std::string& buffer, int indent) override;
+    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
 };
 
 struct NumberLiteral : Expression
@@ -171,7 +175,23 @@ struct NumberLiteral : Expression
         PrintIndented(indent, "NumberLiteral {} ", value);
     }
 
-    void GenerateCode(std::string& buffer, int indent) override;
+    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
+};
+
+struct VariableAccess : Expression
+{
+    std::string name;
+
+    VariableAccess(std::string_view name) : name(name)
+    {
+    }
+
+    void Print(int indent) const override
+    {
+        PrintIndented(indent, "VariableAccess {}", name);
+    }
+
+    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
 };
 
 
@@ -187,10 +207,11 @@ struct Block : Expression
         PrintIndented(indent, "Block");
         for(const auto* statement : statements)
             statement->Print(indent + 1);
-        expr->Print(indent + 1);
+        if(expr)
+            expr->Print(indent + 1);
     }
 
-    void GenerateCode(std::string& buffer, int indent) override;
+    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
 };
 struct IfElse : Expression
 {
@@ -214,7 +235,7 @@ struct IfElse : Expression
         }
     }
 
-    void GenerateCode(std::string& buffer, int indent) override;
+    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
 };
 
 struct WhileLoop : Expression
@@ -233,7 +254,7 @@ struct WhileLoop : Expression
         body->Print(indent + 1);
     }
 
-    void GenerateCode(std::string& buffer, int indent) override;
+    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
 };
 
 struct FnCall : Expression
@@ -252,7 +273,7 @@ struct FnCall : Expression
             argument->Print(indent + 1);
     }
 
-    void GenerateCode(std::string& buffer, int indent) override;
+    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
 };
 
 struct ExpressionStatement : Statement
@@ -266,7 +287,7 @@ struct ExpressionStatement : Statement
         expr->Print(indent);
     }
 
-    void GenerateCode(std::string& buffer, int indent) override;
+    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
 };
 
 struct VariableDeclaration : Statement
@@ -282,5 +303,5 @@ struct VariableDeclaration : Statement
         value->Print(indent + 1);
     }
 
-    void GenerateCode(std::string& buffer, int indent) override;
+    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
 };

@@ -1,5 +1,6 @@
-if 1 {
-    print(420);
-    print(69)
+let x: i64 = 69;
+{
+    let y: i64 = 420;
+    print(x + y - y);
 };
-print(1337);
+print(5 + (x - 5) * 2);

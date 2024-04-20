@@ -2,6 +2,7 @@
 #include <string>
 #include <print>
 
+
 void Parser::Parse()
 {
     while(!IsEnd())
@@ -9,7 +10,7 @@ void Parser::Parse()
         ASTNode* expr = ParseStatement();
         if(!expr)
         {
-            std::println(stderr, "Skipping unexpected token {} at {}:{}", Peek().type, Peek().line, Peek().col);
+            std::println(stderr, "{}: Skipping unexpected token {}", Peek().loc, Peek().type);
             Advance();
             continue;
         }
@@ -62,11 +63,13 @@ ASTNode* Parser::ParseWhile()
 {
     if(Match(TokenType::WHILE))
     {
+        Location loc = Previous().loc;
+
         Expression* condition = static_cast<Expression*>(ParseExpression());
 
         if(!condition)
         {
-            std::println(stderr, "{}:{}: Expected expression for while condition", Peek().line, Peek().col);
+            std::println(stderr, "{}:: Expected expression for while condition", Peek().loc);
             exit(1);
         }
 
@@ -74,11 +77,11 @@ ASTNode* Parser::ParseWhile()
 
         if(!body)
         {
-            std::println(stderr, "{}:{}: Expected block expression for while body", Peek().line, Peek().col);
+            std::println(stderr, "{}:: Expected block expression for while body", Peek().loc);
             exit(1);
         }
 
-        return new WhileLoop{condition, body};
+        return MakeNode<WhileLoop>(loc, condition, body);
     }
     return nullptr;
 }
@@ -87,17 +90,18 @@ ASTNode* Parser::ParseIf()
 {
     if(Match(TokenType::IF))
     {
+        Location loc          = Previous().loc;
         Expression* condition = static_cast<Expression*>(ParseExpression());
         if(!condition)
         {
-            std::println(stderr, "{}:{}: Expected expression for if condition", Peek().line, Peek().col);
+            std::println(stderr, "{}:: Expected expression for if condition", Peek().loc);
             exit(1);
         }
 
         Block* body = static_cast<Block*>(ParseBlock());
         if(!body)
         {
-            std::println(stderr, "{}:{}: Expected block expression for if body", Peek().line, Peek().col);
+            std::println(stderr, "{}:: Expected block expression for if body", Peek().loc);
             exit(1);
         }
         Block* elseBlock = nullptr;
@@ -107,11 +111,11 @@ ASTNode* Parser::ParseIf()
 
             if(!elseBlock)
             {
-                std::println(stderr, "{}:{}: Expected block expression for else body", Peek().line, Peek().col);
+                std::println(stderr, "{}:: Expected block expression for else body", Peek().loc);
                 exit(1);
             }
         }
-        return new IfElse{condition, body, elseBlock};
+        return MakeNode<IfElse>(loc, condition, body, elseBlock);
     }
     return nullptr;
 }
@@ -120,6 +124,7 @@ ASTNode* Parser::ParseBlock()
 {
     if(Match(TokenType::LBRACE))
     {
+        Location loc = Previous().loc;
         std::vector<Statement*> statements;
         Statement* statement = static_cast<Statement*>(ParseStatement(false));
         while(statement)
@@ -132,13 +137,13 @@ ASTNode* Parser::ParseBlock()
 
         if(!Match(TokenType::RBRACE))
         {
-            std::println(stderr, "{}:{}: Expected closing brace for block expression", Peek().line, Peek().col);
+            std::println(stderr, "{}:: Expected closing brace for block expression", Peek().loc);
             exit(1);
         }
         if(statements.empty())
-            return new Block(expr);
+            return MakeNode<Block>(loc, expr);
         else
-            return new Block(expr, std::move(statements));
+            return MakeNode<Block>(loc, expr, std::move(statements));
     }
     return nullptr;
 }
@@ -149,9 +154,10 @@ ASTNode* Parser::ParseEquality()
 
     while(Match(TokenType::EQUAL) || Match(TokenType::NOT_EQUAL))
     {
+        Location loc      = Previous().loc;
         Op op             = Previous().type == TokenType::EQUAL ? Op::EQUAL : Op::NOT_EQUAL;
         Expression* right = static_cast<Expression*>(ParseComparison());
-        expr              = new BinaryExpression{expr, op, right};
+        expr              = MakeNode<BinaryExpression>(loc, expr, op, right);
     }
 
     return expr;
@@ -163,7 +169,9 @@ ASTNode* Parser::ParseComparison()
 
     while(Match(TokenType::LT) || Match(TokenType::GT) || Match(TokenType::LEQ) || Match(TokenType::GEQ))
     {
-        Op op = Op::LT;
+        Location loc = Previous().loc;
+
+        Op op;
         switch(Previous().type)
         {
         case TokenType::LT:
@@ -181,7 +189,7 @@ ASTNode* Parser::ParseComparison()
         }
 
         Expression* right = static_cast<Expression*>(ParseTerm());
-        expr              = new BinaryExpression{expr, op, right};
+        expr              = MakeNode<BinaryExpression>(loc, expr, op, right);
     }
 
     return expr;
@@ -193,9 +201,10 @@ ASTNode* Parser::ParseTerm()
 
     while(Match(TokenType::MINUS) || Match(TokenType::PLUS))
     {
+        Location loc      = Previous().loc;
         Op op             = Previous().type == TokenType::MINUS ? Op::MINUS : Op::PLUS;
         Expression* right = static_cast<Expression*>(ParseFactor());
-        expr              = new BinaryExpression{expr, op, right};
+        expr              = MakeNode<BinaryExpression>(loc, expr, op, right);
     }
 
     return expr;
@@ -207,9 +216,10 @@ ASTNode* Parser::ParseFactor()
 
     while(Match(TokenType::MUL) || Match(TokenType::DIV))
     {
+        Location loc      = Previous().loc;
         Op op             = Previous().type == TokenType::MUL ? Op::MUL : Op::DIV;
         Expression* right = static_cast<Expression*>(ParseUnary());
-        expr              = new BinaryExpression{expr, op, right};
+        expr              = MakeNode<BinaryExpression>(loc, expr, op, right);
     }
 
     return expr;
@@ -219,13 +229,15 @@ ASTNode* Parser::ParseUnary()
 {
     if(Match(TokenType::MINUS))
     {
+        Location loc     = Previous().loc;
         Expression* expr = static_cast<Expression*>(ParseUnary());
-        return new UnaryExpression{Op::U_MINUS, expr};
+        return MakeNode<UnaryExpression>(loc, Op::U_MINUS, expr);
     }
     if(Match(TokenType::NOT))
     {
+        Location loc     = Previous().loc;
         Expression* expr = static_cast<Expression*>(ParseUnary());
-        return new UnaryExpression{Op::NOT, expr};
+        return MakeNode<UnaryExpression>(loc, Op::NOT, expr);
     }
 
     return ParseFnCall();
@@ -235,27 +247,29 @@ ASTNode* Parser::ParseUnary()
 ASTNode* Parser::ParseFnCall()
 {
     // TODO: instead of requiring IDENTIFIER we should ParsePrimary to be able to do stuff like f()() where f returns a function, etc...
-    if(Match(TokenType::IDENTIFIER))
+    if(Peek().type == TokenType::IDENTIFIER && Peek2().type == TokenType::LPAREN)
     {
-        Token token           = Previous();
+        Token token           = Peek();
+        Location loc          = token.loc;
         std::string_view name = m_src.substr(token.start, token.len);
-        if(Match(TokenType::LPAREN))
+
+        Advance();  // consume the identifier
+        Advance();  // consume the '('
+
+        std::vector<Expression*> arguments;
+        arguments.push_back(static_cast<Expression*>(ParseExpression()));
+        while(Match(TokenType::COMMA))
         {
-            std::vector<Expression*> arguments;
             arguments.push_back(static_cast<Expression*>(ParseExpression()));
-            while(Match(TokenType::COMMA))
-            {
-                arguments.push_back(static_cast<Expression*>(ParseExpression()));
-            }
-            if(Match(TokenType::RPAREN))
-            {
-                return new FnCall({name, std::move(arguments)});
-            }
-            else
-            {
-                std::println(stderr, "{}:{} Expected closing paranthesis for funtion arguments", Previous().line, Previous().col);
-                exit(1);
-            }
+        }
+        if(Match(TokenType::RPAREN))
+        {
+            return MakeNode<FnCall>(loc, name, std::move(arguments));
+        }
+        else
+        {
+            std::println(stderr, "{}: Expected closing paranthesis for funtion arguments", Previous().loc);
+            exit(1);
         }
     }
     return ParsePrimary();
@@ -266,7 +280,15 @@ ASTNode* Parser::ParsePrimary()
     if(Match(TokenType::NUMBER))
     {
         Token token = Previous();
-        return new NumberLiteral{std::stoi(std::string(m_src.substr(token.start, token.len)))};
+        return MakeNode<NumberLiteral>(token.loc, std::stoi(std::string(m_src.substr(token.start, token.len))));
+    }
+
+    if(Match(TokenType::IDENTIFIER))
+    {
+        Token token           = Previous();
+        Location loc          = token.loc;
+        std::string_view name = m_src.substr(token.start, token.len);
+        return MakeNode<VariableAccess>(loc, name);
     }
 
     if(Match(TokenType::LPAREN))
@@ -274,7 +296,7 @@ ASTNode* Parser::ParsePrimary()
         Expression* expr = static_cast<Expression*>(ParseExpression());
         if(!Match(TokenType::RPAREN))
         {
-            std::println(stderr, "{}:{} Expected ')'", Previous().line, Previous().col);
+            std::println(stderr, "{}: Expected ')'", Previous().loc);
             exit(1);
         }
         return expr;
@@ -290,14 +312,14 @@ ASTNode* Parser::ParseExpressionStatement(bool reportSemicolonError)
     Expression* expr = static_cast<Expression*>(ParseExpression());
     if(Match(TokenType::SEMICOLON))
     {
-        return new ExpressionStatement{expr};
+        return MakeNode<ExpressionStatement>(m_tokens[start].loc, expr);
     }
 
 
     // We don't want to report this error if we are parsing a list of statements like in a block where the last one can be a normal expression (without the semicolon)
     if(reportSemicolonError)
     {
-        std::println(stderr, "{}:{} Expected ';'", Previous().line, Previous().col);
+        std::println(stderr, "{}: Expected ';'", Previous().loc);
         exit(1);
     }
     m_current = start;  // revert back to the start of the expression so that it can be parsed as an expression in another function
@@ -308,25 +330,39 @@ ASTNode* Parser::ParseVariableDeclaration()
 {
     if(Match(TokenType::LET))
     {
+        Location loc = Previous().loc;
+
         if(!Match(TokenType::IDENTIFIER))
         {
-            std::println(stderr, "{}:{} Expected identifier after let", Previous().line, Previous().col);
+            std::println(stderr, "{}: Expected identifier after let", Previous().loc);
             exit(1);
         }
         Token token           = Previous();
         std::string_view name = m_src.substr(token.start, token.len);
+        if(!Match(TokenType::COLON))
+        {
+            std::println(stderr, "{}: Expected ':' after variable name", Previous().loc);
+            exit(1);
+        }
+
+        if(!Match(TokenType::IDENTIFIER))
+        {
+            std::println(stderr, "{}: Expected type after ':'", Previous().loc);
+            exit(1);
+        }
+
         if(!Match(TokenType::ASSIGN))
         {
-            std::println(stderr, "{}:{} Expected '=' after variable declaration", Previous().line, Previous().col);
+            std::println(stderr, "{}: Expected '=' after variable declaration", Previous().loc);
             exit(1);
         }
         Expression* expr = static_cast<Expression*>(ParseExpression());
         if(!Match(TokenType::SEMICOLON))
         {
-            std::println(stderr, "{}:{} Expected ';'", Previous().line, Previous().col);
+            std::println(stderr, "{}: Expected ';'", Previous().loc);
             exit(1);
         }
-        return new VariableDeclaration{name, expr};
+        return MakeNode<VariableDeclaration>(loc, name, expr);
     }
     return nullptr;
 }
@@ -341,6 +377,11 @@ Token Parser::Peek()
 {
     return m_tokens[m_current];
 }
+Token Parser::Peek2()
+{
+    return m_tokens[m_current + 1];
+}
+
 Token Parser::Advance()
 {
     if(!IsEnd())
