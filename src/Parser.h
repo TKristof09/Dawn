@@ -35,6 +35,8 @@ private:
     ASTNode* ParseFnCall();
     ASTNode* ParsePrimary();
 
+    ASTNode* ParseAssignment();
+
     ASTNode* ParseExpressionStatement(bool reportSemicolonError = true);
     ASTNode* ParseVariableDeclaration();
 

@@ -23,9 +23,10 @@ void Parser::Parse()
 
 ASTNode* Parser::ParseExpression()
 {
-    Expression* expr = static_cast<Expression*>(ParseEquality());
+    Expression* expr = static_cast<Expression*>(ParseAssignment());
     if(expr)
         return expr;
+
 
     expr = static_cast<Expression*>(ParseWhile());
     if(expr)
@@ -84,6 +85,22 @@ ASTNode* Parser::ParseWhile()
         return MakeNode<WhileLoop>(loc, condition, body);
     }
     return nullptr;
+}
+
+ASTNode* Parser::ParseAssignment()
+{
+    if(Peek().type == TokenType::IDENTIFIER && Peek2().type == TokenType::ASSIGN)
+    {
+        Token token           = Peek();
+        Location loc          = token.loc;
+        std::string_view name = m_src.substr(token.start, token.len);
+        Advance();  // consume the identifier
+        Advance();  // consume the '='
+
+        Expression* expr = static_cast<Expression*>(ParseExpression());
+        return MakeNode<VariableAssignment>(loc, name, expr);
+    }
+    return ParseEquality();
 }
 
 ASTNode* Parser::ParseIf()

@@ -2,5 +2,8 @@ let x: i64 = 69;
 {
     let y: i64 = 420;
     print(x + y - y);
+    x = x + y;
 };
-print(5 + (x - 5) * 2);
+print(x);
+x = 41 * 10 + 10;
+print(x);

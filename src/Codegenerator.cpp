@@ -98,6 +98,14 @@ void VariableAccess::GenerateCode(Stack& stack, std::string& buffer, int indent)
     PrintASMIndented(buffer, indent, "mov rax, [rbp - {}]", var.baseOffset);
 }
 
+void VariableAssignment::GenerateCode(Stack& stack, std::string& buffer, int indent)
+{
+    PrintASMIndented(buffer, indent, ";  Variable Assignment");
+    value->GenerateCode(stack, buffer, indent + 1);
+    Variable var = stack.Find(name, loc);
+    PrintASMIndented(buffer, indent, "mov [rbp - {}], rax", var.baseOffset);
+}
+
 void WhileLoop::GenerateCode(Stack& stack, std::string& buffer, int indent)
 {
     PrintASMIndented(buffer, indent, "; while");

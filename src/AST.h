@@ -23,13 +23,6 @@ enum class Op
     NOT,
 };
 
-enum class ExpressionKind
-{
-    BINARY,
-    UNARY,
-    LITERAL,
-    IDENTIFIER,
-};
 template<>
 struct std::formatter<Op>
 {
@@ -189,6 +182,24 @@ struct VariableAccess : Expression
     void Print(int indent) const override
     {
         PrintIndented(indent, "VariableAccess {}", name);
+    }
+
+    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
+};
+
+struct VariableAssignment : Expression
+{
+    std::string name;
+    Expression* value;
+
+    VariableAssignment(std::string_view name, Expression* value) : name(name), value(value)
+    {
+    }
+
+    void Print(int indent) const override
+    {
+        PrintIndented(indent, "VariableAssignment {}", name);
+        value->Print(indent + 1);
     }
 
     void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
