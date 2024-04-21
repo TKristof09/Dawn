@@ -13,6 +13,11 @@ enum class Op
     MUL,
     DIV,
 
+    LSH,
+    RSH,
+    BAND,
+    BOR,
+
     EQUAL,
     NOT_EQUAL,
     LT,
@@ -50,6 +55,18 @@ struct std::formatter<Op>
             break;
         case Op::DIV:
             str = "DIV";
+            break;
+        case Op::LSH:
+            str = "LSH";
+            break;
+        case Op::RSH:
+            str = "RSH";
+            break;
+        case Op::BAND:
+            str = "BAND";
+            break;
+        case Op::BOR:
+            str = "BOR";
             break;
         case Op::EQUAL:
             str = "EQUAL";

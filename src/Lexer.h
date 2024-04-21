@@ -13,6 +13,13 @@ public:
     {
     }
     void Lex();
+    void Print()
+    {
+        for(auto& token : m_tokens)
+        {
+            std::println("{}", token.type);
+        }
+    }
 
     [[nodiscard]] std::span<const Token> Tokens() const
     {

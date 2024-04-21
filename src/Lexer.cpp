@@ -71,9 +71,21 @@ Token Lexer::Next()
     case '!':
         return MakeToken(Match('=') ? TokenType::NOT_EQUAL : TokenType::NOT);
     case '<':
+        if(Match('<'))
+        {
+            return MakeToken(TokenType::LSH);
+        }
         return MakeToken(Match('=') ? TokenType::LEQ : TokenType::LT);
     case '>':
+        if(Match('>'))
+        {
+            return MakeToken(TokenType::RSH);
+        }
         return MakeToken(Match('=') ? TokenType::GEQ : TokenType::GT);
+    case '&':
+        return MakeToken(Match('&') ? TokenType::LAND : TokenType::BAND);
+    case '|':
+        return MakeToken(Match('|') ? TokenType::LOR : TokenType::BOR);
 
     default:
         std::print(stderr, "{}:{} Unexpected character{}: MakeToken()", m_line, m_current, c);

@@ -38,6 +38,20 @@ void BinaryExpression::GenerateCode(Stack& stack, std::string& buffer, int inden
         PrintASMIndented(buffer, indent, "xor rdx, rdx");
         PrintASMIndented(buffer, indent, "div rbx");  // TODO: this also gives remainder, so look into that in the future
         break;
+    case Op::LSH:
+        PrintASMIndented(buffer, indent, "mov rcx, rbx");
+        PrintASMIndented(buffer, indent, "shl rax, cl");
+        break;
+    case Op::RSH:
+        PrintASMIndented(buffer, indent, "mov cl, bl");
+        PrintASMIndented(buffer, indent, "sar rax, cl");
+        break;
+    case Op::BAND:
+        PrintASMIndented(buffer, indent, "and rax, rbx");
+        break;
+    case Op::BOR:
+        PrintASMIndented(buffer, indent, "or rax, rbx");
+        break;
 
     // TODO: the register needs to be cleaned if we want to use the whole register (eg. casting the result into an int instead of bool) since `set__` only sets the first 8bits of it
     case Op::EQUAL:
@@ -103,6 +117,7 @@ void VariableAccess::GenerateCode(Stack& stack, std::string& buffer, int indent)
     if(index)
     {
         PrintASMIndented(buffer, indent, "pop rbx");
+        // TODO: this kind of adressing  only works with 1,2,4,8 sizes
         PrintASMIndented(buffer, indent, "mov rax, [rbp - {} + rbx * {}]", var.baseOffset, var.baseSize);
     }
     else
@@ -126,6 +141,8 @@ void VariableAssignment::GenerateCode(Stack& stack, std::string& buffer, int ind
     if(index)
     {
         PrintASMIndented(buffer, indent, "pop rbx");
+
+        // TODO: this kind of adressing  only works with 1,2,4,8 sizes
         PrintASMIndented(buffer, indent, "mov [rbp - {} + rbx * {}], rax", var.baseOffset, var.baseSize);
     }
     else
@@ -211,6 +228,6 @@ void VariableDeclaration::GenerateCode(Stack& stack, std::string& buffer, int in
     if(value)
     {
         value->GenerateCode(stack, buffer, indent + 1);
-        PrintASMIndented(buffer, indent, "mov [rbp + {}], rax", var.baseOffset);
+        PrintASMIndented(buffer, indent, "mov [rbp - {}], rax", var.baseOffset);
     }
 }

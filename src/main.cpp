@@ -37,6 +37,7 @@ int main()
     std::string src  = ReadFile(file + ".eos");
     Lexer lexer(file, src);
     lexer.Lex();
+    // lexer.Print();
     Parser parser(src, lexer.Tokens());
     parser.Parse();
     CodeGenerator codegen(parser.GetAST());

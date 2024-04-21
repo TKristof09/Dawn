@@ -26,8 +26,11 @@ private:
     ASTNode* ParseIf();
     ASTNode* ParseBlock();
 
+    ASTNode* ParseBitwiseAnd();
+    ASTNode* ParseBitwiseOr();
     ASTNode* ParseEquality();
     ASTNode* ParseComparison();
+    ASTNode* ParseShift();
     ASTNode* ParseTerm();
     ASTNode* ParseFactor();
 

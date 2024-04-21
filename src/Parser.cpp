@@ -106,7 +106,7 @@ ASTNode* Parser::ParseAssignment()
     }
 
     m_current = start;  // revert the IDENTIFIER match, in case it was not an assignment
-    return ParseEquality();
+    return ParseBitwiseAnd();
 }
 
 ASTNode* Parser::ParseIf()
@@ -171,6 +171,34 @@ ASTNode* Parser::ParseBlock()
     return nullptr;
 }
 
+ASTNode* Parser::ParseBitwiseAnd()
+{
+    Expression* expr = static_cast<Expression*>(ParseBitwiseOr());
+
+    while(Match(TokenType::BAND))
+    {
+        Location loc      = Previous().loc;
+        Expression* right = static_cast<Expression*>(ParseBitwiseOr());
+        expr              = MakeNode<BinaryExpression>(loc, expr, Op::BAND, right);
+    }
+
+    return expr;
+}
+
+ASTNode* Parser::ParseBitwiseOr()
+{
+    Expression* expr = static_cast<Expression*>(ParseEquality());
+
+    while(Match(TokenType::BOR))
+    {
+        Location loc      = Previous().loc;
+        Expression* right = static_cast<Expression*>(ParseEquality());
+        expr              = MakeNode<BinaryExpression>(loc, expr, Op::BOR, right);
+    }
+
+    return expr;
+}
+
 ASTNode* Parser::ParseEquality()
 {
     Expression* expr = static_cast<Expression*>(ParseComparison());
@@ -188,7 +216,7 @@ ASTNode* Parser::ParseEquality()
 
 ASTNode* Parser::ParseComparison()
 {
-    Expression* expr = static_cast<Expression*>(ParseTerm());
+    Expression* expr = static_cast<Expression*>(ParseShift());
 
     while(Match(TokenType::LT) || Match(TokenType::GT) || Match(TokenType::LEQ) || Match(TokenType::GEQ))
     {
@@ -211,6 +239,21 @@ ASTNode* Parser::ParseComparison()
             break;
         }
 
+        Expression* right = static_cast<Expression*>(ParseShift());
+        expr              = MakeNode<BinaryExpression>(loc, expr, op, right);
+    }
+
+    return expr;
+}
+
+ASTNode* Parser::ParseShift()
+{
+    Expression* expr = static_cast<Expression*>(ParseTerm());
+
+    while(Match(TokenType::LSH) || Match(TokenType::RSH))
+    {
+        Location loc      = Previous().loc;
+        Op op             = Previous().type == TokenType::LSH ? Op::LSH : Op::RSH;
         Expression* right = static_cast<Expression*>(ParseTerm());
         expr              = MakeNode<BinaryExpression>(loc, expr, op, right);
     }

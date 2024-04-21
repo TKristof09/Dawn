@@ -17,6 +17,14 @@ enum class TokenType
     MUL,
     DIV,
 
+    LSH,
+    RSH,
+    BAND,
+    BOR,
+
+    LAND,
+    LOR,
+
     EQUAL,
     NOT_EQUAL,
     LT,
@@ -104,6 +112,24 @@ struct std::formatter<TokenType>
             break;
         case TokenType::DIV:
             str = "DIV";
+            break;
+        case TokenType::LSH:
+            str = "LSH";
+            break;
+        case TokenType::RSH:
+            str = "RSH";
+            break;
+        case TokenType::BAND:
+            str = "BAND";
+            break;
+        case TokenType::BOR:
+            str = "BOR";
+            break;
+        case TokenType::LAND:
+            str = "LAND";
+            break;
+        case TokenType::LOR:
+            str = "LOR";
             break;
         case TokenType::EQUAL:
             str = "EQUAL";
