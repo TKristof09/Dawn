@@ -368,12 +368,11 @@ ASTNode* Parser::ParseVariableDeclaration()
             exit(1);
         }
 
-        if(!Match(TokenType::ASSIGN))
+        Expression* expr = nullptr;
+        if(Match(TokenType::ASSIGN))
         {
-            std::println(stderr, "{}: Expected '=' after variable declaration", Previous().loc);
-            exit(1);
+            expr = static_cast<Expression*>(ParseExpression());
         }
-        Expression* expr = static_cast<Expression*>(ParseExpression());
         if(!Match(TokenType::SEMICOLON))
         {
             std::println(stderr, "{}: Expected ';'", Previous().loc);

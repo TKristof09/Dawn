@@ -1,7 +1,6 @@
 #pragma once
 #include "Stack.h"
 #include <print>
-#include <variant>
 #include <vector>
 #include "Location.h"
 
@@ -304,14 +303,15 @@ struct ExpressionStatement : Statement
 struct VariableDeclaration : Statement
 {
     std::string name;
-    Expression* value;
+    Expression* value;  // nullptr if it's a declaration without initialization
 
     VariableDeclaration(std::string_view name, Expression* value) : name(name), value(value) {}
 
     void Print(int indent) const override
     {
         PrintIndented(indent, "Variable declaration: {}", name);
-        value->Print(indent + 1);
+        if(value)
+            value->Print(indent + 1);
     }
 
     void GenerateCode(Stack& stack, std::string& buffer, int indent) override;

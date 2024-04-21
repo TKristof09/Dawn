@@ -1,6 +1,7 @@
 let x: i64 = 69;
 {
-    let y: i64 = 420;
+    let y: i64;
+    y =  420;
     print(x + y - y);
     x = x + y;
 };

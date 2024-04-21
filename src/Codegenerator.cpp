@@ -178,6 +178,9 @@ void VariableDeclaration::GenerateCode(Stack& stack, std::string& buffer, int in
     PrintASMIndented(buffer, indent, "; variable declaration");
     stack.PushVariable({name, 8});
     PrintASMIndented(buffer, indent, "sub rsp, 8");
-    value->GenerateCode(stack, buffer, indent + 1);
-    PrintASMIndented(buffer, indent, "mov [rsp + 8], rax");
+    if(value)
+    {
+        value->GenerateCode(stack, buffer, indent + 1);
+        PrintASMIndented(buffer, indent, "mov [rsp + 8], rax");
+    }
 }
