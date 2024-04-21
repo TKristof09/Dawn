@@ -57,8 +57,8 @@ private:
         StackFrame(uint64_t offset) : m_currentOffset(offset) {}
         Variable Push(Variable var)
         {
-            var.baseOffset   = m_currentOffset;
             m_currentOffset += var.size;
+            var.baseOffset   = m_currentOffset;
             m_variables.push_back(var);
             m_lookup[var.name] = m_variables.size() - 1;
             return var;

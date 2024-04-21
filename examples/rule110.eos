@@ -6,6 +6,7 @@ while k < board_size
 {
     board[k] = 0;
     board[k + board_size] = 0;
+
     k = k + 1;
 };
 
@@ -22,7 +23,6 @@ let a:i64;
 let b:i64;
 let c:i64;
 
-let padding: i64[100];
 let patterns: i64[8];
 patterns[0] = 0;
 patterns[1] = 1;
@@ -53,6 +53,7 @@ while i < board_size
         c = board[curr_board * board_size + j + 1];
         lookup = (a << 2) | (b << 1) | c;
         lookup = lookup & 7;
+
         board[next_board * board_size + j] = patterns[lookup];
 
         j = j + 1;
