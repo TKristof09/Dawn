@@ -4,6 +4,7 @@
 
 struct Location
 {
+    std::string_view filename;
     size_t line;
     size_t col;
 };
@@ -19,6 +20,6 @@ struct std::formatter<Location>
     template<typename FormatContext>
     auto format(Location loc, FormatContext& ctx) const
     {
-        return std::format_to(ctx.out(), "{}:{}", loc.line, loc.col);
+        return std::format_to(ctx.out(), "{}:{}:{}", loc.filename, loc.line, loc.col);
     }
 };

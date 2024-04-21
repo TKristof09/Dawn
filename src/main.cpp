@@ -35,7 +35,7 @@ int main()
 {
     std::string file = "examples/test";
     std::string src  = ReadFile(file + ".eos");
-    Lexer lexer(src);
+    Lexer lexer(file, src);
     lexer.Lex();
     Parser parser(src, lexer.Tokens());
     parser.Parse();
