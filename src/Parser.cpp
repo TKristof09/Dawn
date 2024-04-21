@@ -89,17 +89,23 @@ ASTNode* Parser::ParseWhile()
 
 ASTNode* Parser::ParseAssignment()
 {
-    if(Peek().type == TokenType::IDENTIFIER && Peek2().type == TokenType::ASSIGN)
+    size_t start = m_current;
+    if(Match(TokenType::IDENTIFIER))
     {
-        Token token           = Peek();
+        Token token           = Previous();
         Location loc          = token.loc;
         std::string_view name = m_src.substr(token.start, token.len);
-        Advance();  // consume the identifier
-        Advance();  // consume the '='
 
-        Expression* expr = static_cast<Expression*>(ParseExpression());
-        return MakeNode<VariableAssignment>(loc, name, expr);
+        size_t index = ParseIndex();
+
+        if(Match(TokenType::ASSIGN))
+        {
+            Expression* expr = static_cast<Expression*>(ParseExpression());
+            return MakeNode<VariableAssignment>(loc, name, index, expr);
+        }
     }
+
+    m_current = start;  // revert the IDENTIFIER match, in case it was not an assignment
     return ParseEquality();
 }
 
@@ -305,7 +311,8 @@ ASTNode* Parser::ParsePrimary()
         Token token           = Previous();
         Location loc          = token.loc;
         std::string_view name = m_src.substr(token.start, token.len);
-        return MakeNode<VariableAccess>(loc, name);
+        size_t index          = ParseIndex();
+        return MakeNode<VariableAccess>(loc, name, index);
     }
 
     if(Match(TokenType::LPAREN))
@@ -362,11 +369,8 @@ ASTNode* Parser::ParseVariableDeclaration()
             exit(1);
         }
 
-        if(!Match(TokenType::IDENTIFIER))
-        {
-            std::println(stderr, "{}: Expected type after ':'", Previous().loc);
-            exit(1);
-        }
+        size_t size      = ParseType();
+        size_t arraySize = ParseIndex();
 
         Expression* expr = nullptr;
         if(Match(TokenType::ASSIGN))
@@ -378,11 +382,66 @@ ASTNode* Parser::ParseVariableDeclaration()
             std::println(stderr, "{}: Expected ';'", Previous().loc);
             exit(1);
         }
-        return MakeNode<VariableDeclaration>(loc, name, expr);
+        if(arraySize)
+            return MakeNode<VariableDeclaration>(loc, name, size, arraySize, expr);
+        else
+            return MakeNode<VariableDeclaration>(loc, name, size, expr);
     }
     return nullptr;
 }
 
+size_t Parser::ParseType()
+{
+    if(!Match(TokenType::IDENTIFIER))
+    {
+        std::println(stderr, "{}: Expected type after ':'", Previous().loc);
+        exit(1);
+    }
+    Token type                = Previous();
+    std::string_view typeName = m_src.substr(type.start, type.len);
+
+    size_t baseSize = 0;
+
+    if(typeName.starts_with("u") || typeName.starts_with("i"))
+    {
+        if(typeName.ends_with("8"))
+            baseSize = 1;
+        else if(typeName.ends_with("16"))
+            baseSize = 2;
+        else if(typeName.ends_with("32"))
+            baseSize = 4;
+        else if(typeName.ends_with("64"))
+            baseSize = 8;
+    }
+    else
+    {
+        std::println(stderr, "{}: Unknown type {}", type.loc, typeName);
+        exit(1);
+    }
+
+    return baseSize;
+}
+
+size_t Parser::ParseIndex()
+{
+    size_t index = 0;
+    if(Match(TokenType::LBRACKET))
+    {
+        if(!Match(TokenType::NUMBER))
+        {
+            std::println(stderr, "{}: Expected number after '['", Previous().loc);
+            exit(1);
+        }
+        Token sizeToken = Previous();
+        if(!Match(TokenType::RBRACKET))
+        {
+            std::println(stderr, "{}: Expected ']' after number", Previous().loc);
+            exit(1);
+        }
+        index = std::stoi(std::string(m_src.substr(sizeToken.start, sizeToken.len)));
+    }
+    return index;
+}
 
 bool Parser::IsEnd()
 {

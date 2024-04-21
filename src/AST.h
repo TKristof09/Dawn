@@ -173,14 +173,19 @@ struct NumberLiteral : Expression
 struct VariableAccess : Expression
 {
     std::string name;
+    size_t index = 0;
 
     VariableAccess(std::string_view name) : name(name)
     {
     }
 
+    VariableAccess(std::string_view name, size_t index) : name(name), index(index)
+    {
+    }
+
     void Print(int indent) const override
     {
-        PrintIndented(indent, "VariableAccess {}", name);
+        PrintIndented(indent, "VariableAccess {}[{}]", name, index);
     }
 
     void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
@@ -189,15 +194,21 @@ struct VariableAccess : Expression
 struct VariableAssignment : Expression
 {
     std::string name;
+    size_t index = 0;
     Expression* value;
 
     VariableAssignment(std::string_view name, Expression* value) : name(name), value(value)
     {
     }
 
+    VariableAssignment(std::string_view name, size_t index, Expression* value) : name(name), index(index), value(value)
+    {
+    }
+
     void Print(int indent) const override
     {
-        PrintIndented(indent, "VariableAssignment {}", name);
+        PrintIndented(indent, "VariableAssignment {}[{}]", name, index);
+
         value->Print(indent + 1);
     }
 
@@ -303,9 +314,12 @@ struct ExpressionStatement : Statement
 struct VariableDeclaration : Statement
 {
     std::string name;
+    size_t baseSize;
+    size_t arraySize;
     Expression* value;  // nullptr if it's a declaration without initialization
 
-    VariableDeclaration(std::string_view name, Expression* value) : name(name), value(value) {}
+    VariableDeclaration(std::string_view name, size_t baseSize, Expression* value) : name(name), baseSize(baseSize), arraySize(1), value(value) {}
+    VariableDeclaration(std::string_view name, size_t baseSize, size_t arraySize, Expression* value) : name(name), baseSize(baseSize), arraySize(arraySize), value(value) {}
 
     void Print(int indent) const override
     {

@@ -49,7 +49,7 @@ public:
 
         m_ast.GenerateCode(stack, m_code, 1);
 
-        std::format_to(std::back_inserter(m_code), "mov rdi, rax\n");
+        std::format_to(std::back_inserter(m_code), "mov rdi, 0\n");
         std::format_to(std::back_inserter(m_code), "mov rax, 60\n");
         std::format_to(std::back_inserter(m_code), "syscall\n");
 

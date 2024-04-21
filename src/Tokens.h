@@ -32,6 +32,8 @@ enum class TokenType
     RPAREN,
     LBRACE,
     RBRACE,
+    LBRACKET,
+    RBRACKET,
 
     COMMA,
     COLON,
@@ -138,6 +140,12 @@ struct std::formatter<TokenType>
             break;
         case TokenType::RBRACE:
             str = "RBRACE";
+            break;
+        case TokenType::LBRACKET:
+            str = "LBRACKET";
+            break;
+        case TokenType::RBRACKET:
+            str = "RBRACKET";
             break;
         case TokenType::COMMA:
             str = "COMMA";

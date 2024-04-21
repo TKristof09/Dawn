@@ -11,10 +11,11 @@ struct Variable
 {
     std::string_view name;
     uint64_t size;
+    uint64_t baseSize;
 
     uint64_t baseOffset = 0;  // offset from rbp, set by the stack
 
-    Variable(std::string_view name, uint64_t size) : name(name), size(size) {}
+    Variable(std::string_view name, uint64_t size, uint64_t baseSize) : name(name), size(size), baseSize(baseSize) {}
 };
 
 
@@ -26,9 +27,9 @@ public:
     {
         m_frames.push_back({cutoff || m_frames.empty() ? 0 : m_frames.back().EndOffset()});
     }
-    void PushVariable(Variable var)
+    Variable PushVariable(Variable var)
     {
-        m_frames.back().Push(var);
+        return m_frames.back().Push(var);
     }
 
     Variable Find(std::string_view name, Location loc)
@@ -54,12 +55,13 @@ private:
     {
     public:
         StackFrame(uint64_t offset) : m_currentOffset(offset) {}
-        void Push(Variable var)
+        Variable Push(Variable var)
         {
             var.baseOffset   = m_currentOffset;
             m_currentOffset += var.size;
             m_variables.push_back(var);
             m_lookup[var.name] = m_variables.size() - 1;
+            return var;
         }
         std::optional<Variable> Find(std::string_view name)
         {

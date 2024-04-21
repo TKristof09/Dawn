@@ -93,17 +93,19 @@ void NumberLiteral::GenerateCode(Stack& stack, std::string& buffer, int indent)
 
 void VariableAccess::GenerateCode(Stack& stack, std::string& buffer, int indent)
 {
-    PrintASMIndented(buffer, indent, ";  Variable Access");
-    Variable var = stack.Find(name, loc);
-    PrintASMIndented(buffer, indent, "mov rax, [rbp - {}]", var.baseOffset);
+    PrintASMIndented(buffer, indent, ";  Variable Access: {}", name);
+    Variable var  = stack.Find(name, loc);
+    size_t offset = index * var.baseSize;
+    PrintASMIndented(buffer, indent, "mov rax, [rbp - {}]", var.baseOffset - offset);
 }
 
 void VariableAssignment::GenerateCode(Stack& stack, std::string& buffer, int indent)
 {
-    PrintASMIndented(buffer, indent, ";  Variable Assignment");
+    PrintASMIndented(buffer, indent, ";  Variable Assignment: {}", name);
     value->GenerateCode(stack, buffer, indent + 1);
-    Variable var = stack.Find(name, loc);
-    PrintASMIndented(buffer, indent, "mov [rbp - {}], rax", var.baseOffset);
+    Variable var  = stack.Find(name, loc);
+    size_t offset = index * var.baseSize;
+    PrintASMIndented(buffer, indent, "mov [rbp - {}], rax", var.baseOffset - offset);
 }
 
 void WhileLoop::GenerateCode(Stack& stack, std::string& buffer, int indent)
@@ -175,12 +177,14 @@ void ExpressionStatement::GenerateCode(Stack& stack, std::string& buffer, int in
 
 void VariableDeclaration::GenerateCode(Stack& stack, std::string& buffer, int indent)
 {
-    PrintASMIndented(buffer, indent, "; variable declaration");
-    stack.PushVariable({name, 8});
-    PrintASMIndented(buffer, indent, "sub rsp, 8");
+    PrintASMIndented(buffer, indent, "; variable declaration: {}", name);
+    // TODO: stack needs to be aligned ta 16 bytes
+    size_t size  = baseSize * arraySize;
+    Variable var = stack.PushVariable({name, size, baseSize});
+    PrintASMIndented(buffer, indent, "sub rsp, {}", size);
     if(value)
     {
         value->GenerateCode(stack, buffer, indent + 1);
-        PrintASMIndented(buffer, indent, "mov [rsp + 8], rax");
+        PrintASMIndented(buffer, indent, "mov [rbp + {}], rax", var.baseOffset);
     }
 }

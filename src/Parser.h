@@ -40,6 +40,9 @@ private:
     ASTNode* ParseExpressionStatement(bool reportSemicolonError = true);
     ASTNode* ParseVariableDeclaration();
 
+    size_t ParseType();
+    size_t ParseIndex();
+
     bool IsEnd();
     Token Peek();
     Token Peek2();
@@ -49,6 +52,7 @@ private:
 
     template<typename T, typename... Args>
     T* MakeNode(Location loc, Args&&... args)
+        requires std::constructible_from<T, Args...>
     {
         T* res   = new T{std::forward<Args>(args)...};
         res->loc = loc;
