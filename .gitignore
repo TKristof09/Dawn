@@ -5,4 +5,5 @@ build
 # ignore files in examples that have no extension (first ignore all files, then unignore all that have eos extension)
 examples/*
 !examples/*.eos
+!examples/*.output
 .vscode/launch.json
