@@ -96,7 +96,7 @@ ASTNode* Parser::ParseAssignment()
         Location loc          = token.loc;
         std::string_view name = m_src.substr(token.start, token.len);
 
-        size_t index = ParseIndex();
+        Expression* index = ParseIndex();
 
         if(Match(TokenType::ASSIGN))
         {
@@ -311,7 +311,7 @@ ASTNode* Parser::ParsePrimary()
         Token token           = Previous();
         Location loc          = token.loc;
         std::string_view name = m_src.substr(token.start, token.len);
-        size_t index          = ParseIndex();
+        Expression* index     = ParseIndex();
         return MakeNode<VariableAccess>(loc, name, index);
     }
 
@@ -370,7 +370,7 @@ ASTNode* Parser::ParseVariableDeclaration()
         }
 
         size_t size      = ParseType();
-        size_t arraySize = ParseIndex();
+        size_t arraySize = ParseArraySize();
 
         Expression* expr = nullptr;
         if(Match(TokenType::ASSIGN))
@@ -422,7 +422,22 @@ size_t Parser::ParseType()
     return baseSize;
 }
 
-size_t Parser::ParseIndex()
+Expression* Parser::ParseIndex()
+{
+    if(Match(TokenType::LBRACKET))
+    {
+        Expression* expr = static_cast<Expression*>(ParseExpression());
+        if(!Match(TokenType::RBRACKET))
+        {
+            std::println(stderr, "{}: Expected ']' after number", Previous().loc);
+            exit(1);
+        }
+        return expr;
+    }
+    return nullptr;
+}
+
+size_t Parser::ParseArraySize()
 {
     size_t index = 0;
     if(Match(TokenType::LBRACKET))

@@ -173,19 +173,22 @@ struct NumberLiteral : Expression
 struct VariableAccess : Expression
 {
     std::string name;
-    size_t index = 0;
+    Expression* index = nullptr;
 
     VariableAccess(std::string_view name) : name(name)
     {
     }
 
-    VariableAccess(std::string_view name, size_t index) : name(name), index(index)
+    VariableAccess(std::string_view name, Expression* index) : name(name), index(index)
     {
     }
 
     void Print(int indent) const override
     {
-        PrintIndented(indent, "VariableAccess {}[{}]", name, index);
+        if(index == nullptr)
+            PrintIndented(indent, "VariableAccess {}", name);
+        else
+            PrintIndented(indent, "VariableAccess {}[]", name);
     }
 
     void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
@@ -194,20 +197,23 @@ struct VariableAccess : Expression
 struct VariableAssignment : Expression
 {
     std::string name;
-    size_t index = 0;
+    Expression* index = nullptr;
     Expression* value;
 
     VariableAssignment(std::string_view name, Expression* value) : name(name), value(value)
     {
     }
 
-    VariableAssignment(std::string_view name, size_t index, Expression* value) : name(name), index(index), value(value)
+    VariableAssignment(std::string_view name, Expression* index, Expression* value) : name(name), index(index), value(value)
     {
     }
 
     void Print(int indent) const override
     {
-        PrintIndented(indent, "VariableAssignment {}[{}]", name, index);
+        if(index == nullptr)
+            PrintIndented(indent, "VariableAssignment {}", name);
+        else
+            PrintIndented(indent, "VariableAssignment {}[]", name);
 
         value->Print(indent + 1);
     }

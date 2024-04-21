@@ -41,7 +41,8 @@ private:
     ASTNode* ParseVariableDeclaration();
 
     size_t ParseType();
-    size_t ParseIndex();
+    Expression* ParseIndex();
+    size_t ParseArraySize();
 
     bool IsEnd();
     Token Peek();

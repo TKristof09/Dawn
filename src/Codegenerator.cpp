@@ -94,18 +94,44 @@ void NumberLiteral::GenerateCode(Stack& stack, std::string& buffer, int indent)
 void VariableAccess::GenerateCode(Stack& stack, std::string& buffer, int indent)
 {
     PrintASMIndented(buffer, indent, ";  Variable Access: {}", name);
-    Variable var  = stack.Find(name, loc);
-    size_t offset = index * var.baseSize;
-    PrintASMIndented(buffer, indent, "mov rax, [rbp - {}]", var.baseOffset - offset);
+    Variable var = stack.Find(name, loc);
+    if(index)
+    {
+        index->GenerateCode(stack, buffer, indent + 1);
+        PrintASMIndented(buffer, indent, "push rax");
+    }
+    if(index)
+    {
+        PrintASMIndented(buffer, indent, "pop rbx");
+        PrintASMIndented(buffer, indent, "mov rax, [rbp - {} + rbx * {}]", var.baseOffset, var.baseSize);
+    }
+    else
+    {
+        PrintASMIndented(buffer, indent, "mov rax, [rbp - {}]", var.baseOffset);
+    }
 }
 
 void VariableAssignment::GenerateCode(Stack& stack, std::string& buffer, int indent)
 {
     PrintASMIndented(buffer, indent, ";  Variable Assignment: {}", name);
+    if(index)
+    {
+        index->GenerateCode(stack, buffer, indent + 1);
+        PrintASMIndented(buffer, indent, "push rax");
+    }
     value->GenerateCode(stack, buffer, indent + 1);
-    Variable var  = stack.Find(name, loc);
-    size_t offset = index * var.baseSize;
-    PrintASMIndented(buffer, indent, "mov [rbp - {}], rax", var.baseOffset - offset);
+    Variable var = stack.Find(name, loc);
+
+
+    if(index)
+    {
+        PrintASMIndented(buffer, indent, "pop rbx");
+        PrintASMIndented(buffer, indent, "mov [rbp - {} + rbx * {}], rax", var.baseOffset, var.baseSize);
+    }
+    else
+    {
+        PrintASMIndented(buffer, indent, "mov [rbp - {}], rax", var.baseOffset);
+    }
 }
 
 void WhileLoop::GenerateCode(Stack& stack, std::string& buffer, int indent)
