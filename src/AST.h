@@ -107,6 +107,7 @@ struct ASTNode
 
     virtual void Print(int indent) const                                     = 0;
     virtual void GenerateCode(Stack& stack, std::string& buffer, int indent) = 0;
+    virtual void GenerateFunctions(Stack& stack, std::string& buffer, int indent) {}
 };
 
 struct AST
@@ -122,6 +123,12 @@ struct AST
     {
         for(auto& statement : statements)
             statement->GenerateCode(stack, buffer, indent);
+    }
+
+    void GenerateFunctions(Stack& stack, std::string& buffer, int indent)
+    {
+        for(auto& statement : statements)
+            statement->GenerateFunctions(stack, buffer, indent);
     }
 };
 
@@ -352,4 +359,24 @@ struct VariableDeclaration : Statement
     }
 
     void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
+};
+
+struct FnDeclaration : Statement
+{
+    std::string name;
+    std::vector<std::pair<std::string, size_t>> parameters;
+    Block* body;
+
+    FnDeclaration(std::string_view name, std::vector<std::pair<std::string, size_t>>&& arguments, Block* body) : name(name), parameters(std::move(arguments)), body(body) {}
+
+    void Print(int indent) const override
+    {
+        PrintIndented(indent, "Function declaration: {}", name);
+        for(const auto& [name, size] : parameters)
+            PrintIndented(indent + 1, "Argument: {} size: {}", name, size);
+        body->Print(indent + 1);
+    }
+
+    void GenerateCode(Stack& stack, std::string& buffer, int indent) override {}
+    void GenerateFunctions(Stack& stack, std::string& buffer, int indent) override;
 };

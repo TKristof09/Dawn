@@ -52,6 +52,10 @@ ASTNode* Parser::ParseStatement(bool reportSemicolonError)
     if(statement)
         return statement;
 
+    statement = static_cast<Statement*>(ParseFnDeclaration());
+    if(statement)
+        return statement;
+
     statement = static_cast<Statement*>(ParseExpressionStatement(reportSemicolonError));
     if(statement)
         return statement;
@@ -430,6 +434,71 @@ ASTNode* Parser::ParseVariableDeclaration()
         else
             return MakeNode<VariableDeclaration>(loc, name, size, expr);
     }
+    return nullptr;
+}
+
+ASTNode* Parser::ParseFnDeclaration()
+{
+    if(Match(TokenType::FUN))
+    {
+        Location loc = Previous().loc;
+
+        if(!Match(TokenType::IDENTIFIER))
+        {
+            std::println(stderr, "{}: Expected identifier for funtion declaration", Previous().loc);
+            exit(1);
+        }
+        Token token           = Previous();
+        std::string_view name = m_src.substr(token.start, token.len);
+
+        if(!Match(TokenType::LPAREN))
+        {
+            std::println(stderr, "{}: Expected '(' after function name", Previous().loc);
+            exit(1);
+        }
+
+        std::vector<std::pair<std::string, size_t>> arguments;
+        if(!Match(TokenType::RPAREN))
+        {
+            while(true)
+            {
+                if(!Match(TokenType::IDENTIFIER))
+                {
+                    std::println(stderr, "{}: Expected identifier for function parameter", Previous().loc);
+                    exit(1);
+                }
+                Token argToken           = Previous();
+                std::string_view argName = m_src.substr(argToken.start, argToken.len);
+
+                if(!Match(TokenType::COLON))
+                {
+                    std::println(stderr, "{}: Expected ':' after function parameter name", Previous().loc);
+                    exit(1);
+                }
+
+                size_t argSize = ParseType();
+                arguments.push_back({std::string(argName), argSize});
+
+                if(Match(TokenType::RPAREN))
+                    break;
+                if(!Match(TokenType::COMMA))
+                {
+                    std::println(stderr, "{}: Expected ',' or ')' after function parameter", Previous().loc);
+                    exit(1);
+                }
+            }
+        }
+
+        Block* body = static_cast<Block*>(ParseBlock());
+        if(!body)
+        {
+            std::println(stderr, "{}: Expected block expression for function body", Peek().loc);
+            exit(1);
+        }
+
+        return MakeNode<FnDeclaration>(loc, name, std::move(arguments), body);
+    }
+
     return nullptr;
 }
 

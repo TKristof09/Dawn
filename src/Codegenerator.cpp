@@ -13,7 +13,26 @@ static uint32_t GetLabelNum()
     static uint32_t labelNr = 0;
     return labelNr++;
 }
-
+std::string_view GetCallRegister(size_t i)
+{
+    switch(i)
+    {
+    case 0:
+        return "rdi";
+    case 1:
+        return "rsi";
+    case 2:
+        return "rdx";
+    case 3:
+        return "rcx";
+    case 4:
+        return "r8";
+    case 5:
+        return "r9";
+    default:
+        assert(false && "Only 6 arguments go in registers, rest should go on the stack");
+    }
+}
 
 void BinaryExpression::GenerateCode(Stack& stack, std::string& buffer, int indent)
 {
@@ -112,13 +131,9 @@ void VariableAccess::GenerateCode(Stack& stack, std::string& buffer, int indent)
     if(index)
     {
         index->GenerateCode(stack, buffer, indent + 1);
-        PrintASMIndented(buffer, indent, "push rax");
-    }
-    if(index)
-    {
-        PrintASMIndented(buffer, indent, "pop rbx");
+
         // TODO: this kind of adressing  only works with 1,2,4,8 sizes
-        PrintASMIndented(buffer, indent, "mov rax, [rbp - {} + rbx * {}]", var.baseOffset, var.baseSize);
+        PrintASMIndented(buffer, indent, "mov rax, [rbp - {} + rax * {}]", var.baseOffset, var.baseSize);
     }
     else
     {
@@ -205,12 +220,24 @@ void FnCall::GenerateCode(Stack& stack, std::string& buffer, int indent)
 {
     PrintASMIndented(buffer, indent, "; fn call");
 
-    // TODO: handle register allocations correctly, for now this will just keep overwriting rax
-    for(auto* argument : arguments)
-        argument->GenerateCode(stack, buffer, indent + 1);
 
-    PrintASMIndented(buffer, indent, "mov rdi, rax");
-    PrintASMIndented(buffer, indent, "call {}", name);
+    stack.PushFrame();
+    for(int i = 0; i < arguments.size(); i++)
+    {
+        arguments[i]->GenerateCode(stack, buffer, indent + 1);
+
+        Variable var = stack.PushVariable({"arg" + std::to_string(i), 8, 8});
+        PrintASMIndented(buffer, indent, "mov [rbp - {}], rax", var.baseOffset);
+    }
+
+    for(int i = 0; i < arguments.size(); i++)
+    {
+        PrintASMIndented(buffer, indent, "mov {}, [rbp - {}]", GetCallRegister(i), stack.Find("arg" + std::to_string(i), loc).baseOffset);
+    }
+    stack.PopFrame();
+
+    Variable var = stack.Find(name, loc);
+    PrintASMIndented(buffer, indent, "call {}", var.name);
 }
 
 void ExpressionStatement::GenerateCode(Stack& stack, std::string& buffer, int indent)
@@ -230,4 +257,26 @@ void VariableDeclaration::GenerateCode(Stack& stack, std::string& buffer, int in
         value->GenerateCode(stack, buffer, indent + 1);
         PrintASMIndented(buffer, indent, "mov [rbp - {}], rax", var.baseOffset);
     }
+}
+
+
+void FnDeclaration::GenerateFunctions(Stack& stack, std::string& buffer, int indent)
+{
+    stack.PushVariable({name, 0, 0});
+    PrintASMIndented(buffer, indent, "; fn declaration: {}", name);
+    PrintASMIndented(buffer, indent, "{}:", name);
+    PrintASMIndented(buffer, indent, "enter 0, 0");  // enter = push rbp; mov rbp, rsp, it can also allocate space for local variables but we don't do that yet so use 0, 0
+    stack.PushFrame(true);
+    for(int i = 0; i < parameters.size(); i++)
+    {
+        size_t size  = parameters[i].second;
+        Variable var = stack.PushVariable({parameters[i].first, size, size});  // no array parameters for now
+
+        PrintASMIndented(buffer, indent, "sub rsp, {}", size);
+        PrintASMIndented(buffer, indent, "mov [rbp - {}], {}", var.baseOffset, GetCallRegister(i));
+    }
+    body->GenerateCode(stack, buffer, indent);
+    stack.PopFrame();
+    PrintASMIndented(buffer, indent, "leave");  // leave = mov rsp, rbp; pop rbp
+    PrintASMIndented(buffer, indent, "ret");
 }

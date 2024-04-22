@@ -7,7 +7,8 @@ public:
     CodeGenerator(const AST& ast) : m_ast(ast)
     {
         Stack stack;
-        stack.PushFrame();  // TODO: global frame is temporary, but still want global variables later
+
+        stack.PushVariable({"print", 0, 0});
 
         std::format_to(std::back_inserter(m_code), "format ELF64 executable 3\n");
         std::format_to(std::back_inserter(m_code), "segment readable executable\n");
@@ -43,6 +44,7 @@ public:
         std::format_to(std::back_inserter(m_code), "        add     rsp, 40\n");
         std::format_to(std::back_inserter(m_code), "        ret\n");
 
+        m_ast.GenerateFunctions(stack, m_code, 1);
 
         std::format_to(std::back_inserter(m_code), "start:\n");
         std::format_to(std::back_inserter(m_code), "mov rbp, rsp\n");

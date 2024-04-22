@@ -58,6 +58,7 @@ enum class TokenType
     CONTINUE,
 
     LET,
+    FUN,
 
 
     END_FILE
@@ -205,6 +206,9 @@ struct std::formatter<TokenType>
             break;
         case TokenType::LET:
             str = "LET";
+            break;
+        case TokenType::FUN:
+            str = "FUN";
             break;
         case TokenType::END_FILE:
             str = "END_FILE";

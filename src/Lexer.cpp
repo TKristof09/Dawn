@@ -13,6 +13,7 @@ static const std::unordered_map<std::string_view, TokenType> reservedKeywords = 
     {   "break",    TokenType::BREAK},
     {"continue", TokenType::CONTINUE},
     {     "let",      TokenType::LET},
+    {     "fun",      TokenType::FUN},
 };
 void Lexer::Lex()
 {

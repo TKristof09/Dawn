@@ -42,6 +42,7 @@ private:
 
     ASTNode* ParseExpressionStatement(bool reportSemicolonError = true);
     ASTNode* ParseVariableDeclaration();
+    ASTNode* ParseFnDeclaration();
 
     size_t ParseType();
     Expression* ParseIndex();
