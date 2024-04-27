@@ -335,7 +335,7 @@ ASTNode* Parser::ParseFnCall()
         }
         else
         {
-            std::println(stderr, "{}: Expected closing paranthesis for funtion arguments", Previous().loc);
+            std::println(stderr, "{}: Expected closing paranthesis for funtion arguments", Peek().loc);
             exit(1);
         }
     }

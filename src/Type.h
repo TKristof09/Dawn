@@ -130,7 +130,7 @@ struct Printer
 {
     constexpr std::string operator()(const Types::NoneType&) const
     {
-        return "NoneType";
+        return "()";
     }
     constexpr std::string operator()(const Types::Int&) const
     {

@@ -32,9 +32,9 @@ void WriteFile(const std::string& path, std::string_view content)
     }
     stream << content;
 }
-int main()
+int main(int argc, char** argv)
 {
-    std::string file = "examples/test.eos";
+    std::string file = argv[1];
     std::string src  = ReadFile(file);
     Lexer lexer(file, src);
     lexer.Lex();

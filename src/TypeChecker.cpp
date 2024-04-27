@@ -18,23 +18,54 @@ void TypeChecker::Visit(AST& node)
 void TypeChecker::Visit(UnaryExpression& node)
 {
     node.expr->Accept(this);
-    if(std::holds_alternative<Int>(m_currentType))
+    if(!std::holds_alternative<Int>(m_currentType))
     {
         std::println(stderr, "{}: Unary expression must be of type int, got {}", node.expr->loc, m_currentType);
+    }
+    if(node.op == Op::NOT)
+    {
+        m_currentType = Bool();
+    }
+    else if(node.op == Op::U_MINUS)
+    {
+        m_currentType = Int();
     }
 }
 
 void TypeChecker::Visit(BinaryExpression& node)
 {
     node.left->Accept(this);
-    if(std::holds_alternative<Int>(m_currentType))
+    if(!std::holds_alternative<Int>(m_currentType))
     {
         std::println(stderr, "{}: Binary expression operands must be of type int, got {}", node.left->loc, m_currentType);
     }
     node.right->Accept(this);
-    if(std::holds_alternative<Int>(m_currentType))
+    if(!std::holds_alternative<Int>(m_currentType))
     {
         std::println(stderr, "{}: Unary expression operands must be of type int, got {}", node.right->loc, m_currentType);
+    }
+
+    switch(node.op)
+    {
+    case Op::PLUS:
+    case Op::MINUS:
+    case Op::MUL:
+    case Op::DIV:
+    case Op::LSH:
+    case Op::RSH:
+    case Op::BAND:
+    case Op::BOR:
+        m_currentType = Int();
+        break;
+
+    case Op::LT:
+    case Op::GT:
+    case Op::LEQ:
+    case Op::GEQ:
+    case Op::EQUAL:
+    case Op::NOT_EQUAL:
+        m_currentType = Bool();
+        break;
     }
 }
 
@@ -45,14 +76,29 @@ void TypeChecker::Visit(NumberLiteral& node)
 
 void TypeChecker::Visit(VariableAccess& node)
 {
-    m_currentType = m_stack.Find(node.name, node.loc);
+    if(node.index)
+    {
+        m_currentType = std::get<Array>(m_stack.Find(node.name, node.loc)).type[0];
+    }
+    else
+    {
+        m_currentType = m_stack.Find(node.name, node.loc);
+    }
 }
 
 void TypeChecker::Visit(VariableAssignment& node)
 {
     node.value->Accept(this);
 
-    Type t = m_stack.Find(node.name, node.loc);
+    Type t;
+    if(node.index)
+    {
+        t = std::get<Array>(m_stack.Find(node.name, node.loc)).type[0];
+    }
+    else
+    {
+        t = m_stack.Find(node.name, node.loc);
+    }
     if(m_currentType.index() != t.index())
     {
         std::println(stderr, "{}: Expected {} type for variable assignment but got {}", node.value->loc, t, m_currentType);
@@ -147,11 +193,14 @@ void TypeChecker::Visit(VariableDeclaration& node)
         return;
     }
 
-    node.value->Accept(this);
-
-    if(m_currentType.index() != node.type.index())
+    if(node.value)
     {
-        std::println(stderr, "{}: Expected {} type for variable initialisation but got {}", node.value->loc, node.type, m_currentType);
+        node.value->Accept(this);
+
+        if(m_currentType.index() != node.type.index())
+        {
+            std::println(stderr, "{}: Expected {} type for variable initialisation but got {}", node.value->loc, node.type, m_currentType);
+        }
     }
     m_stack.Push(node.name, node.type);
 
@@ -174,7 +223,16 @@ void TypeChecker::Visit(FnDeclaration& node)
 
     if(m_currentType.index() != node.type.returnType[0].index())
     {
-        std::println(stderr, "{}: Expected {} for function return value type but got {}", node.loc, node.type.returnType[0], m_currentType);
+        Location loc = node.loc;
+        if(node.body->expr)
+        {
+            loc = node.body->expr->loc;
+        }
+        else if(!node.body->statements.empty())
+        {
+            loc = node.body->statements.back()->loc;
+        }
+        std::println(stderr, "{}: Expected {} for function return value type but got {}", loc, node.type.returnType[0], m_currentType);
     }
 
 
