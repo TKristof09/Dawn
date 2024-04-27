@@ -1,9 +1,9 @@
-fun testFn(x: i64, y: i64)
+fun testFn(x: i64, y: i64) -> bool
 {
     print(x);
     print(y);
 };
 
-let y:i64 = 69;
+let y:bool = 69;
 let x:i64 = 420;
-testFn(y, x);
+testFn(y, x, x);

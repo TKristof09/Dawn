@@ -1,8 +1,10 @@
 #pragma once
 #include "Stack.h"
+#include <cassert>
 #include <print>
 #include <vector>
 #include "Location.h"
+#include "Type.h"
 
 enum class Op
 {
@@ -335,10 +337,11 @@ struct VariableDeclaration : Statement
     std::string name;
     size_t baseSize;
     size_t arraySize;
+    Type type;
     Expression* value;  // nullptr if it's a declaration without initialization
 
-    VariableDeclaration(std::string_view name, size_t baseSize, Expression* value) : name(name), baseSize(baseSize), arraySize(1), value(value) {}
-    VariableDeclaration(std::string_view name, size_t baseSize, size_t arraySize, Expression* value) : name(name), baseSize(baseSize), arraySize(arraySize), value(value) {}
+    VariableDeclaration(std::string_view name, Type t, size_t baseSize, Expression* value) : name(name), baseSize(baseSize), arraySize(1), type(t), value(value) {}
+    VariableDeclaration(std::string_view name, Type t, size_t baseSize, size_t arraySize, Expression* value) : name(name), baseSize(baseSize), arraySize(arraySize), type(t), value(value) {}
 
 
     void Accept(VisitorBase* visitor) override
@@ -352,8 +355,9 @@ struct FnDeclaration : Statement
     std::string name;
     std::vector<std::pair<std::string, size_t>> parameters;
     Block* body;
+    Types::Function type;
 
-    FnDeclaration(std::string_view name, std::vector<std::pair<std::string, size_t>>&& arguments, Block* body) : name(name), parameters(std::move(arguments)), body(body) {}
+    FnDeclaration(std::string_view name, Types::Function t, std::vector<std::pair<std::string, size_t>>&& arguments, Block* body) : name(name), parameters(std::move(arguments)), body(body), type(t) {}
 
 
     void Accept(VisitorBase* visitor) override

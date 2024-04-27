@@ -17,7 +17,7 @@ public:
     {
         for(auto& token : m_tokens)
         {
-            std::println("{}", token.type);
+            std::println("{}:{}", token.loc, token.type);
         }
     }
 
@@ -45,16 +45,17 @@ private:
     inline Token MakeToken(TokenType type)
     {
         return {
-            type, m_start, m_current - m_start, {m_filename, m_line, m_col}
-        };
+            type, m_start, m_current - m_start, m_loc};
     }
 
     std::string_view m_src;
     std::string_view m_filename;
     size_t m_current = 0;
-    size_t m_line    = 1;
     size_t m_start   = 0;
-    size_t m_col     = 0;
+    size_t m_line    = 1;
+    size_t m_col     = 1;
+
+    Location m_loc;
 
     std::vector<Token> m_tokens;
 };

@@ -413,7 +413,8 @@ ASTNode* Parser::ParseVariableDeclaration()
             exit(1);
         }
 
-        size_t size      = ParseType();
+        Type type        = ParseType();
+        size_t size      = ParseTypeSize(type);
         size_t arraySize = ParseArraySize();
 
         Expression* expr = nullptr;
@@ -427,9 +428,11 @@ ASTNode* Parser::ParseVariableDeclaration()
             exit(1);
         }
         if(arraySize)
-            return MakeNode<VariableDeclaration>(loc, name, size, arraySize, expr);
+        {
+            return MakeNode<VariableDeclaration>(loc, name, Types::Array({{type}}), size, arraySize, expr);
+        }
         else
-            return MakeNode<VariableDeclaration>(loc, name, size, expr);
+            return MakeNode<VariableDeclaration>(loc, name, type, size, expr);
     }
     return nullptr;
 }
@@ -439,6 +442,7 @@ ASTNode* Parser::ParseFnDeclaration()
     if(Match(TokenType::FUN))
     {
         Location loc = Previous().loc;
+        Types::Function type;
 
         if(!Match(TokenType::IDENTIFIER))
         {
@@ -473,7 +477,11 @@ ASTNode* Parser::ParseFnDeclaration()
                     exit(1);
                 }
 
-                size_t argSize = ParseType();
+
+                Type t = ParseType();
+                type.parameters.push_back(t);
+
+                size_t argSize = ParseTypeSize(t);
                 arguments.push_back({std::string(argName), argSize});
 
                 if(Match(TokenType::RPAREN))
@@ -486,6 +494,17 @@ ASTNode* Parser::ParseFnDeclaration()
             }
         }
 
+        if(Match(TokenType::ARROW))
+        {
+            type.returnType.push_back(ParseType());
+        }
+        else
+        {
+            type.returnType.push_back(Types::NoneType());
+        }
+
+        // TODO: return type
+
         Block* body = static_cast<Block*>(ParseBlock());
         if(!body)
         {
@@ -493,13 +512,13 @@ ASTNode* Parser::ParseFnDeclaration()
             exit(1);
         }
 
-        return MakeNode<FnDeclaration>(loc, name, std::move(arguments), body);
+        return MakeNode<FnDeclaration>(loc, name, type, std::move(arguments), body);
     }
 
     return nullptr;
 }
 
-size_t Parser::ParseType()
+Type Parser::ParseType()
 {
     if(!Match(TokenType::IDENTIFIER))
     {
@@ -513,22 +532,39 @@ size_t Parser::ParseType()
 
     if(typeName.starts_with("u") || typeName.starts_with("i"))
     {
-        if(typeName.ends_with("8"))
-            baseSize = 1;
-        else if(typeName.ends_with("16"))
-            baseSize = 2;
-        else if(typeName.ends_with("32"))
-            baseSize = 4;
-        else if(typeName.ends_with("64"))
-            baseSize = 8;
+        return Types::Int();
+    }
+    else if(typeName == "str")
+    {
+        return Types::String();
+    }
+    else if(typeName == "bool")
+    {
+        return Types::Bool();
     }
     else
     {
         std::println(stderr, "{}: Unknown type {}", type.loc, typeName);
         exit(1);
     }
+}
+size_t Parser::ParseTypeSize(Type t)
+{
+    if(std::holds_alternative<Types::Int>(t))
+    {
+        return 8;
+    }
+    else if(std::holds_alternative<Types::String>(t))
+    {
+        return 8;
+    }
+    else if(std::holds_alternative<Types::Bool>(t))
+    {
+        return 1;
+    }
 
-    return baseSize;
+    std::println(stderr, "{}: Unknown type", Previous().loc);
+    exit(1);
 }
 
 Expression* Parser::ParseIndex()

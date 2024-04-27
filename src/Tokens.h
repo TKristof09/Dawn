@@ -60,6 +60,8 @@ enum class TokenType
     LET,
     FUN,
 
+    ARROW,
+
 
     END_FILE
 };
@@ -209,6 +211,9 @@ struct std::formatter<TokenType>
             break;
         case TokenType::FUN:
             str = "FUN";
+            break;
+        case TokenType::ARROW:
+            str = "ARROW";
             break;
         case TokenType::END_FILE:
             str = "END_FILE";

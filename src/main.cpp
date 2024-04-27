@@ -6,6 +6,7 @@
 #include "Lexer.h"
 #include "Parser.h"
 #include "Codegenerator.h"
+#include "TypeChecker.h"
 
 
 std::string ReadFile(const std::string& path)
@@ -33,13 +34,16 @@ void WriteFile(const std::string& path, std::string_view content)
 }
 int main()
 {
-    std::string file = "examples/test";
-    std::string src  = ReadFile(file + ".eos");
+    std::string file = "examples/test.eos";
+    std::string src  = ReadFile(file);
     Lexer lexer(file, src);
     lexer.Lex();
     // lexer.Print();
     Parser parser(src, lexer.Tokens());
     parser.Parse();
+    // AstPrinter printer;
+    // parser.GetAST().Visit(&printer);
+    TypeChecker typeChecker(parser.GetAST());
     CodeGenerator codegen(parser.GetAST());
     WriteFile(file + ".asm", codegen.GetCode());
 

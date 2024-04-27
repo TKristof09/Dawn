@@ -28,6 +28,7 @@ Token Lexer::Next()
     SkipWhiteSpace();
 
     m_start = m_current;
+    m_loc   = {m_filename, m_line, m_col};
     if(IsEnd())
         return MakeToken(TokenType::END_FILE);
 
@@ -44,7 +45,10 @@ Token Lexer::Next()
     case '+':
         return MakeToken(TokenType::PLUS);
     case '-':
-        return MakeToken(TokenType::MINUS);
+        if(Match('>'))
+            return MakeToken(TokenType::ARROW);
+        else
+            return MakeToken(TokenType::MINUS);
     case '*':
         return MakeToken(TokenType::MUL);
     case '/':
@@ -121,7 +125,7 @@ void Lexer::SkipWhiteSpace()
         case '\n':
             Advance();
             m_line++;
-            m_col = 0;
+            m_col = 1;
             break;
 
         case '/':
