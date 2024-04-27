@@ -7,3 +7,4 @@ examples/*
 !examples/*.eos
 !examples/*.output
 .vscode/launch.json
+.vscode/settings.json

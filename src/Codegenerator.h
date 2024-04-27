@@ -1,74 +1,112 @@
 #pragma once
 #include "AST.h"
 
-class CodeGenerator
+class CodeGenerator : public VisitorBase
 {
 public:
     CodeGenerator(const AST& ast) : m_ast(ast)
     {
-        Stack stack;
+        m_stack.PushVariable({"print", 0, 0});
 
-        stack.PushVariable({"print", 0, 0});
+        PrintASMNoIndent("format ELF64 executable 3");
+        PrintASMNoIndent("segment readable executable");
+        PrintASMNoIndent("entry start");
 
-        std::format_to(std::back_inserter(m_code), "format ELF64 executable 3\n");
-        std::format_to(std::back_inserter(m_code), "segment readable executable\n");
-        std::format_to(std::back_inserter(m_code), "entry start\n");
+        PrintASMLabel("print:");
+        PrintASM("mov     r8, 7378697629483820647");
+        PrintASM("sub     rsp, 40");
+        PrintASM("mov     BYTE [rsp+31], 10");
+        PrintASM("lea     rcx, [rsp+30]");
+        PrintASMLabel(".L2:");
+        PrintASM("mov     rax, rdi");
+        PrintASM("mov     rsi, rcx");
+        PrintASM("sub     rcx, 1");
+        PrintASM("imul    r8");
+        PrintASM("mov     rax, rdi");
+        PrintASM("sar     rax, 63");
+        PrintASM("sar     rdx, 2");
+        PrintASM("sub     rdx, rax");
+        PrintASM("lea     rax, [rdx+rdx*4]");
+        PrintASM("add     rax, rax");
+        PrintASM("sub     rdi, rax");
+        PrintASM("add     edi, 48");
+        PrintASM("mov     BYTE [rcx+1], dil");
+        PrintASM("mov     rdi, rdx");
+        PrintASM("test    rdx, rdx");
+        PrintASM("jne     .L2");
+        PrintASM("lea     rdx, [rsp+32]");
+        PrintASM("mov     edi, 1");
+        PrintASM("sub     rdx, rsi");
+        PrintASM("mov     rax, 1");
+        PrintASM("syscall");
+        PrintASM("add     rsp, 40");
+        PrintASM("ret");
 
-        std::format_to(std::back_inserter(m_code), "print:\n");
-        std::format_to(std::back_inserter(m_code), "        mov     r8, 7378697629483820647\n");
-        std::format_to(std::back_inserter(m_code), "        sub     rsp, 40\n");
-        std::format_to(std::back_inserter(m_code), "        mov     BYTE [rsp+31], 10\n");
-        std::format_to(std::back_inserter(m_code), "        lea     rcx, [rsp+30]\n");
-        std::format_to(std::back_inserter(m_code), ".L2:\n");
-        std::format_to(std::back_inserter(m_code), "        mov     rax, rdi\n");
-        std::format_to(std::back_inserter(m_code), "        mov     rsi, rcx\n");
-        std::format_to(std::back_inserter(m_code), "        sub     rcx, 1\n");
-        std::format_to(std::back_inserter(m_code), "        imul    r8\n");
-        std::format_to(std::back_inserter(m_code), "        mov     rax, rdi\n");
-        std::format_to(std::back_inserter(m_code), "        sar     rax, 63\n");
-        std::format_to(std::back_inserter(m_code), "        sar     rdx, 2\n");
-        std::format_to(std::back_inserter(m_code), "        sub     rdx, rax\n");
-        std::format_to(std::back_inserter(m_code), "        lea     rax, [rdx+rdx*4]\n");
-        std::format_to(std::back_inserter(m_code), "        add     rax, rax\n");
-        std::format_to(std::back_inserter(m_code), "        sub     rdi, rax\n");
-        std::format_to(std::back_inserter(m_code), "        add     edi, 48\n");
-        std::format_to(std::back_inserter(m_code), "        mov     BYTE [rcx+1], dil\n");
-        std::format_to(std::back_inserter(m_code), "        mov     rdi, rdx\n");
-        std::format_to(std::back_inserter(m_code), "        test    rdx, rdx\n");
-        std::format_to(std::back_inserter(m_code), "        jne     .L2\n");
-        std::format_to(std::back_inserter(m_code), "        lea     rdx, [rsp+32]\n");
-        std::format_to(std::back_inserter(m_code), "        mov     edi, 1\n");
-        std::format_to(std::back_inserter(m_code), "        sub     rdx, rsi\n");
-        std::format_to(std::back_inserter(m_code), "        mov     rax, 1\n");
-        std::format_to(std::back_inserter(m_code), "        syscall\n");
-        std::format_to(std::back_inserter(m_code), "        add     rsp, 40\n");
-        std::format_to(std::back_inserter(m_code), "        ret\n");
+        // m_ast.GenerateFunctions(stack, m_code, 1);
 
-        m_ast.GenerateFunctions(stack, m_code, 1);
+        PrintASM("start:");
+        PrintASM("mov rbp, rsp");
 
-        std::format_to(std::back_inserter(m_code), "start:\n");
-        std::format_to(std::back_inserter(m_code), "mov rbp, rsp\n");
+        m_ast.Visit(this);
 
-        m_ast.GenerateCode(stack, m_code, 1);
+        PrintASM("mov rdi, 0");
+        PrintASM("mov rax, 60");
+        PrintASM("syscall");
 
-        std::format_to(std::back_inserter(m_code), "mov rdi, 0\n");
-        std::format_to(std::back_inserter(m_code), "mov rax, 60\n");
-        std::format_to(std::back_inserter(m_code), "syscall\n");
-
-        std::format_to(std::back_inserter(m_code), "segment readable writable\n");
+        PrintASMNoIndent("segment readable writable");
     }
 
     std::string_view GetCode() const { return m_code; }
 
+    void Visit(AST& node) override;
+    void Visit(UnaryExpression& node) override;
+    void Visit(BinaryExpression& node) override;
+    void Visit(NumberLiteral& node) override;
+    void Visit(VariableAccess& node) override;
+    void Visit(VariableAssignment& node) override;
+    void Visit(Block& node) override;
+    void Visit(IfElse& node) override;
+    void Visit(WhileLoop& node) override;
+    void Visit(FnCall& node) override;
+    void Visit(ExpressionStatement& node) override;
+    void Visit(VariableDeclaration& node) override;
+    void Visit(FnDeclaration& node) override;
+
 private:
     AST m_ast;
     std::string m_code;
+    std::back_insert_iterator<std::string> m_inserter = std::back_inserter(m_code);
+    int m_indent                                      = 0;
+    uint32_t m_labelNr                                = 0;
+    Stack m_stack;
+
+    template<typename... Args>
+    constexpr void PrintASM(std::format_string<Args...> format_str, Args&&... args)
+    {
+        std::format_to(m_inserter, "        ");
+        std::format_to(m_inserter, format_str, std::forward<Args>(args)...);
+        std::format_to(m_inserter, "\n");
+    }
+
+    template<typename... Args>
+    constexpr void PrintASMNoIndent(std::format_string<Args...> format_str, Args&&... args)
+    {
+        std::format_to(m_inserter, format_str, std::forward<Args>(args)...);
+        std::format_to(m_inserter, "\n");
+    }
+    template<typename... Args>
+    constexpr void PrintASMLabel(std::format_string<Args...> format_str, Args&&... args)
+    {
+        std::format_to(m_inserter, format_str, std::forward<Args>(args)...);
+        std::format_to(m_inserter, "\n");
+    }
+    void PrintASMLabel(int labelNum)
+    {
+        std::format_to(m_inserter, ".L{}:\n", labelNum);
+    }
+
+    uint32_t GetLabelNum()
+    {
+        return m_labelNr++;
+    }
 };
-template<typename... Args>
-static constexpr void PrintASMIndented(std::string& buffer, int indent, std::format_string<Args...> format_str, Args&&... args)
-{
-    auto inserter = std::back_inserter(buffer);
-    std::format_to(inserter, "{:{}}", "", indent * 4);
-    std::format_to(inserter, format_str, std::forward<Args>(args)...);
-    std::format_to(inserter, "\n");
-}

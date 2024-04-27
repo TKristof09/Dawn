@@ -3,16 +3,6 @@
 #include "Stack.h"
 #include <cassert>
 
-static void PrintASMLabel(std::string& buffer, int labelNum)
-{
-    std::format_to(std::back_inserter(buffer), ".L{}:\n", labelNum);
-}
-
-static uint32_t GetLabelNum()
-{
-    static uint32_t labelNr = 0;
-    return labelNr++;
-}
 std::string_view GetCallRegister(size_t i)
 {
     switch(i)
@@ -34,78 +24,84 @@ std::string_view GetCallRegister(size_t i)
     }
 }
 
-void BinaryExpression::GenerateCode(Stack& stack, std::string& buffer, int indent)
+void CodeGenerator::Visit(AST& node)
 {
-    PrintASMIndented(buffer, indent, ";  Binary expression {}", op);
-    left->GenerateCode(stack, buffer, indent + 1);
-    PrintASMIndented(buffer, indent, "push rax");
-    right->GenerateCode(stack, buffer, indent + 1);
-    PrintASMIndented(buffer, indent, "mov rbx, rax");
-    PrintASMIndented(buffer, indent, "pop rax");
-    switch(op)
+    for(auto* statement : node.statements)
+        statement->Accept(this);
+}
+
+void CodeGenerator::Visit(BinaryExpression& node)
+{
+    PrintASM(";  Binary expression {}", node.op);
+    node.left->Accept(this);
+    PrintASM("push rax");
+    node.right->Accept(this);
+    PrintASM("mov rbx, rax");
+    PrintASM("pnode.op rax");
+    switch(node.op)
     {
     case Op::PLUS:
-        PrintASMIndented(buffer, indent, "add rax, rbx");
+        PrintASM("add rax, rbx");
         break;
     case Op::MINUS:
-        PrintASMIndented(buffer, indent, "sub rax, rbx");
+        PrintASM("sub rax, rbx");
         break;
     case Op::MUL:
-        PrintASMIndented(buffer, indent, "imul rax, rbx");
+        PrintASM("imul rax, rbx");
         break;
     case Op::DIV:
-        PrintASMIndented(buffer, indent, "xor rdx, rdx");
-        PrintASMIndented(buffer, indent, "div rbx");  // TODO: this also gives remainder, so look into that in the future
+        PrintASM("xor rdx, rdx");
+        PrintASM("div rbx");  // TODO: this also gives remainder, so look into that in the future
         break;
     case Op::LSH:
-        PrintASMIndented(buffer, indent, "mov rcx, rbx");
-        PrintASMIndented(buffer, indent, "shl rax, cl");
+        PrintASM("mov rcx, rbx");
+        PrintASM("shl rax, cl");
         break;
     case Op::RSH:
-        PrintASMIndented(buffer, indent, "mov cl, bl");
-        PrintASMIndented(buffer, indent, "sar rax, cl");
+        PrintASM("mov cl, bl");
+        PrintASM("sar rax, cl");
         break;
     case Op::BAND:
-        PrintASMIndented(buffer, indent, "and rax, rbx");
+        PrintASM("and rax, rbx");
         break;
     case Op::BOR:
-        PrintASMIndented(buffer, indent, "or rax, rbx");
+        PrintASM("or rax, rbx");
         break;
 
     // TODO: the register needs to be cleaned if we want to use the whole register (eg. casting the result into an int instead of bool) since `set__` only sets the first 8bits of it
     case Op::EQUAL:
-        PrintASMIndented(buffer, indent, "cmp rax, rbx");
-        PrintASMIndented(buffer, indent, "sete al");
+        PrintASM("cmp rax, rbx");
+        PrintASM("sete al");
         break;
     case Op::NOT_EQUAL:
-        PrintASMIndented(buffer, indent, "cmp rax, rbx");
-        PrintASMIndented(buffer, indent, "setne al");
+        PrintASM("cmp rax, rbx");
+        PrintASM("setne al");
         break;
     case Op::GT:
-        PrintASMIndented(buffer, indent, "cmp rax, rbx");
-        PrintASMIndented(buffer, indent, "seta al");
+        PrintASM("cmp rax, rbx");
+        PrintASM("seta al");
         break;
     case Op::LT:
-        PrintASMIndented(buffer, indent, "cmp rax, rbx");
-        PrintASMIndented(buffer, indent, "setb al");
+        PrintASM("cmp rax, rbx");
+        PrintASM("setb al");
         break;
     case Op::GEQ:
-        PrintASMIndented(buffer, indent, "cmp rax, rbx");
-        PrintASMIndented(buffer, indent, "setae al");
+        PrintASM("cmp rax, rbx");
+        PrintASM("setae al");
         break;
     case Op::LEQ:
-        PrintASMIndented(buffer, indent, "cmp rax, rbx");
-        PrintASMIndented(buffer, indent, "setbe al");
+        PrintASM("cmp rax, rbx");
+        PrintASM("setbe al");
         break;
     }
 }
-void UnaryExpression::GenerateCode(Stack& stack, std::string& buffer, int indent)
+void CodeGenerator::Visit(UnaryExpression& node)
 {
-    expr->GenerateCode(stack, buffer, indent + 1);
-    switch(op)
+    node.expr->Accept(this);
+    switch(node.op)
     {
     case Op::U_MINUS:
-        PrintASMIndented(buffer, indent, "neg rax");
+        PrintASM("neg rax");
         break;
     // TODO: this is a bitwise not, so not(0) = 255, in the future we probably want to make it into a logical not
     //      it also doesn't set the EFLAGS for conditional insructions
@@ -113,170 +109,170 @@ void UnaryExpression::GenerateCode(Stack& stack, std::string& buffer, int indent
     // xor rax, -1
     // and rax, 1
     case Op::NOT:
-        PrintASMIndented(buffer, indent, "not rax");
+        PrintASM("not rax");
         break;
     }
 }
 
-void NumberLiteral::GenerateCode(Stack& stack, std::string& buffer, int indent)
+void CodeGenerator::Visit(NumberLiteral& node)
 {
-    PrintASMIndented(buffer, indent, ";  Number Literal");
-    PrintASMIndented(buffer, indent, "mov rax, {}", value);
+    PrintASM(";  Number Literal");
+    PrintASM("mov rax, {}", node.value);
 }
 
-void VariableAccess::GenerateCode(Stack& stack, std::string& buffer, int indent)
+void CodeGenerator::Visit(VariableAccess& node)
 {
-    PrintASMIndented(buffer, indent, ";  Variable Access: {}", name);
-    Variable var = stack.Find(name, loc);
-    if(index)
+    PrintASM(";  Variable Access: {}", node.name);
+    Variable var = m_stack.Find(node.name, node.loc);
+    if(node.index)
     {
-        index->GenerateCode(stack, buffer, indent + 1);
+        node.index->Accept(this);
 
         // TODO: this kind of adressing  only works with 1,2,4,8 sizes
-        PrintASMIndented(buffer, indent, "mov rax, [rbp - {} + rax * {}]", var.baseOffset, var.baseSize);
+        PrintASM("mov rax, [rbp - {} + rax * {}]", var.baseOffset, var.baseSize);
     }
     else
     {
-        PrintASMIndented(buffer, indent, "mov rax, [rbp - {}]", var.baseOffset);
+        PrintASM("mov rax, [rbp - {}]", var.baseOffset);
     }
 }
 
-void VariableAssignment::GenerateCode(Stack& stack, std::string& buffer, int indent)
+void CodeGenerator::Visit(VariableAssignment& node)
 {
-    PrintASMIndented(buffer, indent, ";  Variable Assignment: {}", name);
-    if(index)
+    PrintASM(";  Variable Assignment: {}", node.name);
+    if(node.index)
     {
-        index->GenerateCode(stack, buffer, indent + 1);
-        PrintASMIndented(buffer, indent, "push rax");
+        node.index->Accept(this);
+        PrintASM("push rax");
     }
-    value->GenerateCode(stack, buffer, indent + 1);
-    Variable var = stack.Find(name, loc);
+    node.value->Accept(this);
+    Variable var = m_stack.Find(node.name, node.loc);
 
 
-    if(index)
+    if(node.index)
     {
-        PrintASMIndented(buffer, indent, "pop rbx");
+        PrintASM("pnode.op rbx");
 
         // TODO: this kind of adressing  only works with 1,2,4,8 sizes
-        PrintASMIndented(buffer, indent, "mov [rbp - {} + rbx * {}], rax", var.baseOffset, var.baseSize);
+        PrintASM("mov [rbp - {} + rbx * {}], rax", var.baseOffset, var.baseSize);
     }
     else
     {
-        PrintASMIndented(buffer, indent, "mov [rbp - {}], rax", var.baseOffset);
+        PrintASM("mov [rbp - {}], rax", var.baseOffset);
     }
 }
 
-void WhileLoop::GenerateCode(Stack& stack, std::string& buffer, int indent)
+void CodeGenerator::Visit(WhileLoop& node)
 {
-    PrintASMIndented(buffer, indent, "; while");
+    PrintASM("; while");
     uint32_t whileStartLabel = GetLabelNum();
     uint32_t whileEndLabel   = GetLabelNum();
-    PrintASMLabel(buffer, whileStartLabel);
-    condition->GenerateCode(stack, buffer, indent + 1);
-    PrintASMIndented(buffer, indent, "test rax, rax");
-    PrintASMIndented(buffer, indent, "jz .L{}", whileEndLabel);
-    body->GenerateCode(stack, buffer, indent);
-    PrintASMIndented(buffer, indent, "jmp .L{}", whileStartLabel);
-    PrintASMLabel(buffer, whileEndLabel);
+    PrintASMLabel(whileStartLabel);
+    node.condition->Accept(this);
+    PrintASM("test rax, rax");
+    PrintASM("jz .L{}", whileEndLabel);
+    node.body->Accept(this);
+    PrintASM("jmp .L{}", whileStartLabel);
+    PrintASMLabel(whileEndLabel);
 }
-void IfElse::GenerateCode(Stack& stack, std::string& buffer, int indent)
+void CodeGenerator::Visit(IfElse& node)
 {
-    PrintASMIndented(buffer, indent, "; if ");
-    condition->GenerateCode(stack, buffer, indent + 1);
-    PrintASMIndented(buffer, indent, "test rax, rax");
+    PrintASM("; if ");
+    node.condition->Accept(this);
+    PrintASM("test rax, rax");
 
     uint32_t ifEndLabel   = GetLabelNum();
     uint32_t elseEndLabel = 0;
 
-    PrintASMIndented(buffer, indent, "jz .L{}", ifEndLabel);
-    body->GenerateCode(stack, buffer, indent);
+    PrintASM("jz .L{}", ifEndLabel);
+    node.body->Accept(this);
 
-    if(elseBlock)
+    if(node.elseBlock)
     {
         elseEndLabel = GetLabelNum();
-        PrintASMIndented(buffer, indent, "jmp .L{}", elseEndLabel);
+        PrintASM("jmp .L{}", elseEndLabel);
     }
 
-    PrintASMLabel(buffer, ifEndLabel);
-    if(elseBlock)
+    PrintASMLabel(ifEndLabel);
+    if(node.elseBlock)
     {
-        elseBlock->GenerateCode(stack, buffer, indent);
-        PrintASMLabel(buffer, elseEndLabel);
+        node.elseBlock->Accept(this);
+        PrintASMLabel(elseEndLabel);
     }
 }
-void Block::GenerateCode(Stack& stack, std::string& buffer, int indent)
+void CodeGenerator::Visit(Block& node)
 {
-    stack.PushFrame();
+    m_stack.PushFrame();
 
-    for(auto* statement : statements)
-        statement->GenerateCode(stack, buffer, indent);
-    if(expr)
-        expr->GenerateCode(stack, buffer, indent + 1);
+    for(auto* statement : node.statements)
+        statement->Accept(this);
+    if(node.expr)
+        node.expr->Accept(this);
 
-    stack.PopFrame();
+    m_stack.PopFrame();
 }
 
-void FnCall::GenerateCode(Stack& stack, std::string& buffer, int indent)
+void CodeGenerator::Visit(FnCall& node)
 {
-    PrintASMIndented(buffer, indent, "; fn call");
+    PrintASM("; fn call");
 
 
-    stack.PushFrame();
-    for(int i = 0; i < arguments.size(); i++)
+    m_stack.PushFrame();
+    for(int i = 0; i < node.arguments.size(); i++)
     {
-        arguments[i]->GenerateCode(stack, buffer, indent + 1);
+        node.arguments[i]->Accept(this);
 
-        Variable var = stack.PushVariable({"arg" + std::to_string(i), 8, 8});
-        PrintASMIndented(buffer, indent, "mov [rbp - {}], rax", var.baseOffset);
+        Variable var = m_stack.PushVariable({"arg" + std::to_string(i), 8, 8});
+        PrintASM("mov [rbp - {}], rax", var.baseOffset);
     }
 
-    for(int i = 0; i < arguments.size(); i++)
+    for(int i = 0; i < node.arguments.size(); i++)
     {
-        PrintASMIndented(buffer, indent, "mov {}, [rbp - {}]", GetCallRegister(i), stack.Find("arg" + std::to_string(i), loc).baseOffset);
+        PrintASM("mov {}, [rbp - {}]", GetCallRegister(i), m_stack.Find("arg" + std::to_string(i), node.loc).baseOffset);
     }
-    stack.PopFrame();
+    m_stack.PopFrame();
 
-    Variable var = stack.Find(name, loc);
-    PrintASMIndented(buffer, indent, "call {}", var.name);
+    Variable var = m_stack.Find(node.name, node.loc);
+    PrintASM("call {}", var.name);
 }
 
-void ExpressionStatement::GenerateCode(Stack& stack, std::string& buffer, int indent)
+void CodeGenerator::Visit(ExpressionStatement& node)
 {
-    expr->GenerateCode(stack, buffer, indent);
+    node.expr->Accept(this);
 }
 
-void VariableDeclaration::GenerateCode(Stack& stack, std::string& buffer, int indent)
+void CodeGenerator::Visit(VariableDeclaration& node)
 {
-    PrintASMIndented(buffer, indent, "; variable declaration: {}", name);
+    PrintASM("; variable declaration: {}", node.name);
     // TODO: stack needs to be aligned ta 16 bytes
-    size_t size  = baseSize * arraySize;
-    Variable var = stack.PushVariable({name, size, baseSize});
-    PrintASMIndented(buffer, indent, "sub rsp, {}", size);
-    if(value)
+    size_t size  = node.baseSize * node.arraySize;
+    Variable var = m_stack.PushVariable({node.name, size, node.baseSize});
+    PrintASM("sub rsp, {}", size);
+    if(node.value)
     {
-        value->GenerateCode(stack, buffer, indent + 1);
-        PrintASMIndented(buffer, indent, "mov [rbp - {}], rax", var.baseOffset);
+        node.value->Accept(this);
+        PrintASM("mov [rbp - {}], rax", var.baseOffset);
     }
 }
 
 
-void FnDeclaration::GenerateFunctions(Stack& stack, std::string& buffer, int indent)
+void CodeGenerator::Visit(FnDeclaration& node)
 {
-    stack.PushVariable({name, 0, 0});
-    PrintASMIndented(buffer, indent, "; fn declaration: {}", name);
-    PrintASMIndented(buffer, indent, "{}:", name);
-    PrintASMIndented(buffer, indent, "enter 0, 0");  // enter = push rbp; mov rbp, rsp, it can also allocate space for local variables but we don't do that yet so use 0, 0
-    stack.PushFrame(true);
-    for(int i = 0; i < parameters.size(); i++)
+    m_stack.PushVariable({node.name, 0, 0});
+    PrintASM("; fn declaration: {}", node.name);
+    PrintASMLabel("{}:", node.name);
+    PrintASM("enter 0, 0");  // enter = push rbp; mov rbp, rsp, it can also allocate space for local variables but we don't do that yet so use 0, 0
+    m_stack.PushFrame(true);
+    for(int i = 0; i < node.parameters.size(); i++)
     {
-        size_t size  = parameters[i].second;
-        Variable var = stack.PushVariable({parameters[i].first, size, size});  // no array parameters for now
+        size_t size  = node.parameters[i].second;
+        Variable var = m_stack.PushVariable({node.parameters[i].first, size, size});  // no array parameters for now
 
-        PrintASMIndented(buffer, indent, "sub rsp, {}", size);
-        PrintASMIndented(buffer, indent, "mov [rbp - {}], {}", var.baseOffset, GetCallRegister(i));
+        PrintASM("sub rsp, {}", size);
+        PrintASM("mov [rbp - {}], {}", var.baseOffset, GetCallRegister(i));
     }
-    body->GenerateCode(stack, buffer, indent);
-    stack.PopFrame();
-    PrintASMIndented(buffer, indent, "leave");  // leave = mov rsp, rbp; pop rbp
-    PrintASMIndented(buffer, indent, "ret");
+    node.body->Accept(this);
+    m_stack.PopFrame();
+    PrintASM("leave");  // leave = mov rsp, rbp; pnode.op rbp
+    PrintASM("ret");
 }

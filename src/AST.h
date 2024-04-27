@@ -101,43 +101,75 @@ void PrintIndented(int indent, std::format_string<Args...> format_str, Args&&...
     std::println(format_str, std::forward<Args>(args)...);
 }
 
+
+struct UnaryExpression;
+struct BinaryExpression;
+struct NumberLiteral;
+struct VariableAccess;
+struct VariableAssignment;
+struct Block;
+struct IfElse;
+struct WhileLoop;
+struct FnCall;
+struct ExpressionStatement;
+struct VariableDeclaration;
+struct FnDeclaration;
+
+struct AST;
+
+
+class VisitorBase
+{
+public:
+    virtual void Visit(AST& node)                 = 0;
+    virtual void Visit(UnaryExpression& node)     = 0;
+    virtual void Visit(BinaryExpression& node)    = 0;
+    virtual void Visit(NumberLiteral& node)       = 0;
+    virtual void Visit(VariableAccess& node)      = 0;
+    virtual void Visit(VariableAssignment& node)  = 0;
+    virtual void Visit(Block& node)               = 0;
+    virtual void Visit(IfElse& node)              = 0;
+    virtual void Visit(WhileLoop& node)           = 0;
+    virtual void Visit(FnCall& node)              = 0;
+    virtual void Visit(ExpressionStatement& node) = 0;
+    virtual void Visit(VariableDeclaration& node) = 0;
+    virtual void Visit(FnDeclaration& node)       = 0;
+};
+
+
 struct ASTNode
 {
     Location loc;
 
-    virtual void Print(int indent) const                                     = 0;
-    virtual void GenerateCode(Stack& stack, std::string& buffer, int indent) = 0;
-    virtual void GenerateFunctions(Stack& stack, std::string& buffer, int indent) {}
+    virtual void Accept(VisitorBase* visitor) = 0;
 };
 
 struct AST
 {
     std::vector<ASTNode*> statements;
 
-    void Print(int indent) const
+    void Visit(VisitorBase* visitor)
     {
-        for(auto& statement : statements)
-            statement->Print(indent);
-    }
-    void GenerateCode(Stack& stack, std::string& buffer, int indent)
-    {
-        for(auto& statement : statements)
-            statement->GenerateCode(stack, buffer, indent);
-    }
-
-    void GenerateFunctions(Stack& stack, std::string& buffer, int indent)
-    {
-        for(auto& statement : statements)
-            statement->GenerateFunctions(stack, buffer, indent);
+        visitor->Visit(*this);
     }
 };
 
 struct Expression : ASTNode
 {
+    void Accept(VisitorBase* visitor) override
+    {
+        std::println("Accept not implemented for Expression");
+        assert(false);
+    };
 };
 
 struct Statement : ASTNode
 {
+    void Accept(VisitorBase* visitor) override
+    {
+        std::println("Accept not implemented for Statement");
+        assert(false);
+    };
 };
 
 struct UnaryExpression : Expression
@@ -148,13 +180,10 @@ struct UnaryExpression : Expression
     UnaryExpression(Op op, Expression* expr) : op(op), expr(expr)
     {
     }
-
-    void Print(int indent) const override
+    void Accept(VisitorBase* visitor) override
     {
-        PrintIndented(indent, "Unary expression op: {}", op);
-        expr->Print(indent + 1);
+        visitor->Visit(*this);
     }
-    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
 };
 
 struct BinaryExpression : Expression
@@ -167,15 +196,11 @@ struct BinaryExpression : Expression
     {
     }
 
-    void Print(int indent) const override
-    {
-        PrintIndented(indent, "BinaryExpression");
-        left->Print(indent + 1);
-        PrintIndented(indent, "Op: {}", op);
-        right->Print(indent + 1);
-    }
 
-    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
+    void Accept(VisitorBase* visitor) override
+    {
+        visitor->Visit(*this);
+    }
 };
 
 struct NumberLiteral : Expression
@@ -186,12 +211,11 @@ struct NumberLiteral : Expression
     {
     }
 
-    void Print(int indent) const override
-    {
-        PrintIndented(indent, "NumberLiteral {} ", value);
-    }
 
-    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
+    void Accept(VisitorBase* visitor) override
+    {
+        visitor->Visit(*this);
+    }
 };
 
 struct VariableAccess : Expression
@@ -207,15 +231,11 @@ struct VariableAccess : Expression
     {
     }
 
-    void Print(int indent) const override
-    {
-        if(index == nullptr)
-            PrintIndented(indent, "VariableAccess {}", name);
-        else
-            PrintIndented(indent, "VariableAccess {}[]", name);
-    }
 
-    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
+    void Accept(VisitorBase* visitor) override
+    {
+        visitor->Visit(*this);
+    }
 };
 
 struct VariableAssignment : Expression
@@ -232,17 +252,11 @@ struct VariableAssignment : Expression
     {
     }
 
-    void Print(int indent) const override
+
+    void Accept(VisitorBase* visitor) override
     {
-        if(index == nullptr)
-            PrintIndented(indent, "VariableAssignment {}", name);
-        else
-            PrintIndented(indent, "VariableAssignment {}[]", name);
-
-        value->Print(indent + 1);
+        visitor->Visit(*this);
     }
-
-    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
 };
 
 
@@ -253,16 +267,11 @@ struct Block : Expression
     Block(Expression* expr) : expr(expr) {}
     Block(Expression* expr, std::vector<Statement*>&& statements) : expr(expr), statements(std::move(statements)) {}
 
-    void Print(int indent) const override
-    {
-        PrintIndented(indent, "Block");
-        for(const auto* statement : statements)
-            statement->Print(indent + 1);
-        if(expr)
-            expr->Print(indent + 1);
-    }
 
-    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
+    void Accept(VisitorBase* visitor) override
+    {
+        visitor->Visit(*this);
+    }
 };
 struct IfElse : Expression
 {
@@ -272,21 +281,11 @@ struct IfElse : Expression
 
     IfElse(Expression* condition, Block* body, Block* elseBlock) : condition(condition), body(body), elseBlock(elseBlock) {}
 
-    void Print(int indent) const override
-    {
-        PrintIndented(indent, "If");
-        PrintIndented(indent, "Condition:");
-        condition->Print(indent + 1);
-        PrintIndented(indent, "Body:");
-        body->Print(indent + 1);
-        if(elseBlock)
-        {
-            PrintIndented(indent, "Else Body:");
-            elseBlock->Print(indent + 1);
-        }
-    }
 
-    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
+    void Accept(VisitorBase* visitor) override
+    {
+        visitor->Visit(*this);
+    }
 };
 
 struct WhileLoop : Expression
@@ -296,16 +295,11 @@ struct WhileLoop : Expression
 
     WhileLoop(Expression* condition, Block* body) : condition(condition), body(body) {}
 
-    void Print(int indent) const override
-    {
-        PrintIndented(indent, "While loop");
-        PrintIndented(indent, "Condition:");
-        condition->Print(indent + 1);
-        PrintIndented(indent, "Body:");
-        body->Print(indent + 1);
-    }
 
-    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
+    void Accept(VisitorBase* visitor) override
+    {
+        visitor->Visit(*this);
+    }
 };
 
 struct FnCall : Expression
@@ -316,15 +310,11 @@ struct FnCall : Expression
 
     FnCall(std::string_view name, std::vector<Expression*>&& args) : name(name), arguments(std::move(args)) {}
 
-    void Print(int indent) const override
-    {
-        PrintIndented(indent, "Function call: {}", name);
-        PrintIndented(indent, "Arguments: {}", arguments.size());
-        for(const auto* argument : arguments)
-            argument->Print(indent + 1);
-    }
 
-    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
+    void Accept(VisitorBase* visitor) override
+    {
+        visitor->Visit(*this);
+    }
 };
 
 struct ExpressionStatement : Statement
@@ -333,12 +323,11 @@ struct ExpressionStatement : Statement
 
     ExpressionStatement(Expression* expr) : expr(expr) {}
 
-    void Print(int indent) const override
-    {
-        expr->Print(indent);
-    }
 
-    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
+    void Accept(VisitorBase* visitor) override
+    {
+        visitor->Visit(*this);
+    }
 };
 
 struct VariableDeclaration : Statement
@@ -351,14 +340,11 @@ struct VariableDeclaration : Statement
     VariableDeclaration(std::string_view name, size_t baseSize, Expression* value) : name(name), baseSize(baseSize), arraySize(1), value(value) {}
     VariableDeclaration(std::string_view name, size_t baseSize, size_t arraySize, Expression* value) : name(name), baseSize(baseSize), arraySize(arraySize), value(value) {}
 
-    void Print(int indent) const override
-    {
-        PrintIndented(indent, "Variable declaration: {}", name);
-        if(value)
-            value->Print(indent + 1);
-    }
 
-    void GenerateCode(Stack& stack, std::string& buffer, int indent) override;
+    void Accept(VisitorBase* visitor) override
+    {
+        visitor->Visit(*this);
+    }
 };
 
 struct FnDeclaration : Statement
@@ -369,14 +355,123 @@ struct FnDeclaration : Statement
 
     FnDeclaration(std::string_view name, std::vector<std::pair<std::string, size_t>>&& arguments, Block* body) : name(name), parameters(std::move(arguments)), body(body) {}
 
-    void Print(int indent) const override
+
+    void Accept(VisitorBase* visitor) override
     {
-        PrintIndented(indent, "Function declaration: {}", name);
-        for(const auto& [name, size] : parameters)
-            PrintIndented(indent + 1, "Argument: {} size: {}", name, size);
-        body->Print(indent + 1);
+        visitor->Visit(*this);
+    }
+};
+
+
+struct AstPrinter : VisitorBase
+{
+    void Visit(AST& node) override
+    {
+        PrintIndented(m_indent, "-------AST-------");
+        for(auto* statement : node.statements)
+            statement->Accept(this);
+    }
+    void Visit(UnaryExpression& node) override
+    {
+        PrintIndented(m_indent++, "UnaryExpression: {}", node.op);
+        node.expr->Accept(this);
+        --m_indent;
     }
 
-    void GenerateCode(Stack& stack, std::string& buffer, int indent) override {}
-    void GenerateFunctions(Stack& stack, std::string& buffer, int indent) override;
+    void Visit(BinaryExpression& node) override
+    {
+        PrintIndented(m_indent++, "BinaryExpression: {}", node.op);
+        node.left->Accept(this);
+        node.right->Accept(this);
+        --m_indent;
+    }
+
+    void Visit(NumberLiteral& node) override
+    {
+        PrintIndented(m_indent, "NumberLiteral: {}", node.value);
+    }
+
+    void Visit(VariableAccess& node) override
+    {
+        PrintIndented(m_indent, "VariableAccess: {}", node.name);
+        if(node.index)
+        {
+            node.index->Accept(this);
+        }
+    }
+
+    void Visit(VariableAssignment& node) override
+    {
+        PrintIndented(m_indent++, "VariableAssignment: {}", node.name);
+        if(node.index)
+        {
+            node.index->Accept(this);
+        }
+        node.value->Accept(this);
+        --m_indent;
+    }
+
+    void Visit(Block& node) override
+    {
+        PrintIndented(m_indent++, "Block");
+        if(node.expr)
+            node.expr->Accept(this);
+        for(auto* statement : node.statements)
+            statement->Accept(this);
+        --m_indent;
+    }
+
+    void Visit(IfElse& node) override
+    {
+        PrintIndented(m_indent++, "IfElse");
+        node.condition->Accept(this);
+        node.body->Accept(this);
+        if(node.elseBlock)
+            node.elseBlock->Accept(this);
+        --m_indent;
+    }
+
+    void Visit(WhileLoop& node) override
+    {
+        PrintIndented(m_indent++, "WhileLoop");
+        node.condition->Accept(this);
+        node.body->Accept(this);
+        --m_indent;
+    }
+
+    void Visit(FnCall& node) override
+    {
+        PrintIndented(m_indent++, "FnCall: {}", node.name);
+        for(auto* arg : node.arguments)
+            arg->Accept(this);
+        --m_indent;
+    }
+
+    void Visit(ExpressionStatement& node) override
+    {
+        PrintIndented(m_indent++, "ExpressionStatement");
+        node.expr->Accept(this);
+        --m_indent;
+    }
+
+    void Visit(VariableDeclaration& node) override
+    {
+        PrintIndented(m_indent++, "VariableDeclaration: {}", node.name);
+        if(node.value)
+            node.value->Accept(this);
+        --m_indent;
+    }
+
+    void Visit(FnDeclaration& node) override
+    {
+        PrintIndented(m_indent++, "FnDeclaration: {}", node.name);
+        for(auto& [name, size] : node.parameters)
+            PrintIndented(m_indent, "Parameter: {} {}", name, size);
+        node.body->Accept(this);
+        --m_indent;
+    }
+
+
+private:
+    int m_indent = 0;
 };

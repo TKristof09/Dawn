@@ -13,7 +13,7 @@ public:
     }
     void Parse();
 
-    [[nodiscard]] const AST& GetAST() const
+    [[nodiscard]] AST& GetAST()
     {
         return m_ast;
     }

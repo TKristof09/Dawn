@@ -16,9 +16,6 @@ void Parser::Parse()
         }
         m_ast.statements.push_back(expr);
     }
-
-
-    m_ast.Print(0);
 }
 
 ASTNode* Parser::ParseExpression()
