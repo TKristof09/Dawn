@@ -37,7 +37,7 @@ void CodeGenerator::Visit(BinaryExpression& node)
     PrintASM("push rax");
     node.right->Accept(this);
     PrintASM("mov rbx, rax");
-    PrintASM("pnode.op rax");
+    PrintASM("pop rax");
     switch(node.op)
     {
     case Op::PLUS:
@@ -151,7 +151,7 @@ void CodeGenerator::Visit(VariableAssignment& node)
 
     if(node.index)
     {
-        PrintASM("pnode.op rbx");
+        PrintASM("pop rbx");
 
         // TODO: this kind of adressing  only works with 1,2,4,8 sizes
         PrintASM("mov [rbp - {} + rbx * {}], rax", var.baseOffset, var.baseSize);
@@ -238,11 +238,17 @@ void CodeGenerator::Visit(FnCall& node)
 
 void CodeGenerator::Visit(ExpressionStatement& node)
 {
+    if(m_generateFunctions)
+        return;
+
     node.expr->Accept(this);
 }
 
 void CodeGenerator::Visit(VariableDeclaration& node)
 {
+    if(m_generateFunctions)
+        return;
+
     PrintASM("; variable declaration: {}", node.name);
     // TODO: stack needs to be aligned ta 16 bytes
     size_t size  = node.baseSize * node.arraySize;
@@ -258,6 +264,11 @@ void CodeGenerator::Visit(VariableDeclaration& node)
 
 void CodeGenerator::Visit(FnDeclaration& node)
 {
+    if(!m_generateFunctions)
+        return;
+
+    m_generateFunctions = false;
+
     m_stack.PushVariable({node.name, 0, 0});
     PrintASM("; fn declaration: {}", node.name);
     PrintASMLabel("{}:", node.name);
@@ -273,6 +284,8 @@ void CodeGenerator::Visit(FnDeclaration& node)
     }
     node.body->Accept(this);
     m_stack.PopFrame();
-    PrintASM("leave");  // leave = mov rsp, rbp; pnode.op rbp
+    PrintASM("leave");  // leave = mov rsp, rbp; pop rbp
     PrintASM("ret");
+
+    m_generateFunctions = true;
 }

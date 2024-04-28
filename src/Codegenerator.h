@@ -17,7 +17,7 @@ public:
         PrintASM("sub     rsp, 40");
         PrintASM("mov     BYTE [rsp+31], 10");
         PrintASM("lea     rcx, [rsp+30]");
-        PrintASMLabel(".L2:");
+        PrintASMLabel(".printL2:");
         PrintASM("mov     rax, rdi");
         PrintASM("mov     rsi, rcx");
         PrintASM("sub     rcx, 1");
@@ -33,7 +33,7 @@ public:
         PrintASM("mov     BYTE [rcx+1], dil");
         PrintASM("mov     rdi, rdx");
         PrintASM("test    rdx, rdx");
-        PrintASM("jne     .L2");
+        PrintASM("jne     .printL2");
         PrintASM("lea     rdx, [rsp+32]");
         PrintASM("mov     edi, 1");
         PrintASM("sub     rdx, rsi");
@@ -44,7 +44,11 @@ public:
 
         // m_ast.GenerateFunctions(stack, m_code, 1);
 
-        PrintASM("start:");
+        m_generateFunctions = true;
+        m_ast.Visit(this);
+        m_generateFunctions = false;
+
+        PrintASMLabel("start:");
         PrintASM("mov rbp, rsp");
 
         m_ast.Visit(this);
@@ -79,6 +83,7 @@ private:
     int m_indent                                      = 0;
     uint32_t m_labelNr                                = 0;
     Stack m_stack;
+    bool m_generateFunctions = true;
 
     template<typename... Args>
     constexpr void PrintASM(std::format_string<Args...> format_str, Args&&... args)

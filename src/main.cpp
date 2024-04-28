@@ -45,7 +45,7 @@ int main(int argc, char** argv)
     // parser.GetAST().Visit(&printer);
     TypeChecker typeChecker(parser.GetAST());
     CodeGenerator codegen(parser.GetAST());
-    WriteFile(file + ".asm", codegen.GetCode());
+    WriteFile(file.substr(0, file.length() - 4) + ".asm", codegen.GetCode());
 
     return 0;
 }
