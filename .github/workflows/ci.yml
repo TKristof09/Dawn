@@ -27,7 +27,7 @@ jobs:
     - name: Install compiler and libc++
       shell: bash
       run: |
-       wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+       wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
        sudo apt-get install clang-17 lld-17 libc++-17-dev libc++abi-17-dev
 
     - name: Set reusable strings
