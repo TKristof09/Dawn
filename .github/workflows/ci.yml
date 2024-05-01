@@ -16,11 +16,11 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         build_type: [Debug, Release]
-        c_compiler: [clang]
+        c_compiler: [clang-17]
         include:
           - os: ubuntu-latest
-            c_compiler: clang
-            cpp_compiler: clang++
+            c_compiler: clang-17
+            cpp_compiler: clang++-17
 
     steps:
     - uses: actions/checkout@v4
