@@ -8,6 +8,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++23 -stdlib=libc++")
 set(CMAKE_EXE_LINKER_FLAGS "-lc++abi")
 add_executable(Dawn)
 file(GLOB_RECURSE sources ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+list(REMOVE_ITEM sources ${CMAKE_CURRENT_SOURCE_DIR}/src/TestRunner.cpp)
 target_sources(Dawn
     PUBLIC
     ${sources}
@@ -17,3 +18,8 @@ target_include_directories(Dawn
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+add_executable(DawnTest)
+target_sources(DawnTest
+    PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/TestRunner.cpp
+)

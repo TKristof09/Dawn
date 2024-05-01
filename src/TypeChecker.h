@@ -10,6 +10,11 @@ public:
     {
         m_stack.Push("print", Types::Function{{Types::Int()}, {Types::NoneType()}});
         Visit(ast);
+
+        if(m_error)
+        {
+            std::exit(1);
+        }
     }
 
     void Visit(AST& node) override;
@@ -30,4 +35,6 @@ private:
     bool m_findFunctions = false;
     Type m_currentType;
     TypeStack m_stack;
+
+    bool m_error = false;
 };

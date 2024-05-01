@@ -21,6 +21,7 @@ void TypeChecker::Visit(UnaryExpression& node)
     if(!std::holds_alternative<Int>(m_currentType))
     {
         std::println(stderr, "{}: Unary expression must be of type int, got {}", node.expr->loc, m_currentType);
+        m_error = true;
     }
     if(node.op == Op::NOT)
     {
@@ -38,11 +39,13 @@ void TypeChecker::Visit(BinaryExpression& node)
     if(!std::holds_alternative<Int>(m_currentType))
     {
         std::println(stderr, "{}: Binary expression operands must be of type int, got {}", node.left->loc, m_currentType);
+        m_error = true;
     }
     node.right->Accept(this);
     if(!std::holds_alternative<Int>(m_currentType))
     {
         std::println(stderr, "{}: Unary expression operands must be of type int, got {}", node.right->loc, m_currentType);
+        m_error = true;
     }
 
     switch(node.op)
@@ -102,6 +105,7 @@ void TypeChecker::Visit(VariableAssignment& node)
     if(m_currentType.index() != t.index())
     {
         std::println(stderr, "{}: Expected {} type for variable assignment but got {}", node.value->loc, t, m_currentType);
+        m_error = true;
     }
 }
 
@@ -119,6 +123,7 @@ void TypeChecker::Visit(IfElse& node)
     if(std::holds_alternative<Bool>(m_currentType) == false)
     {
         std::println(stderr, "{}: Expected bool type for if condition but got {}", node.condition->loc, m_currentType);
+        m_error = true;
     }
     node.body->Accept(this);
     if(node.elseBlock)
@@ -129,6 +134,7 @@ void TypeChecker::Visit(IfElse& node)
         if(bodyType.index() != m_currentType.index())
         {
             std::println(stderr, "{}: The body of both branches of an if must have the same type. Type of if branch: {}, type of else branch: {}", node.body->loc, bodyType, m_currentType);
+            m_error = true;
         }
     }
 }
@@ -139,11 +145,13 @@ void TypeChecker::Visit(WhileLoop& node)
     if(std::holds_alternative<Bool>(m_currentType) == false)
     {
         std::println(stderr, "{}: Expected bool type for while condition but got {}", node.condition->loc, m_currentType);
+        m_error = true;
     }
     node.body->Accept(this);
     if(std::holds_alternative<NoneType>(m_currentType) == false)
     {
         std::println(stderr, "{}: While loop's body must have NoneType, but got {}", node.body->loc, m_currentType);
+        m_error = true;
     }
 }
 
@@ -157,11 +165,13 @@ void TypeChecker::Visit(FnCall& node)
     catch(std::bad_variant_access&)
     {
         std::println(stderr, "{}: Expected function type for function call but got {}", node.loc, m_currentType);
+        m_error = true;
     }
 
     if(funType.parameters.size() != node.arguments.size())
     {
         std::println(stderr, "{}: Expected {} arguments for function call but got {}", node.loc, funType.parameters.size(), node.arguments.size());
+        m_error = true;
     }
 
     for(int i = 0; i < node.arguments.size() && i < funType.parameters.size(); i++)
@@ -171,6 +181,7 @@ void TypeChecker::Visit(FnCall& node)
         if(m_currentType.index() != funType.parameters[i].index())
         {
             std::println(stderr, "{}: Expected {} type for function argument but got {}", arg->loc, funType.parameters[i], m_currentType);
+            m_error = true;
         }
     }
     m_currentType = m_stack.Find(node.name, node.loc);
@@ -200,6 +211,7 @@ void TypeChecker::Visit(VariableDeclaration& node)
         if(m_currentType.index() != node.type.index())
         {
             std::println(stderr, "{}: Expected {} type for variable initialisation but got {}", node.value->loc, node.type, m_currentType);
+            m_error = true;
         }
     }
     m_stack.Push(node.name, node.type);
@@ -233,6 +245,7 @@ void TypeChecker::Visit(FnDeclaration& node)
             loc = node.body->statements.back()->loc;
         }
         std::println(stderr, "{}: Expected {} for function return value type but got {}", loc, node.type.returnType[0], m_currentType);
+        m_error = true;
     }
 
 

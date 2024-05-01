@@ -1,0 +1,8 @@
+stdout:
+stderr:
+test/typeCheck.eos:3:5: Expected bool for function return value type but got ()
+test/typeCheck.eos:16:14: Expected bool type for variable initialisation but got int
+test/typeCheck.eos:18:1: Expected 2 arguments for function call but got 3
+test/typeCheck.eos:18:8: Expected int type for function argument but got bool
+return_code:
+1
