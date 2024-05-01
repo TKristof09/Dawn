@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [ $default-branch ]
+    branches: [ master ]
 
 jobs:
   build:
@@ -28,7 +28,7 @@ jobs:
       shell: bash
       run: |
        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-       apt-get install clang-17 lld-17 libc++-17-dev libc++abi-17-dev
+       sudo apt-get install clang-17 lld-17 libc++-17-dev libc++abi-17-dev
 
     - name: Set reusable strings
       # Turn repeated input strings (such as the build output directory) into step outputs. These step outputs can be used throughout the workflow file.
