@@ -124,7 +124,10 @@ CommandOutput CompileAndRun(std::filesystem::path& path)
         return Merge(compilerOutput, assemblerOutput);
     }
 
-    std::string executable  = path.replace_extension().string();
+
+    std::string executable = path.replace_extension().string();
+
+    ExecuteCommand("chmod +x " + executable);
     command                 = executable;
     CommandOutput runOutput = ExecuteCommand(command);
 
