@@ -9,6 +9,7 @@ public:
     TypeChecker(AST& ast)
     {
         m_stack.Push("print", Types::Function{{Types::Int()}, {Types::NoneType()}});
+        m_stack.Push("prints", Types::Function{{Types::String()}, {Types::NoneType()}});
         Visit(ast);
 
         if(m_error)
@@ -21,6 +22,7 @@ public:
     void Visit(UnaryExpression& node) override;
     void Visit(BinaryExpression& node) override;
     void Visit(NumberLiteral& node) override;
+    void Visit(StringLiteral& node) override;
     void Visit(VariableAccess& node) override;
     void Visit(VariableAssignment& node) override;
     void Visit(Block& node) override;

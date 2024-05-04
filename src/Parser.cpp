@@ -350,6 +350,12 @@ ASTNode* Parser::ParsePrimary()
         return MakeNode<NumberLiteral>(token.loc, std::stoi(std::string(m_src.substr(token.start, token.len))));
     }
 
+    if(Match(TokenType::STRING))
+    {
+        Token token = Previous();
+        return MakeNode<StringLiteral>(token.loc, m_src.substr(token.start, token.len));
+    }
+
     if(Match(TokenType::IDENTIFIER))
     {
         Token token           = Previous();
@@ -548,6 +554,8 @@ Type Parser::ParseType()
         exit(1);
     }
 }
+
+
 size_t Parser::ParseTypeSize(Type t)
 {
     if(std::holds_alternative<Types::Int>(t))

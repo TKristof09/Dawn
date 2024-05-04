@@ -41,8 +41,7 @@ int main(int argc, char** argv)
     // lexer.Print();
     Parser parser(src, lexer.Tokens());
     parser.Parse();
-    // AstPrinter printer;
-    // parser.GetAST().Visit(&printer);
+    // AstPrinter printer(parser.GetAST());
     TypeChecker typeChecker(parser.GetAST());
     CodeGenerator codegen(parser.GetAST());
     WriteFile(file.substr(0, file.length() - 4) + ".asm", codegen.GetCode());

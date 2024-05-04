@@ -201,11 +201,11 @@ Token Lexer::Identifier()
 
 Token Lexer::String()
 {
+    m_start = m_current;
     Advance();
-    std::string value;
     while(Peek() != '"' && !IsEnd())
     {
-        value += Advance();
+        Advance();
     }
     if(IsEnd())
     {
@@ -213,6 +213,7 @@ Token Lexer::String()
         exit(1);
     }
 
-    Advance();
-    return MakeToken(TokenType::STRING);
+    Token token = MakeToken(TokenType::STRING);
+    Advance();  // closing quote
+    return token;
 }
