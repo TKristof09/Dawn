@@ -107,6 +107,7 @@ void PrintIndented(int indent, std::format_string<Args...> format_str, Args&&...
 struct UnaryExpression;
 struct BinaryExpression;
 struct NumberLiteral;
+struct StringLiteral;
 struct VariableAccess;
 struct VariableAssignment;
 struct Block;
@@ -127,6 +128,7 @@ public:
     virtual void Visit(UnaryExpression& node)     = 0;
     virtual void Visit(BinaryExpression& node)    = 0;
     virtual void Visit(NumberLiteral& node)       = 0;
+    virtual void Visit(StringLiteral& node)       = 0;
     virtual void Visit(VariableAccess& node)      = 0;
     virtual void Visit(VariableAssignment& node)  = 0;
     virtual void Visit(Block& node)               = 0;
@@ -213,6 +215,20 @@ struct NumberLiteral : Expression
     {
     }
 
+
+    void Accept(VisitorBase* visitor) override
+    {
+        visitor->Visit(*this);
+    }
+};
+
+struct StringLiteral : Expression
+{
+    std::string_view value;
+
+    StringLiteral(std::string_view value) : value(value)
+    {
+    }
 
     void Accept(VisitorBase* visitor) override
     {
@@ -369,6 +385,11 @@ struct FnDeclaration : Statement
 
 struct AstPrinter : VisitorBase
 {
+    AstPrinter(AST& ast)
+    {
+        Visit(ast);
+    }
+
     void Visit(AST& node) override
     {
         PrintIndented(m_indent, "-------AST-------");
@@ -393,6 +414,10 @@ struct AstPrinter : VisitorBase
     void Visit(NumberLiteral& node) override
     {
         PrintIndented(m_indent, "NumberLiteral: {}", node.value);
+    }
+    void Visit(StringLiteral& node) override
+    {
+        PrintIndented(m_indent, "StringLiteral: {}", node.value);
     }
 
     void Visit(VariableAccess& node) override

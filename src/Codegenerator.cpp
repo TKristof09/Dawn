@@ -120,6 +120,21 @@ void CodeGenerator::Visit(NumberLiteral& node)
     PrintASM("mov rax, {}", node.value);
 }
 
+void CodeGenerator::Visit(StringLiteral& node)
+{
+    PrintASM(";  String Literal");
+    if(auto it = m_stringLiterals.find(node.value); it != m_stringLiterals.end())
+    {
+        PrintASM("mov rax, STRLEN{}", it->second);
+    }
+    else
+    {
+        uint32_t label = GetStringNum();
+        PrintASM("mov rax, STRLEN{}", label);
+        m_stringLiterals[node.value] = label;
+    }
+}
+
 void CodeGenerator::Visit(VariableAccess& node)
 {
     PrintASM(";  Variable Access: {}", node.name);

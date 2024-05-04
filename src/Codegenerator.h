@@ -7,6 +7,7 @@ public:
     CodeGenerator(const AST& ast) : m_ast(ast)
     {
         m_stack.PushVariable({"print", 0, 0});
+        m_stack.PushVariable({"prints", 0, 0});
 
         PrintASMNoIndent("format ELF64 executable 3");
         PrintASMNoIndent("segment readable executable");
@@ -42,6 +43,15 @@ public:
         PrintASM("add     rsp, 40");
         PrintASM("ret");
 
+        PrintASMLabel("prints:");
+        PrintASM("lea     rsi, [rdi+8]");
+        PrintASM("mov     rdx, [rdi]");
+        PrintASM("mov     rax, 1");
+        PrintASM("mov     rdi, 1");
+        PrintASM("syscall");
+        PrintASM("ret");
+
+
         // m_ast.GenerateFunctions(stack, m_code, 1);
 
         m_generateFunctions = true;
@@ -57,7 +67,12 @@ public:
         PrintASM("mov rax, 60");
         PrintASM("syscall");
 
-        PrintASMNoIndent("segment readable writable");
+        PrintASMNoIndent("segment readable");
+        for(const auto& [str, num] : m_stringLiterals)
+        {
+            PrintASM("STRLEN{} dq {}", num, str.length() + 1);  // store the length of the string as a 64-bit integer
+            PrintASM("STR{} db \"{}\", 0xa", num, str);
+        }
     }
 
     std::string_view GetCode() const { return m_code; }
@@ -66,6 +81,7 @@ public:
     void Visit(UnaryExpression& node) override;
     void Visit(BinaryExpression& node) override;
     void Visit(NumberLiteral& node) override;
+    void Visit(StringLiteral& node) override;
     void Visit(VariableAccess& node) override;
     void Visit(VariableAssignment& node) override;
     void Visit(Block& node) override;
@@ -80,8 +96,10 @@ private:
     AST m_ast;
     std::string m_code;
     std::back_insert_iterator<std::string> m_inserter = std::back_inserter(m_code);
-    int m_indent                                      = 0;
-    uint32_t m_labelNr                                = 0;
+    std::unordered_map<std::string_view, uint32_t> m_stringLiterals;
+    int m_indent        = 0;
+    uint32_t m_labelNr  = 0;
+    uint32_t m_stringNr = 0;
     Stack m_stack;
     bool m_generateFunctions = true;
 
@@ -113,5 +131,10 @@ private:
     uint32_t GetLabelNum()
     {
         return m_labelNr++;
+    }
+
+    uint32_t GetStringNum()
+    {
+        return m_stringNr++;
     }
 };

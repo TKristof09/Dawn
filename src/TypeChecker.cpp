@@ -77,6 +77,10 @@ void TypeChecker::Visit(NumberLiteral& node)
     m_currentType = Int();
 }
 
+void TypeChecker::Visit(StringLiteral& node)
+{
+    m_currentType = String();
+}
 void TypeChecker::Visit(VariableAccess& node)
 {
     if(node.index)

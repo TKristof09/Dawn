@@ -1,0 +1,2 @@
+let s:str = "Hello, World!";
+prints(s);
