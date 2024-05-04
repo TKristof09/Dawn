@@ -37,7 +37,7 @@ syntax region eosChar start=/\v'/ skip=/\v\\./ end=/\v'/ contains=eosEscapes
 syntax match eosEscapes display contained "\\[nr\"']"
 
 " Number literals
-syntax match eosNumber display /\v\d+(\.\d+)?/
+syntax region eosNumber start=/\s\d/ skip=/\d/ end=/\s/
 
 " Set highlights
 highlight default link eosTodos Todo
