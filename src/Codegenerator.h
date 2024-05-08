@@ -6,8 +6,12 @@ class CodeGenerator : public VisitorBase
 public:
     CodeGenerator(const AST& ast) : m_ast(ast)
     {
-        m_stack.PushVariable({"print", 0, 0});
-        m_stack.PushVariable({"prints", 0, 0});
+        m_stack.PushVariable({
+            "print", 0, Types::Function{{Types::Int()}, {Types::NoneType()}}
+        });
+        m_stack.PushVariable({
+            "prints", 0, Types::Function{{Types::String()}, {Types::NoneType()}}
+        });
 
         PrintASMNoIndent("format ELF64 executable 3");
         PrintASMNoIndent("segment readable executable");
@@ -44,7 +48,8 @@ public:
         PrintASM("ret");
 
         PrintASMLabel("prints:");
-        PrintASM("lea     rsi, [rdi+8]");
+        PrintASM("mov     rsi, rdi");
+        PrintASM("add     rsi, 8");
         PrintASM("mov     rdx, [rdi]");
         PrintASM("mov     rax, 1");
         PrintASM("mov     rdi, 1");
@@ -75,13 +80,17 @@ public:
         }
     }
 
-    std::string_view GetCode() const { return m_code; }
+    std::string_view GetCode() const
+    {
+        return m_code;
+    }
 
     void Visit(AST& node) override;
     void Visit(UnaryExpression& node) override;
     void Visit(BinaryExpression& node) override;
     void Visit(NumberLiteral& node) override;
     void Visit(StringLiteral& node) override;
+    void Visit(BoolLiteral& node) override;
     void Visit(VariableAccess& node) override;
     void Visit(VariableAssignment& node) override;
     void Visit(Block& node) override;

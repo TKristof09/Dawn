@@ -3,22 +3,137 @@
 #include "Stack.h"
 #include <cassert>
 
-std::string_view GetCallRegister(size_t i)
+std::string_view GetSizedRegister(std::string_view reg, size_t size)
+{
+    if(size == 1)
+    {
+        if(reg == "rax")
+            return "al";
+        if(reg == "rbx")
+            return "bl";
+        if(reg == "rcx")
+            return "cl";
+        if(reg == "rdx")
+            return "dl";
+        if(reg == "rsi")
+            return "sil";
+        if(reg == "rdi")
+            return "dil";
+        if(reg == "rbp")
+            return "bpl";
+        if(reg == "rsp")
+            return "spl";
+        if(reg == "r8")
+            return "r8b";
+        if(reg == "r9")
+            return "r9b";
+        if(reg == "r10")
+            return "r10b";
+        if(reg == "r11")
+            return "r11b";
+        if(reg == "r12")
+            return "r12b";
+        if(reg == "r13")
+            return "r13b";
+        if(reg == "r14")
+            return "r14b";
+        if(reg == "r15")
+            return "r15b";
+    }
+    else if(size == 2)
+    {
+        if(reg == "rax")
+            return "ax";
+        if(reg == "rbx")
+            return "bx";
+        if(reg == "rcx")
+            return "cx";
+        if(reg == "rdx")
+            return "dx";
+        if(reg == "rsi")
+            return "si";
+        if(reg == "rdi")
+            return "di";
+        if(reg == "rbp")
+            return "bp";
+        if(reg == "rsp")
+            return "sp";
+        if(reg == "r8")
+            return "r8w";
+        if(reg == "r9")
+            return "r9w";
+        if(reg == "r10")
+            return "r10w";
+        if(reg == "r11")
+            return "r11w";
+        if(reg == "r12")
+            return "r12w";
+        if(reg == "r13")
+            return "r13w";
+        if(reg == "r14")
+            return "r14w";
+        if(reg == "r15")
+            return "r15w";
+    }
+    else if(size == 4)
+    {
+        if(reg == "rax")
+            return "eax";
+        if(reg == "rbx")
+            return "ebx";
+        if(reg == "rcx")
+            return "ecx";
+        if(reg == "rdx")
+            return "edx";
+        if(reg == "rsi")
+            return "esi";
+        if(reg == "rdi")
+            return "edi";
+        if(reg == "rbp")
+            return "ebp";
+        if(reg == "rsp")
+            return "esp";
+        if(reg == "r8")
+            return "r8d";
+        if(reg == "r9")
+            return "r9d";
+        if(reg == "r10")
+            return "r10d";
+        if(reg == "r11")
+            return "r11d";
+        if(reg == "r12")
+            return "r12d";
+        if(reg == "r13")
+            return "r13d";
+        if(reg == "r14")
+            return "r14d";
+        if(reg == "r15")
+            return "r15d";
+    }
+    else if(size == 8)
+    {
+        return reg;
+    }
+
+    assert(false && "Unknown size for register");
+}
+
+std::string_view GetCallRegister(size_t i, size_t size)
 {
     switch(i)
     {
     case 0:
-        return "rdi";
+        return GetSizedRegister("rdi", size);
     case 1:
-        return "rsi";
+        return GetSizedRegister("rsi", size);
     case 2:
-        return "rdx";
+        return GetSizedRegister("rdx", size);
     case 3:
-        return "rcx";
+        return GetSizedRegister("rcx", size);
     case 4:
-        return "r8";
+        return GetSizedRegister("r8", size);
     case 5:
-        return "r9";
+        return GetSizedRegister("r9", size);
     default:
         assert(false && "Only 6 arguments go in registers, rest should go on the stack");
     }
@@ -125,14 +240,20 @@ void CodeGenerator::Visit(StringLiteral& node)
     PrintASM(";  String Literal");
     if(auto it = m_stringLiterals.find(node.value); it != m_stringLiterals.end())
     {
-        PrintASM("mov rax, STRLEN{}", it->second);
+        PrintASM("lea rax, [STRLEN{}]", it->second);
     }
     else
     {
         uint32_t label = GetStringNum();
-        PrintASM("mov rax, STRLEN{}", label);
+        PrintASM("lea rax, [STRLEN{}]", label);
         m_stringLiterals[node.value] = label;
     }
+}
+
+void CodeGenerator::Visit(BoolLiteral& node)
+{
+    PrintASM(";  Bool Literal");
+    PrintASM("mov rax, {}", node.value ? 1 : 0);  // keep rax here to make sure there is nothing in the upper bits
 }
 
 void CodeGenerator::Visit(VariableAccess& node)
@@ -144,11 +265,21 @@ void CodeGenerator::Visit(VariableAccess& node)
         node.index->Accept(this);
 
         // TODO: this kind of adressing  only works with 1,2,4,8 sizes
-        PrintASM("mov rax, [rbp - {} + rax * {}]", var.baseOffset, var.baseSize);
+        // baseoffset - 8 because for the size, this will always be positive since the size variable is included in the base offset
+        if(std::holds_alternative<Types::String>(var.type))
+        {
+            PrintASM("mov rbx, [rbp - {}]", var.baseOffset);
+            PrintASM("add rbx, 8");
+            PrintASM("mov al, BYTE [rbx + rax]");  // TODO: clear the upper bits of rax probably
+        }
+        else
+        {
+            PrintASM("mov {}, [rbp - {} + rax * {}]", GetSizedRegister("rax", GetSize(var.type)), var.baseOffset - 8, GetSize(var.type));
+        }
     }
     else
     {
-        PrintASM("mov rax, [rbp - {}]", var.baseOffset);
+        PrintASM("mov {}, [rbp - {}]", GetSizedRegister("rax", GetSize(var.type)), var.baseOffset);
     }
 }
 
@@ -169,11 +300,19 @@ void CodeGenerator::Visit(VariableAssignment& node)
         PrintASM("pop rbx");
 
         // TODO: this kind of adressing  only works with 1,2,4,8 sizes
-        PrintASM("mov [rbp - {} + rbx * {}], rax", var.baseOffset, var.baseSize);
+        // baseoffset - 8 because for the size, this wilalways be positive since the size variable is included in the base offset
+        if(std::holds_alternative<Types::String>(var.type))
+        {
+            std::println(stderr, "{}: Cannot modify string literal", node.loc);
+        }
+        else
+        {
+            PrintASM("mov [rbp - {} + rbx * {}], {}", var.baseOffset - 8, GetSize(var.type), GetSizedRegister("rax", GetSize(var.type)));
+        }
     }
     else
     {
-        PrintASM("mov [rbp - {}], rax", var.baseOffset);
+        PrintASM("mov [rbp - {}], {}", var.baseOffset, GetSizedRegister("rax", GetSize(var.type)));
     }
 }
 
@@ -184,7 +323,7 @@ void CodeGenerator::Visit(WhileLoop& node)
     uint32_t whileEndLabel   = GetLabelNum();
     PrintASMLabel(whileStartLabel);
     node.condition->Accept(this);
-    PrintASM("test rax, rax");
+    PrintASM("test al, al");
     PrintASM("jz .L{}", whileEndLabel);
     node.body->Accept(this);
     PrintASM("jmp .L{}", whileStartLabel);
@@ -194,7 +333,7 @@ void CodeGenerator::Visit(IfElse& node)
 {
     PrintASM("; if ");
     node.condition->Accept(this);
-    PrintASM("test rax, rax");
+    PrintASM("test al, al");
 
     uint32_t ifEndLabel   = GetLabelNum();
     uint32_t elseEndLabel = 0;
@@ -233,22 +372,24 @@ void CodeGenerator::Visit(FnCall& node)
 
 
     m_stack.PushFrame();
+    Variable fn            = m_stack.Find(node.name, node.loc);
+    Types::Function fnType = std::get<Types::Function>(fn.type);
     for(int i = 0; i < node.arguments.size(); i++)
     {
         node.arguments[i]->Accept(this);
 
-        Variable var = m_stack.PushVariable({"arg" + std::to_string(i), 8, 8});
-        PrintASM("mov [rbp - {}], rax", var.baseOffset);
+        Variable var = m_stack.PushVariable({"arg" + std::to_string(i), 8, fnType.parameters[i]});
+        PrintASM("mov [rbp - {}], {}", var.baseOffset, GetSizedRegister("rax", GetSize(var.type)));
     }
 
     for(int i = 0; i < node.arguments.size(); i++)
     {
-        PrintASM("mov {}, [rbp - {}]", GetCallRegister(i), m_stack.Find("arg" + std::to_string(i), node.loc).baseOffset);
+        Variable var = m_stack.Find("arg" + std::to_string(i), node.loc);
+        PrintASM("mov {}, [rbp - {}]", GetCallRegister(i, GetSize(var.type)), var.baseOffset);
     }
     m_stack.PopFrame();
 
-    Variable var = m_stack.Find(node.name, node.loc);
-    PrintASM("call {}", var.name);
+    PrintASM("call {}", fn.name);
 }
 
 void CodeGenerator::Visit(ExpressionStatement& node)
@@ -266,13 +407,21 @@ void CodeGenerator::Visit(VariableDeclaration& node)
 
     PrintASM("; variable declaration: {}", node.name);
     // TODO: stack needs to be aligned ta 16 bytes
-    size_t size  = node.baseSize * node.arraySize;
-    Variable var = m_stack.PushVariable({node.name, size, node.baseSize});
+    size_t size = GetSize(node.type) * node.arraySize;
+    if(node.arraySize > 0)
+    {
+        size += 8;  // for the size of the array
+    }
+    Variable var = m_stack.PushVariable({node.name, size, node.type});
     PrintASM("sub rsp, {}", size);
+    if(node.arraySize > 0)
+    {
+        PrintASM("mov QWORD [rbp - {}], {}", var.baseOffset, node.arraySize);
+    }
     if(node.value)
     {
         node.value->Accept(this);
-        PrintASM("mov [rbp - {}], rax", var.baseOffset);
+        PrintASM("mov [rbp - {}], {}", var.baseOffset, GetSizedRegister("rax", GetSize(node.type)));
     }
 }
 
@@ -284,18 +433,17 @@ void CodeGenerator::Visit(FnDeclaration& node)
 
     m_generateFunctions = false;
 
-    m_stack.PushVariable({node.name, 0, 0});
+    m_stack.PushVariable({node.name, 0, node.type});
     PrintASM("; fn declaration: {}", node.name);
     PrintASMLabel("{}:", node.name);
     PrintASM("enter 0, 0");  // enter = push rbp; mov rbp, rsp, it can also allocate space for local variables but we don't do that yet so use 0, 0
     m_stack.PushFrame(true);
     for(int i = 0; i < node.parameters.size(); i++)
     {
-        size_t size  = node.parameters[i].second;
-        Variable var = m_stack.PushVariable({node.parameters[i].first, size, size});  // no array parameters for now
+        Variable var = m_stack.PushVariable({node.parameters[i], GetSize(node.type.parameters[i]), node.type.parameters[i]});  // no array parameters for now
 
-        PrintASM("sub rsp, {}", size);
-        PrintASM("mov [rbp - {}], {}", var.baseOffset, GetCallRegister(i));
+        PrintASM("sub rsp, {}", GetSize(var.type));
+        PrintASM("mov [rbp - {}], {}", var.baseOffset, GetCallRegister(i, GetSize(var.type)));
     }
     node.body->Accept(this);
     m_stack.PopFrame();

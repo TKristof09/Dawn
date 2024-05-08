@@ -1,9 +1,4 @@
-fun dprint(s:str, s2:str)
-{
-    prints(s);
-    prints(s2);
-}
-let s:str = "Hello, World!";
-let s2:str = "Hello, Eos!";
-dprint(s, s2);
+let s :str = "Hello";
+print(s[0]);
+
 

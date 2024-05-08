@@ -47,6 +47,37 @@ struct Function
 };
 };  // namespace Types
 
+
+constexpr inline uint32_t GetSize(const Types::Type& t)
+{
+    return std::visit([](auto&& arg) -> uint32_t
+                      {
+                            using T = std::decay_t<decltype(arg)>;
+                            if constexpr(std::is_same_v<T, Types::NoneType>)
+                                return 0;
+                            else if constexpr(std::is_same_v<T, Types::Int>)
+                                return 8;
+                            else if constexpr(std::is_same_v<T, Types::String>)
+                                return 8;
+                            else if constexpr(std::is_same_v<T, Types::Bool>)
+                                return 1;
+                            else if constexpr(std::is_same_v<T, Types::Array>)
+                                return 8;
+                            else if constexpr(std::is_same_v<T, Types::Struct>)
+                            {
+                                uint32_t size = 0;
+                                for(auto& type : arg.types)
+                                    size += GetSize(type);
+                                return size;
+                            }
+                            else if constexpr(std::is_same_v<T, Types::Function>)
+                                return 8;
+                            else
+                                static_assert(false, "non-exhaustive visitor"); },
+
+                      t);
+}
+
 using Type = Types::Type;
 
 

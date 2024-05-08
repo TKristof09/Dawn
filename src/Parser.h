@@ -44,7 +44,6 @@ private:
     ASTNode* ParseVariableDeclaration();
     ASTNode* ParseFnDeclaration();
 
-    size_t ParseTypeSize(Type t);
     Type ParseType();
     Expression* ParseIndex();
     size_t ParseArraySize();

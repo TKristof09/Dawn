@@ -23,6 +23,7 @@ public:
     void Visit(BinaryExpression& node) override;
     void Visit(NumberLiteral& node) override;
     void Visit(StringLiteral& node) override;
+    void Visit(BoolLiteral& node) override;
     void Visit(VariableAccess& node) override;
     void Visit(VariableAssignment& node) override;
     void Visit(Block& node) override;
