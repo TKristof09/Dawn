@@ -6,16 +6,17 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+#include "Type.h"
 
 struct Variable
 {
     std::string name;
     uint64_t size;
-    uint64_t baseSize;
+    Type type;
 
     uint64_t baseOffset = 0;  // offset from rbp, set by the stack
 
-    Variable(std::string name, uint64_t size, uint64_t baseSize) : name(name), size(size), baseSize(baseSize) {}
+    Variable(std::string name, uint64_t size, Type type) : name(name), size(size), type(type) {}
 };
 
 

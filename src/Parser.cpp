@@ -356,6 +356,11 @@ ASTNode* Parser::ParsePrimary()
         return MakeNode<StringLiteral>(token.loc, m_src.substr(token.start, token.len));
     }
 
+    if(Match(TokenType::TRUE) || Match(TokenType::FALSE))
+    {
+        return MakeNode<BoolLiteral>(Previous().loc, Previous().type == TokenType::TRUE);
+    }
+
     if(Match(TokenType::IDENTIFIER))
     {
         Token token           = Previous();
@@ -420,7 +425,6 @@ ASTNode* Parser::ParseVariableDeclaration()
         }
 
         Type type        = ParseType();
-        size_t size      = ParseTypeSize(type);
         size_t arraySize = ParseArraySize();
 
         Expression* expr = nullptr;
@@ -435,10 +439,10 @@ ASTNode* Parser::ParseVariableDeclaration()
         }
         if(arraySize)
         {
-            return MakeNode<VariableDeclaration>(loc, name, Types::Array({{type}}), size, arraySize, expr);
+            return MakeNode<VariableDeclaration>(loc, name, Types::Array({{type}}), arraySize, expr);
         }
         else
-            return MakeNode<VariableDeclaration>(loc, name, type, size, expr);
+            return MakeNode<VariableDeclaration>(loc, name, type, expr);
     }
     return nullptr;
 }
@@ -464,7 +468,7 @@ ASTNode* Parser::ParseFnDeclaration()
             exit(1);
         }
 
-        std::vector<std::pair<std::string, size_t>> arguments;
+        std::vector<std::string> arguments;
         if(!Match(TokenType::RPAREN))
         {
             while(true)
@@ -487,8 +491,7 @@ ASTNode* Parser::ParseFnDeclaration()
                 Type t = ParseType();
                 type.parameters.push_back(t);
 
-                size_t argSize = ParseTypeSize(t);
-                arguments.push_back({std::string(argName), argSize});
+                arguments.push_back(std::string(argName));
 
                 if(Match(TokenType::RPAREN))
                     break;
@@ -555,25 +558,6 @@ Type Parser::ParseType()
     }
 }
 
-
-size_t Parser::ParseTypeSize(Type t)
-{
-    if(std::holds_alternative<Types::Int>(t))
-    {
-        return 8;
-    }
-    else if(std::holds_alternative<Types::String>(t))
-    {
-        return 8;
-    }
-    else if(std::holds_alternative<Types::Bool>(t))
-    {
-        return 1;
-    }
-
-    std::println(stderr, "{}: Unknown type", Previous().loc);
-    exit(1);
-}
 
 Expression* Parser::ParseIndex()
 {

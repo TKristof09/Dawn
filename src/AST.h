@@ -108,6 +108,7 @@ struct UnaryExpression;
 struct BinaryExpression;
 struct NumberLiteral;
 struct StringLiteral;
+struct BoolLiteral;
 struct VariableAccess;
 struct VariableAssignment;
 struct Block;
@@ -129,6 +130,7 @@ public:
     virtual void Visit(BinaryExpression& node)    = 0;
     virtual void Visit(NumberLiteral& node)       = 0;
     virtual void Visit(StringLiteral& node)       = 0;
+    virtual void Visit(BoolLiteral& node)         = 0;
     virtual void Visit(VariableAccess& node)      = 0;
     virtual void Visit(VariableAssignment& node)  = 0;
     virtual void Visit(Block& node)               = 0;
@@ -227,6 +229,20 @@ struct StringLiteral : Expression
     std::string_view value;
 
     StringLiteral(std::string_view value) : value(value)
+    {
+    }
+
+    void Accept(VisitorBase* visitor) override
+    {
+        visitor->Visit(*this);
+    }
+};
+
+struct BoolLiteral : Expression
+{
+    bool value;
+
+    BoolLiteral(bool value) : value(value)
     {
     }
 
@@ -351,13 +367,12 @@ struct ExpressionStatement : Statement
 struct VariableDeclaration : Statement
 {
     std::string name;
-    size_t baseSize;
     size_t arraySize;
     Type type;
     Expression* value;  // nullptr if it's a declaration without initialization
 
-    VariableDeclaration(std::string_view name, Type t, size_t baseSize, Expression* value) : name(name), baseSize(baseSize), arraySize(1), type(t), value(value) {}
-    VariableDeclaration(std::string_view name, Type t, size_t baseSize, size_t arraySize, Expression* value) : name(name), baseSize(baseSize), arraySize(arraySize), type(t), value(value) {}
+    VariableDeclaration(std::string_view name, Type t, Expression* value) : name(name), arraySize(1), type(t), value(value) {}
+    VariableDeclaration(std::string_view name, Type t, size_t arraySize, Expression* value) : name(name), arraySize(arraySize), type(t), value(value) {}
 
 
     void Accept(VisitorBase* visitor) override
@@ -369,11 +384,11 @@ struct VariableDeclaration : Statement
 struct FnDeclaration : Statement
 {
     std::string name;
-    std::vector<std::pair<std::string, size_t>> parameters;
+    std::vector<std::string> parameters;
     Block* body;
     Types::Function type;
 
-    FnDeclaration(std::string_view name, Types::Function t, std::vector<std::pair<std::string, size_t>>&& arguments, Block* body) : name(name), parameters(std::move(arguments)), body(body), type(t) {}
+    FnDeclaration(std::string_view name, Types::Function t, std::vector<std::string>&& arguments, Block* body) : name(name), parameters(std::move(arguments)), body(body), type(t) {}
 
 
     void Accept(VisitorBase* visitor) override
@@ -418,6 +433,11 @@ struct AstPrinter : VisitorBase
     void Visit(StringLiteral& node) override
     {
         PrintIndented(m_indent, "StringLiteral: {}", node.value);
+    }
+
+    void Visit(BoolLiteral& node) override
+    {
+        PrintIndented(m_indent, "BoolLiteral: {}", node.value);
     }
 
     void Visit(VariableAccess& node) override
@@ -494,8 +514,8 @@ struct AstPrinter : VisitorBase
     void Visit(FnDeclaration& node) override
     {
         PrintIndented(m_indent++, "FnDeclaration: {}", node.name);
-        for(auto& [name, size] : node.parameters)
-            PrintIndented(m_indent, "Parameter: {} {}", name, size);
+        for(auto& name : node.parameters)
+            PrintIndented(m_indent, "Parameter: {} ", name);
         node.body->Accept(this);
         --m_indent;
     }

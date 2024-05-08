@@ -81,11 +81,28 @@ void TypeChecker::Visit(StringLiteral& node)
 {
     m_currentType = String();
 }
+void TypeChecker::Visit(BoolLiteral& node)
+{
+    m_currentType = Bool();
+}
+
 void TypeChecker::Visit(VariableAccess& node)
 {
     if(node.index)
     {
-        m_currentType = std::get<Array>(m_stack.Find(node.name, node.loc)).type[0];
+        if(std::holds_alternative<Array>(m_stack.Find(node.name, node.loc)))
+        {
+            m_currentType = std::get<Array>(m_stack.Find(node.name, node.loc)).type[0];
+        }
+        else if(std::holds_alternative<String>(m_stack.Find(node.name, node.loc)))
+        {
+            m_currentType = Int();
+        }
+        else
+        {
+            std::println(stderr, "{}: Expected array or string type for variable access but got {}", node.loc, m_stack.Find(node.name, node.loc));
+            m_error = true;
+        }
     }
     else
     {
@@ -233,7 +250,7 @@ void TypeChecker::Visit(FnDeclaration& node)
 
     for(int i = 0; i < node.type.parameters.size(); i++)
     {
-        m_stack.Push(node.parameters[i].first, node.type.parameters[i]);
+        m_stack.Push(node.parameters[i], node.type.parameters[i]);
     }
     node.body->Accept(this);
 

@@ -1,0 +1,14 @@
+fun dprint(s:str, s2:str, c:bool)
+{
+    if c {
+        prints(s);
+    }
+    else{
+        prints(s2);
+    }
+}
+let s:str = "Hello, World!";
+let s2:str = "Hello, Eos!";
+let b:bool = false;
+dprint(s, s2, b);
+
