@@ -80,7 +80,7 @@ public:
         }
     }
 
-    std::string_view GetCode() const
+    [[nodiscard]] std::string_view GetCode() const
     {
         return m_code;
     }

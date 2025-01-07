@@ -1,4 +1,11 @@
-let s :str = "Hello";
-print(s[0]);
+let x:i64;
+x = 1;
+
+let y:i64 = x + 1;
+
+{
+    let x:i64 = 2;
+    y = x + x;
+};
 
 

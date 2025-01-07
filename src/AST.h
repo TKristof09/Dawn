@@ -8,25 +8,25 @@
 
 enum class Op
 {
-    U_MINUS,
+    UMinus,
 
-    PLUS,
-    MINUS,
-    MUL,
-    DIV,
+    Plus,
+    Minus,
+    Mul,
+    Div,
 
-    LSH,
-    RSH,
-    BAND,
-    BOR,
+    Lsh,
+    Rsh,
+    BAnd,
+    BOr,
 
-    EQUAL,
-    NOT_EQUAL,
+    Eq,
+    NotEq,
     LT,
     GT,
-    LEQ,
-    GEQ,
-    NOT,
+    LEq,
+    GEq,
+    UNot,
 };
 
 template<>
@@ -43,37 +43,37 @@ struct std::formatter<Op>
         std::string str;
         switch(op)
         {
-        case Op::U_MINUS:
+        case Op::UMinus:
             str = "U_MINUS";
             break;
-        case Op::PLUS:
+        case Op::Plus:
             str = "PLUS";
             break;
-        case Op::MINUS:
+        case Op::Minus:
             str = "MINUS";
             break;
-        case Op::MUL:
+        case Op::Mul:
             str = "MUL";
             break;
-        case Op::DIV:
+        case Op::Div:
             str = "DIV";
             break;
-        case Op::LSH:
+        case Op::Lsh:
             str = "LSH";
             break;
-        case Op::RSH:
+        case Op::Rsh:
             str = "RSH";
             break;
-        case Op::BAND:
+        case Op::BAnd:
             str = "BAND";
             break;
-        case Op::BOR:
+        case Op::BOr:
             str = "BOR";
             break;
-        case Op::EQUAL:
+        case Op::Eq:
             str = "EQUAL";
             break;
-        case Op::NOT_EQUAL:
+        case Op::NotEq:
             str = "NOT_EQUAL";
             break;
         case Op::LT:
@@ -82,13 +82,13 @@ struct std::formatter<Op>
         case Op::GT:
             str = "GT";
             break;
-        case Op::LEQ:
+        case Op::LEq:
             str = "LEQ";
             break;
-        case Op::GEQ:
+        case Op::GEq:
             str = "GEQ";
             break;
-        case Op::NOT:
+        case Op::UNot:
             str = "NOT";
             break;
         }
@@ -368,11 +368,11 @@ struct VariableDeclaration : Statement
 {
     std::string name;
     size_t arraySize;
-    Type type;
+    Types::Type type;
     Expression* value;  // nullptr if it's a declaration without initialization
 
-    VariableDeclaration(std::string_view name, Type t, Expression* value) : name(name), arraySize(1), type(t), value(value) {}
-    VariableDeclaration(std::string_view name, Type t, size_t arraySize, Expression* value) : name(name), arraySize(arraySize), type(t), value(value) {}
+    VariableDeclaration(std::string_view name, Types::Type t, Expression* value) : name(name), arraySize(1), type(t), value(value) {}
+    VariableDeclaration(std::string_view name, Types::Type t, size_t arraySize, Expression* value) : name(name), arraySize(arraySize), type(t), value(value) {}
 
 
     void Accept(VisitorBase* visitor) override
@@ -410,6 +410,7 @@ struct AstPrinter : VisitorBase
         PrintIndented(m_indent, "-------AST-------");
         for(auto* statement : node.statements)
             statement->Accept(this);
+        PrintIndented(m_indent, "-------AST-------");
     }
     void Visit(UnaryExpression& node) override
     {

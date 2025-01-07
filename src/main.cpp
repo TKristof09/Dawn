@@ -6,7 +6,8 @@
 #include "Lexer.h"
 #include "Parser.h"
 #include "Codegenerator.h"
-#include "TypeChecker.h"
+#include "SoNGenerator.h"
+// #include "TypeChecker.h"
 
 
 std::string ReadFile(const std::string& path)
@@ -41,10 +42,12 @@ int main(int argc, char** argv)
     // lexer.Print();
     Parser parser(src, lexer.Tokens());
     parser.Parse();
-    // AstPrinter printer(parser.GetAST());
-    TypeChecker typeChecker(parser.GetAST());
-    CodeGenerator codegen(parser.GetAST());
-    WriteFile(file.substr(0, file.length() - 4) + ".asm", codegen.GetCode());
+    AstPrinter printer(parser.GetAST());
+    // TypeChecker typeChecker(parser.GetAST());
+    // CodeGenerator codegen(parser.GetAST());
+    SoNGenerator codegen(parser.GetAST());
+
+    // WriteFile(file.substr(0, file.length() - 4) + ".asm", codegen.GetCode());
 
     return 0;
 }

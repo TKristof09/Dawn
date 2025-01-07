@@ -78,8 +78,6 @@ constexpr inline uint32_t GetSize(const Types::Type& t)
                       t);
 }
 
-using Type = Types::Type;
-
 
 class TypeStack
 {
@@ -91,12 +89,12 @@ public:
         m_frames.push_front({cutoff, cutoff ? 0 : offset});
     }
 
-    void Push(const std::string& name, Type t)
+    void Push(const std::string& name, Types::Type t)
     {
         return m_frames.empty() ? m_globalFrame.Push(name, t) : m_frames.front().Push(name, t);
     }
 
-    Type Find(const std::string& name, Location loc)
+    Types::Type Find(const std::string& name, Location loc)
     {
         for(auto& frame : m_frames)
         {
@@ -125,11 +123,11 @@ private:
     {
     public:
         StackFrame(bool cutoff, uint64_t offset) : m_currentOffset(offset), m_isCutoff(cutoff) {}
-        void Push(const std::string& name, Type t)
+        void Push(const std::string& name, Types::Type t)
         {
             m_types[name] = t;
         }
-        std::optional<Type> Find(const std::string& name)
+        std::optional<Types::Type> Find(const std::string& name)
         {
             auto it = m_types.find(name);
             if(it == m_types.end())
@@ -147,7 +145,7 @@ private:
         }
 
     private:
-        std::unordered_map<std::string, Type> m_types;
+        std::unordered_map<std::string, Types::Type> m_types;
         uint64_t m_currentOffset = 0;
         bool m_isCutoff          = false;
     };
@@ -204,7 +202,7 @@ struct Printer
 };
 
 template<>
-struct std::formatter<Type>
+struct std::formatter<Types::Type>
 {
     constexpr auto parse(std::format_parse_context& ctx)
     {
@@ -212,7 +210,7 @@ struct std::formatter<Type>
     }
 
     template<typename FormatContext>
-    constexpr auto format(const Type& t, FormatContext& ctx) const
+    constexpr auto format(const Types::Type& t, FormatContext& ctx) const
     {
         return std::format_to(ctx.out(), "{}", std::visit(Printer{}, t));
     }

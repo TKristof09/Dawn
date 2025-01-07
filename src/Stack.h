@@ -12,11 +12,11 @@ struct Variable
 {
     std::string name;
     uint64_t size;
-    Type type;
+    Types::Type type;
 
     uint64_t baseOffset = 0;  // offset from rbp, set by the stack
 
-    Variable(std::string name, uint64_t size, Type type) : name(name), size(size), type(type) {}
+    Variable(std::string name, uint64_t size, Types::Type type) : name(name), size(size), type(type) {}
 };
 
 

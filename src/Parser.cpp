@@ -180,7 +180,7 @@ ASTNode* Parser::ParseBitwiseAnd()
     {
         Location loc      = Previous().loc;
         Expression* right = static_cast<Expression*>(ParseBitwiseOr());
-        expr              = MakeNode<BinaryExpression>(loc, expr, Op::BAND, right);
+        expr              = MakeNode<BinaryExpression>(loc, expr, Op::BAnd, right);
     }
 
     return expr;
@@ -194,7 +194,7 @@ ASTNode* Parser::ParseBitwiseOr()
     {
         Location loc      = Previous().loc;
         Expression* right = static_cast<Expression*>(ParseEquality());
-        expr              = MakeNode<BinaryExpression>(loc, expr, Op::BOR, right);
+        expr              = MakeNode<BinaryExpression>(loc, expr, Op::BOr, right);
     }
 
     return expr;
@@ -207,7 +207,7 @@ ASTNode* Parser::ParseEquality()
     while(Match(TokenType::EQUAL) || Match(TokenType::NOT_EQUAL))
     {
         Location loc      = Previous().loc;
-        Op op             = Previous().type == TokenType::EQUAL ? Op::EQUAL : Op::NOT_EQUAL;
+        Op op             = Previous().type == TokenType::EQUAL ? Op::Eq : Op::NotEq;
         Expression* right = static_cast<Expression*>(ParseComparison());
         expr              = MakeNode<BinaryExpression>(loc, expr, op, right);
     }
@@ -233,10 +233,10 @@ ASTNode* Parser::ParseComparison()
             op = Op::GT;
             break;
         case TokenType::LEQ:
-            op = Op::LEQ;
+            op = Op::LEq;
             break;
         case TokenType::GEQ:
-            op = Op::GEQ;
+            op = Op::GEq;
             break;
         }
 
@@ -254,7 +254,7 @@ ASTNode* Parser::ParseShift()
     while(Match(TokenType::LSH) || Match(TokenType::RSH))
     {
         Location loc      = Previous().loc;
-        Op op             = Previous().type == TokenType::LSH ? Op::LSH : Op::RSH;
+        Op op             = Previous().type == TokenType::LSH ? Op::Lsh : Op::Rsh;
         Expression* right = static_cast<Expression*>(ParseTerm());
         expr              = MakeNode<BinaryExpression>(loc, expr, op, right);
     }
@@ -269,7 +269,7 @@ ASTNode* Parser::ParseTerm()
     while(Match(TokenType::MINUS) || Match(TokenType::PLUS))
     {
         Location loc      = Previous().loc;
-        Op op             = Previous().type == TokenType::MINUS ? Op::MINUS : Op::PLUS;
+        Op op             = Previous().type == TokenType::MINUS ? Op::Minus : Op::Plus;
         Expression* right = static_cast<Expression*>(ParseFactor());
         expr              = MakeNode<BinaryExpression>(loc, expr, op, right);
     }
@@ -284,7 +284,7 @@ ASTNode* Parser::ParseFactor()
     while(Match(TokenType::MUL) || Match(TokenType::DIV))
     {
         Location loc      = Previous().loc;
-        Op op             = Previous().type == TokenType::MUL ? Op::MUL : Op::DIV;
+        Op op             = Previous().type == TokenType::MUL ? Op::Mul : Op::Div;
         Expression* right = static_cast<Expression*>(ParseUnary());
         expr              = MakeNode<BinaryExpression>(loc, expr, op, right);
     }
@@ -298,13 +298,13 @@ ASTNode* Parser::ParseUnary()
     {
         Location loc     = Previous().loc;
         Expression* expr = static_cast<Expression*>(ParseUnary());
-        return MakeNode<UnaryExpression>(loc, Op::U_MINUS, expr);
+        return MakeNode<UnaryExpression>(loc, Op::UMinus, expr);
     }
     if(Match(TokenType::NOT))
     {
         Location loc     = Previous().loc;
         Expression* expr = static_cast<Expression*>(ParseUnary());
-        return MakeNode<UnaryExpression>(loc, Op::NOT, expr);
+        return MakeNode<UnaryExpression>(loc, Op::UNot, expr);
     }
 
     return ParseFnCall();
@@ -424,7 +424,7 @@ ASTNode* Parser::ParseVariableDeclaration()
             exit(1);
         }
 
-        Type type        = ParseType();
+        Types::Type type = ParseType();
         size_t arraySize = ParseArraySize();
 
         Expression* expr = nullptr;
@@ -488,7 +488,7 @@ ASTNode* Parser::ParseFnDeclaration()
                 }
 
 
-                Type t = ParseType();
+                Types::Type t = ParseType();
                 type.parameters.push_back(t);
 
                 arguments.push_back(std::string(argName));
@@ -527,7 +527,7 @@ ASTNode* Parser::ParseFnDeclaration()
     return nullptr;
 }
 
-Type Parser::ParseType()
+Types::Type Parser::ParseType()
 {
     if(!Match(TokenType::IDENTIFIER))
     {

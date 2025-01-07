@@ -1,21 +1,14 @@
 #pragma once
 
 #include "AST.h"
-#include "Type.h"
+#include "IR/Node.h"
 
-class TypeChecker : public VisitorBase
+class SoNGenerator : public VisitorBase
 {
 public:
-    TypeChecker(AST& ast)
+    SoNGenerator(AST& ast)
     {
-        m_stack.Push("print", Types::Function{{Types::Int()}, {Types::NoneType()}});
-        m_stack.Push("prints", Types::Function{{Types::String()}, {Types::NoneType()}});
         Visit(ast);
-
-        if(m_error)
-        {
-            std::exit(1);
-        }
     }
 
     void Visit(AST& node) override;
@@ -35,9 +28,9 @@ public:
     void Visit(FnDeclaration& node) override;
 
 private:
-    bool m_findFunctions = false;
-    Types::Type m_currentType;
-    TypeStack m_stack;
+    StartNode m_startNode;
+    StopNode m_stopNode;
+    ScopeNode m_scopeNode;
 
-    bool m_error = false;
+    Node* m_currentNode = nullptr;
 };

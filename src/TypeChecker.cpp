@@ -23,11 +23,11 @@ void TypeChecker::Visit(UnaryExpression& node)
         std::println(stderr, "{}: Unary expression must be of type int, got {}", node.expr->loc, m_currentType);
         m_error = true;
     }
-    if(node.op == Op::NOT)
+    if(node.op == Op::UNot)
     {
         m_currentType = Bool();
     }
-    else if(node.op == Op::U_MINUS)
+    else if(node.op == Op::UMinus)
     {
         m_currentType = Int();
     }
@@ -50,23 +50,23 @@ void TypeChecker::Visit(BinaryExpression& node)
 
     switch(node.op)
     {
-    case Op::PLUS:
-    case Op::MINUS:
-    case Op::MUL:
-    case Op::DIV:
-    case Op::LSH:
-    case Op::RSH:
-    case Op::BAND:
-    case Op::BOR:
+    case Op::Plus:
+    case Op::Minus:
+    case Op::Mul:
+    case Op::Div:
+    case Op::Lsh:
+    case Op::Rsh:
+    case Op::BAnd:
+    case Op::BOr:
         m_currentType = Int();
         break;
 
     case Op::LT:
     case Op::GT:
-    case Op::LEQ:
-    case Op::GEQ:
-    case Op::EQUAL:
-    case Op::NOT_EQUAL:
+    case Op::LEq:
+    case Op::GEq:
+    case Op::Eq:
+    case Op::NotEq:
         m_currentType = Bool();
         break;
     }

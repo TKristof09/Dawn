@@ -155,40 +155,40 @@ void CodeGenerator::Visit(BinaryExpression& node)
     PrintASM("pop rax");
     switch(node.op)
     {
-    case Op::PLUS:
+    case Op::Plus:
         PrintASM("add rax, rbx");
         break;
-    case Op::MINUS:
+    case Op::Minus:
         PrintASM("sub rax, rbx");
         break;
-    case Op::MUL:
+    case Op::Mul:
         PrintASM("imul rax, rbx");
         break;
-    case Op::DIV:
+    case Op::Div:
         PrintASM("xor rdx, rdx");
         PrintASM("div rbx");  // TODO: this also gives remainder, so look into that in the future
         break;
-    case Op::LSH:
+    case Op::Lsh:
         PrintASM("mov rcx, rbx");
         PrintASM("shl rax, cl");
         break;
-    case Op::RSH:
+    case Op::Rsh:
         PrintASM("mov cl, bl");
         PrintASM("sar rax, cl");
         break;
-    case Op::BAND:
+    case Op::BAnd:
         PrintASM("and rax, rbx");
         break;
-    case Op::BOR:
+    case Op::BOr:
         PrintASM("or rax, rbx");
         break;
 
     // TODO: the register needs to be cleaned if we want to use the whole register (eg. casting the result into an int instead of bool) since `set__` only sets the first 8bits of it
-    case Op::EQUAL:
+    case Op::Eq:
         PrintASM("cmp rax, rbx");
         PrintASM("sete al");
         break;
-    case Op::NOT_EQUAL:
+    case Op::NotEq:
         PrintASM("cmp rax, rbx");
         PrintASM("setne al");
         break;
@@ -200,11 +200,11 @@ void CodeGenerator::Visit(BinaryExpression& node)
         PrintASM("cmp rax, rbx");
         PrintASM("setb al");
         break;
-    case Op::GEQ:
+    case Op::GEq:
         PrintASM("cmp rax, rbx");
         PrintASM("setae al");
         break;
-    case Op::LEQ:
+    case Op::LEq:
         PrintASM("cmp rax, rbx");
         PrintASM("setbe al");
         break;
@@ -215,7 +215,7 @@ void CodeGenerator::Visit(UnaryExpression& node)
     node.expr->Accept(this);
     switch(node.op)
     {
-    case Op::U_MINUS:
+    case Op::UMinus:
         PrintASM("neg rax");
         break;
     // TODO: this is a bitwise not, so not(0) = 255, in the future we probably want to make it into a logical not
@@ -223,7 +223,7 @@ void CodeGenerator::Visit(UnaryExpression& node)
     // cland with -O0 does
     // xor rax, -1
     // and rax, 1
-    case Op::NOT:
+    case Op::UNot:
         PrintASM("not rax");
         break;
     }
