@@ -2,13 +2,13 @@ let board: i64[60]; // 2*30
 let board_size: i64 = 30;
 
 let k: i64 = 0;
-while k < board_size
+while (k < board_size)
 {
     board[k] = 0;
     board[k + board_size] = 0;
 
     k = k + 1;
-};
+}
 
 let i: i64 = 0;
 let j: i64 = 1;
@@ -35,18 +35,18 @@ patterns[7] = 0;
 
 let lookup: i64;
 let next_board: i64;
-while i < board_size
+while (i < board_size)
 {
     j = 0;
-    while j < 30
+    while (j < 30)
     {
         print(board[curr_board * board_size + j]);
 
         j = j + 1;
-    };
+    }
     j = 1;
     next_board = 1 - curr_board;
-    while j < (board_size - 1)
+    while (j < (board_size - 1))
     {
         a = board[curr_board * board_size + j - 1];
         b = board[curr_board * board_size + j];
@@ -57,7 +57,7 @@ while i < board_size
         board[next_board * board_size + j] = patterns[lookup];
 
         j = j + 1;
-    };
+    }
     curr_board = next_board;
     i = i + 1;
-};
+}

@@ -1,0 +1,35 @@
+
+(menhir 
+  (modules menhir_parser)
+  (explain true)
+  (flags (--external-tokens Tokens) --table --inspection --cmly))
+
+; generate only tokens for the awk command
+(menhir 
+  (modules menhir_parser)
+  (explain false)
+  (merge_into tokens_gen)
+  (flags --table --inspection --only-tokens))
+
+; add deriving show to the generated token file using awk
+(rule 
+  (target tokens.ml)
+  (deps tokens_gen.ml)
+  (action (with-stdout-to tokens.ml 
+(run %{bin:awk} "/type token =/{p=1}/module MenhirInterpreter/{p=0}{if(p)buf=buf $0 ORS;else if(buf!=\"\"){sub(/\\n*$/,\"\",buf);print buf \"\\n[@@deriving show]\";buf=\"\";print}else print}" tokens_gen.ml))))
+
+(rule
+ (targets parser_messages.ml)
+ (deps parser.messages menhir_parser.mly)
+ (action  (with-stdout-to %{targets} (run menhir --compile-errors %{deps}))))
+
+(rule
+ (target lexer.ml)
+ (deps   lexer.mll)
+ (action (chdir %{workspace_root}
+          (run %{bin:ocamllex} -q -ml -o %{target} %{deps}))))
+
+(library
+  (name dawn)
+  (libraries core nice_parser menhirLib)
+  (preprocess (pps ppx_deriving.show)))
