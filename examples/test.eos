@@ -1,3 +1,14 @@
-if(true
-{
+/*
+prints:
+        mov     rsi, rdi
+        add     rsi, 8
+        mov     rdx, [rdi]
+        mov     rax, 1
+        mov     rdi, 1
+        syscall
+        ret
+*/
+fun f(s: str) {
+
 }
+f("he\tllo\n");

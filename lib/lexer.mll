@@ -17,7 +17,7 @@
                 (* (   "break",    BREAK); *)
                 (* ("continue", CONTINUE); *)
                 (     "let",      LET);
-                (* (     "fun",      FUN); *)
+                (     "fun",      FUN);
             ]
     
     exception SyntaxError of (int * int) option * string
@@ -42,7 +42,8 @@ let digit = ['0'-'9']
 rule read = parse
     | white { read lexbuf }
     | newline { Lexing.new_line lexbuf; read lexbuf }
-    | "#" [^ '\n']*  { read lexbuf }
+    | "//" [^ '\n']*  { read lexbuf }
+    | "/*" { multi_line_comment lexbuf }
     | eof { EOF }
     | id as s { 
             match Core.Hashtbl.find keywords s with 
@@ -96,3 +97,9 @@ and read_string buf =
     }
   | _ { raise_error lexbuf ("Illegal string character: " ^ Lexing.lexeme lexbuf) }
   | eof { raise_error lexbuf ("String is not terminated") }
+and multi_line_comment =
+    parse
+    | "*/" { read lexbuf }
+    | '\n' { Lexing.new_line lexbuf; multi_line_comment lexbuf }
+    | eof  { raise_error lexbuf "Unterminated comment" }
+    | _    { multi_line_comment lexbuf }

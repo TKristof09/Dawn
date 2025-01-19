@@ -17,7 +17,7 @@ if exists("b:current_syntax")
   finish
 endif
 
-syntax keyword todos TODO XXX FIXME NOTE
+syntax keyword esoTodos TODO XXX FIXME NOTE
 
 " Language keywords
 syntax keyword eosKeywords if else while let fun
@@ -28,6 +28,7 @@ syntax keyword eosConstants true false
 
 " Comments
 syntax region eosCommentLine start="//" end="$" contains=eosTodos
+syntax region eosCommentBlock start="/\*" end="\*/" contains=eosTodos fold extend
 
 " String literals
 syntax region eosString start=/\v"/ skip=/\v\\./ end=/\v"/ contains=eosEscapes
@@ -45,6 +46,7 @@ syntax region eosNumber start=/\w\@<!\d/ skip=/\d/ end=/\d\@!/
 highlight default link eosTodos Todo
 highlight default link eosKeywords Keyword
 highlight default link eosCommentLine Comment
+highlight default link eosCommentBlock Comment
 highlight default link eosString String
 highlight default link eosNumber Number
 highlight default link eosTypeNames Type

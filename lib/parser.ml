@@ -32,7 +32,7 @@ let parse filename =
     let open Core in
     let contents = In_channel.read_all filename |> String.rstrip in
     let lexbuf = Lexing.from_string contents in
-    (* let lexbuf = Lexing.from_string ~with_positions:true "print(board[5])" in *)
+    Lexing.set_filename lexbuf filename;
     let checkpoint = Menhir_parser.Incremental.prog lexbuf.lex_curr_p in
     try parse_aux lexbuf checkpoint with
     | Lexer.SyntaxError (pos, msg) -> (

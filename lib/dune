@@ -1,8 +1,14 @@
 
+
+(library
+  (name dawn)
+  (libraries core menhirLib)
+  (preprocess (pps ppx_deriving.show ppx_deriving.eq)))
+
 (menhir 
   (modules menhir_parser)
   (explain true)
-  (flags (--external-tokens Tokens) --table --inspection --cmly))
+  (flags (--external-tokens Tokens) --table --inspection --cmly --strict))
 
 ; generate only tokens for the awk command
 (menhir 
@@ -16,20 +22,83 @@
   (target tokens.ml)
   (deps tokens_gen.ml)
   (action (with-stdout-to tokens.ml 
-(run %{bin:awk} "/type token =/{p=1}/module MenhirInterpreter/{p=0}{if(p)buf=buf $0 ORS;else if(buf!=\"\"){sub(/\\n*$/,\"\",buf);print buf \"\\n[@@deriving show]\";buf=\"\";print}else print}" tokens_gen.ml))))
+                          (run %{bin:awk} "/type token =/{p=1}/module MenhirInterpreter/{p=0}{if(p)buf=buf $0 ORS;else if(buf!=\"\"){sub(/\\n*$/,\"\",buf);print buf \"\\n[@@deriving show { with_path = false }]\";buf=\"\";print}else print}" tokens_gen.ml))))
+
 
 (rule
- (targets parser_messages.ml)
- (deps parser.messages menhir_parser.mly)
- (action  (with-stdout-to %{targets} (run menhir --compile-errors %{deps}))))
+  (target lexer.ml)
+  (deps   lexer.mll)
+  (action (chdir %{workspace_root}
+                 (run %{bin:ocamllex} -q -ml -o %{target} %{deps}))))
+
 
 (rule
- (target lexer.ml)
- (deps   lexer.mll)
- (action (chdir %{workspace_root}
-          (run %{bin:ocamllex} -q -ml -o %{target} %{deps}))))
+  (targets parser_messages.ml)
+  (deps 
+    (:messages parser.messages)
+    (:grammar menhir_parser.mly))
+  (action  (with-stdout-to %{targets} (run menhir --compile-errors %{messages} %{grammar}))))
 
-(library
-  (name dawn)
-  (libraries core nice_parser menhirLib)
-  (preprocess (pps ppx_deriving.show)))
+(rule
+  (targets parser.messages.updated)
+  (deps
+    (:messages parser.messages)
+    (:grammar menhir_parser.mly))
+  (action
+    (with-stdout-to
+      %{targets}
+      (run menhir %{grammar} --update-errors %{messages}))))
+(rule 
+  (alias update-errors)
+  (action (diff parser.messages parser.messages.updated)))
+
+;; Check message file is complete, and do this as part of tests.
+(rule
+  (targets messages_complete.txt)
+  (deps menhir_parser.mly)
+  (action
+    (with-stdout-to
+      %{targets}
+      (run menhir --list-errors %{deps}))))
+
+(rule
+  (alias check-parser-errors)
+  (deps
+    (:grammar menhir_parser.mly)
+    (:complete messages_complete.txt)
+    (:main parser.messages))
+  (action
+    (run
+      menhir
+      --compare-errors
+      %{complete}
+      --compare-errors
+      %{main}
+      %{grammar})))
+
+(rule 
+  (targets parser.messages.merged)
+  (deps
+    (:complete messages_complete.txt)
+    (:old_messages parser.messages)
+    (:grammar menhir_parser.mly))
+  (action
+
+    (with-stdout-to
+      %{targets}
+    (run
+     %{dep:merge_error_messages.py} %{grammar} %{complete} %{old_messages}))))
+
+(rule 
+  (alias merge-errors)
+  (deps parser.messages.merged)
+  (action (diff parser.messages parser.messages.merged)))
+
+(alias 
+  (name build)
+  (deps 
+    (alias merge-errors)))
+(alias
+  (name runtest)
+   (deps
+     (alias check-parser-errors)))
