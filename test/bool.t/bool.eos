@@ -1,10 +1,10 @@
 fun dprint(s:str, s2:str, c:bool)
 {
-    if c {
-        prints(s);
+    if(c) {
+        print(s);
     }
     else{
-        prints(s2);
+        print(s2);
     }
 }
 let s:str = "Hello, World!";

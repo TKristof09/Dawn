@@ -11,8 +11,8 @@ and 'a node = {
 
 and var_type =
     | Type of string [@printer fun fmt -> fprintf fmt "%s"]
-    | Array of string * expr node
-        [@printer fun fmt (t, n) -> fprintf fmt "%s[%s]" t (show_expr n.node)]
+    | Array of var_type * expr node
+        [@printer fun fmt (t, n) -> fprintf fmt "%s[%s]" (show_var_type t) (show_expr n.node)]
     | Fn of var_type * var_type list
         [@printer
             fun fmt (ret, params) ->

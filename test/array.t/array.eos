@@ -1,0 +1,29 @@
+fun print_val(i : int, v : int){
+    print_int(i);
+    print("   :   ");
+    print_int(v);
+    print("\n");
+}
+
+let arr: int[20];
+let arr_size: int = 20;
+
+let i: int = 0;
+while(i < arr_size){
+    print_val(i, arr[i]);
+    arr[i] = i;
+    i = i + 1;
+}
+print("\n");
+i = 0;
+while(i < arr_size){
+    print_val(i, arr[i]);
+    arr[i] = -i;
+    i = i + 1;
+}
+print("\n");
+i = 0;
+while(i < arr_size){
+    print_val(i, arr[i]);
+    i = i + 1;
+}

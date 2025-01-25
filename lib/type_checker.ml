@@ -59,9 +59,15 @@ let check ast =
             check_expr expr env |> ignore;
             env
         | While (cond, body) ->
-            check_expr cond env |> ignore;
-            check_expr body env |> ignore;
-            env
+            let cond_type = check_expr cond env in
+            if Ast.equal_var_type cond_type (Type "bool") then
+              let body_type = check_expr body env in
+              if Ast.equal_var_type body_type (Type "void") then
+                env
+              else
+                raise (InvalidType (node.loc, Type "void", body_type))
+            else
+              raise (InvalidType (node.loc, Type "bool", cond_type))
     and check_expr node env =
         match node.node with
         | String _ -> Type "str"
@@ -69,7 +75,11 @@ let check ast =
         | Bool _ -> Type "bool"
         | Nullptr -> Type "nullptr"
         | Variable (name, index_expr) -> (
-            let typ = find_type node.loc name env in
+            let typ =
+                match find_type node.loc name env with
+                | Ast.Array (t, _) -> t
+                | t -> t
+            in
             match index_expr with
             | None -> typ
             | Some e -> (
@@ -114,7 +124,11 @@ let check ast =
             else
               raise (InvalidType (expr.loc, t, assign_type))
         | ArrayVarAssign (name, index_expr, expr) -> (
-            let t = find_type node.loc name env in
+            let t =
+                match find_type node.loc name env with
+                | Ast.Array (t, _) -> t
+                | _ -> assert false
+            in
             match check_expr index_expr env with
             | Type "int" ->
                 let assign_type = check_expr expr env in
@@ -166,6 +180,8 @@ let check ast =
             | t -> raise (InvalidType (node.loc, Fn (Type "fn", []), t)))
     in
     let env0 = { parent = None; symbols = H.create () } in
+    add_symbol env0 "print" (Fn (Type "void", [ Type "str" ]));
+    add_symbol env0 "print_int" (Fn (Type "void", [ Type "int" ]));
     try
       List.fold ast ~init:env0 ~f:(fun env s -> check_statement s env) |> ignore;
       true
@@ -173,6 +189,10 @@ let check ast =
     | InvalidType (loc, expected, got) ->
         Printf.eprintf "%s:%d:%d: Type error: expected `%s` but got `%s`.\n" loc.filename loc.line
           loc.col (show_var_type expected) (show_var_type got);
+        false
+    | InvalidReturnType (loc, expected, got) ->
+        Printf.eprintf "%s:%d:%d: Type error: expected function to return `%s` but got `%s`.\n"
+          loc.filename loc.line loc.col (show_var_type expected) (show_var_type got);
         false
     | BranchTypeMismatch (loc, body_typ, else_typ) ->
         Printf.eprintf

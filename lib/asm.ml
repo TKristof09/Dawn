@@ -51,7 +51,7 @@ and instruction =
     | Or of operand * operand
     | Push of operand
     | Pop of operand
-    | Enter of int * int
+    | Enter of int
     | Leave
     | Call of string
     | Ret

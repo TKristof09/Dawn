@@ -1320,6 +1320,18 @@ prog: FUN IDENTIFIER LPAREN RPAREN WHILE
 
 Expected `{` to start the function body.
 
+prog: FUN IDENTIFIER LPAREN RPAREN ARROW WHILE
+##
+## Ends in an error in state: 107.
+##
+## option(preceded(ARROW,IDENTIFIER)) -> ARROW . IDENTIFIER [ LBRACE ]
+##
+## The known suffix of the stack is as follows:
+## ARROW
+##
+
+Expected function return type after `->`.
+
 prog: LBRACE RBRACE SEMICOLON
 ##
 ## Ends in an error in state: 111.
@@ -1331,6 +1343,17 @@ prog: LBRACE RBRACE SEMICOLON
 ##
 
 Unexpected `;`.
+
+prog: FUN IDENTIFIER LPAREN RPAREN ARROW IDENTIFIER WHILE
+##
+## Ends in an error in state: 109.
+##
+## statement -> FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) . block [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+##
+## The known suffix of the stack is as follows:
+## FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER))
+
+Expected block for function body after return type.
 
 prog: FALSE WHILE
 ##

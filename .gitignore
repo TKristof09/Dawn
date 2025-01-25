@@ -8,11 +8,6 @@ examples/*
 !examples/*.output
 
 
-test/*
-!test/*.eos
-!test/*.eosTest
-!test/*.output
-
 .vscode/launch.json
 .vscode/settings.json
 

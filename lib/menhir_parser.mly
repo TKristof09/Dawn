@@ -60,7 +60,7 @@
 %token ASSIGN
 %token LET
 %token FUN
-(* %token ARROW *)
+%token ARROW
 %token EOF
 
 %right ASSIGN
@@ -85,13 +85,18 @@ let statement :=
     | expr_statement
     | while_loop
     | LET; id = IDENTIFIER; COLON; t = IDENTIFIER; ASSIGN; e = terminated(expr, SEMICOLON); {  Declaration_assign (id, Type t, e) |> make_node $sloc }
-    | LET; id = IDENTIFIER; COLON; t = IDENTIFIER; n = delimited(LBRACKET, expr, RBRACKET); SEMICOLON; {  Declaration (id, Array (t, n)) |> make_node $sloc }
+    | LET; id = IDENTIFIER; COLON; t = IDENTIFIER; n = delimited(LBRACKET, expr, RBRACKET); SEMICOLON; {  Declaration (id, Array (Type t, n)) |> make_node $sloc }
     | LET; id = IDENTIFIER; COLON; t = IDENTIFIER; SEMICOLON; {  Declaration (id, Type t) |> make_node $sloc }
-    | FUN; id = IDENTIFIER; params = delimited(LPAREN, separated_list(COMMA, param), RPAREN); body = block; 
+    | FUN; id = IDENTIFIER; params = delimited(LPAREN, separated_list(COMMA, param), RPAREN); ret_t = option(preceded(ARROW, IDENTIFIER)); body = block; 
         { 
             let param_types = List.map (fun (_,p) -> Type p) params in
             let param_names = List.map (fun (id, _) -> id) params in
-            let typ = Fn (Type "void", param_types) in
+            let ret_typ = 
+                match ret_t with
+                    | None -> Type "void"
+                    | Some t -> Type t
+            in
+            let typ = Fn (ret_typ, param_types) in
             FnDeclaration (id, typ, param_names, body) |> make_node $sloc 
         }
 

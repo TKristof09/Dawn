@@ -1,6 +1,6 @@
-fun testFn(x: i64, y: i64) -> bool
+fun testFn(x: int, y: int) -> bool
 {
-    if x == 0
+    if(x == 0)
     {
         print(2000);
     }
@@ -11,8 +11,8 @@ fun testFn(x: i64, y: i64) -> bool
         x = x - 1;
         testFn(x, y);
     }
-};
+}
 
 let y:bool = 5;
-let x:i64 = 69;
+let x:int = 69;
 testFn(y, x, y);

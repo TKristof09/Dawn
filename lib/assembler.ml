@@ -123,7 +123,7 @@ let assemble (functions, instrs) out_filename =
         | Imm i -> string_of_int i
         | Mem (r, offset) -> sprintf "[%s + %d]" (string_of_reg r 64) offset
         | Label l -> l
-        | Weirdo (x, r, y) -> sprintf "[rbp - %d + %s * %d]" x (string_of_reg r 64) y
+        | Weirdo (x, r, y) -> sprintf "[rbp + %d + %s * %d]" x (string_of_reg r 64) y
     in
 
     let string_of_condition = function
@@ -149,14 +149,17 @@ let assemble (functions, instrs) out_filename =
         | Sub (dst, src) -> sprintf "    sub %s, %s" (string_of_operand dst) (string_of_operand src)
         | IMul (dst, src) ->
             sprintf "    imul %s, %s" (string_of_operand dst) (string_of_operand src)
-        | Div src -> sprintf "    div %s" (string_of_operand src)
-        | Lsh (dst, src) -> sprintf "    shl %s, %s" (string_of_operand dst) (string_of_operand src)
-        | Rsh (dst, src) -> sprintf "    shr %s, %s" (string_of_operand dst) (string_of_operand src)
+        | Div src -> sprintf "    xor rdx, rdx\n    idiv %s" (string_of_operand src)
+        | Lsh (dst, src) ->
+            sprintf "    shl %s, %s" (string_of_operand dst) (string_of_operand ~reg_size:8 src)
+        | Rsh (dst, src) ->
+            sprintf "    shr %s, %s" (string_of_operand dst) (string_of_operand ~reg_size:8 src)
         | And (dst, src) -> sprintf "    and %s, %s" (string_of_operand dst) (string_of_operand src)
         | Or (dst, src) -> sprintf "    or %s, %s" (string_of_operand dst) (string_of_operand src)
         | Push op -> sprintf "    push %s" (string_of_operand op)
         | Pop op -> sprintf "    pop %s" (string_of_operand op)
-        | Enter (x, y) -> sprintf "    enter %d, %d" x y
+        | Enter x when x > 0 -> sprintf "    push rbp\n    mov rbp, rsp\n    sub rsp, %d" x
+        | Enter _ -> sprintf "    push rbp\n    mov rbp, rsp"
         | Leave -> sprintf "    leave"
         | Call name -> sprintf "    call %s" name
         | Ret -> "    ret"
@@ -179,6 +182,55 @@ let assemble (functions, instrs) out_filename =
     in
 
     let header = "format ELF64 executable 3\nentry start\nsegment readable executable\n" in
+    let print_int =
+        {|
+print_int:
+    mov     rcx, rdi
+    sub     rsp, 40
+    mov     esi, 20
+    mov     r8d, 10
+    neg     rcx
+    cmovs   rcx, rdi
+.L2:
+    mov     rax, rcx
+    xor     edx, edx
+    div     r8
+    add     edx, 48
+    mov     [rsp+11+rsi], dl
+    mov     rdx, rcx
+    mov     rcx, rax
+    mov     rax, rsi
+    dec     rsi
+    cmp     rdx, 9
+    ja      .L2
+    test    rdi, rdi
+    jns     .L4
+    dec     eax
+    movsxd  rdx, eax
+    mov     BYTE [rsp+11+rdx], 45
+.L4:
+    cdqe
+    mov     edx, 21
+    mov     edi, 1
+    lea     rsi, [rsp+11+rax]
+    sub     rdx, rax
+    mov     rax, 1
+    syscall
+    add     rsp, 40
+    ret|}
+    in
+    let print =
+        {|
+print:
+    mov     rsi, rdi
+    add     rsi, 8
+    mov     rdx, [rdi]
+    mov     rax, 1
+    mov     rdi, 1
+    syscall
+    ret|}
+    in
+    let stdlib_functions = print ^ print_int in
     let start = "\nstart:\n    mov rbp, rsp\n" in
     let exit_sequence =
         "\n    mov rax, 60    ; exit syscall\n    xor rdi, rdi  ; exit code 0\n    syscall\n"
@@ -186,6 +238,8 @@ let assemble (functions, instrs) out_filename =
     let strings = Hashtbl.create (module String) in
     let asm_content =
         header
+        ^ stdlib_functions
+        ^ "\n"
         ^ String.concat ~sep:"\n" (List.map ~f:(string_of_instruction strings) functions)
         ^ start
         ^ String.concat ~sep:"\n" (List.map ~f:(string_of_instruction strings) instrs)

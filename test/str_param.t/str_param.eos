@@ -1,7 +1,7 @@
 fun dprint(s:str, s2:str)
 {
-    prints(s);
-    prints(s2);
+    print(s);
+    print(s2);
 }
 let s:str = "Hello, World!";
 let s2:str = "Hello, Eos!";

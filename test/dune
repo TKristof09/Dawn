@@ -1,0 +1,8 @@
+(library
+ (name test_dawn)
+ (libraries dawn)
+ (inline_tests)
+ (preprocess (pps ppx_expect)))
+
+(cram 
+  (deps %{bin:dawn}))

@@ -1,0 +1,50 @@
+let a: int = 10;
+let b: int = 5;
+
+print("Testing addition:\n");
+print_int(a + b);
+print("\n");
+print_int(15 + 5);
+print("\n");
+
+print("Testing subtraction:\n");
+print_int(a - b);     
+print("\n");
+print_int(20 - 8);    
+print("\n");
+
+print("Testing multiplication:\n");
+print_int(a * b);    
+print("\n");
+print_int(6 * 7);   
+print("\n");
+
+
+print("Testing division:\n");
+print_int(a / b);     
+print("\n");
+print_int(100 / 5);  
+print("\n");
+
+
+print("Testing compound expressions:\n");
+print_int((a + b) * 2);
+print("\n");
+print_int(100 - (50 / 5));      
+print("\n");
+
+
+let c: int = a + b;
+let d: int = c * 2;
+print("Testing variable arithmetic:\n");
+print_int(c);    
+print("\n");
+print_int(d);   
+print("\n");
+
+
+print("Testing operator precedence:\n");
+print_int(5 + 3 * 2);       
+print("\n");
+print_int((5 + 3) * 2);    
+print("\n");

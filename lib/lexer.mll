@@ -79,6 +79,7 @@ rule read = parse
     | "&&" { LAND }
     | "|" { BOR }
     | "||" { LOR }
+    | "->" { ARROW }
 and read_string buf =
   parse
   | '"'       { STRING (Buffer.contents buf) }

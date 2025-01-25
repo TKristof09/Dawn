@@ -31,7 +31,7 @@ def extract_new_messages(filename, line_numbers):
         
         for i in range(target_line_no - 1, len(lines)):
             if not found_message:
-                current_message.extend([lines[i]])
+                current_message.extend(["\n", lines[i]])
                 found_message = True
             elif lines[i].startswith("##"):
                 current_message.append(lines[i])
