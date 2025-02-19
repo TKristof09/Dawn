@@ -123,7 +123,7 @@ let assemble (functions, instrs) out_filename =
         | Imm i -> string_of_int i
         | Mem (r, offset) -> sprintf "[%s + %d]" (string_of_reg r 64) offset
         | Label l -> l
-        | Weirdo (x, r, y) -> sprintf "[rbp + %d + %s * %d]" x (string_of_reg r 64) y
+        | ScaledIndexed (x, r, y) -> sprintf "[rbp + %d + %s * %d]" x (string_of_reg r 64) y
     in
 
     let string_of_condition = function

@@ -21,7 +21,7 @@ and operand =
     | Imm of int (* TODO ocaml ints are 63 bits so we need int64 *)
     | Mem of reg * int (* [reg + offset] *)
     | Label of string
-    | Weirdo of int * reg * int (* [rbp - x + reg * y] *)
+    | ScaledIndexed of int * reg * int (* [rbp - x + reg * y] *)
 
 and condition =
     | Eq

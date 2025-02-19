@@ -138,7 +138,7 @@ and generate_expression ctx node =
         | None -> Mov (Reg RAX, Mem (RBP, info.offset)) |> singleton
         | Some e ->
             push_back
-              (Mov (Reg RAX, Weirdo (info.offset, RAX, info.element_size)))
+              (Mov (Reg RAX, ScaledIndexed (info.offset, RAX, info.element_size)))
               (generate_expression ctx e))
     | Ast.Add (lhs, rhs) ->
         generate_expression ctx lhs
@@ -201,7 +201,8 @@ and generate_expression ctx node =
         generate_expression ctx index_expr
         @ (Push (Reg RAX) |> singleton)
         @ generate_expression ctx expr
-        @ of_list [ Pop (Reg RBX); Mov (Weirdo (info.offset, RBX, info.element_size), Reg RAX) ]
+        @ of_list
+            [ Pop (Reg RBX); Mov (ScaledIndexed (info.offset, RBX, info.element_size), Reg RAX) ]
     | Ast.IfElse (cond, body, else_body) -> (
         let else_label = get_label ctx in
         generate_expression ctx cond
