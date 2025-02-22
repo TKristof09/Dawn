@@ -1,6 +1,5 @@
-(executable
-  (public_name dawn)
-  (name main)
+(executables
+  (public_names dawn graph)
+  (names main main_graph)
   (libraries dawn core)
   (preprocess (pps ppx_deriving.show)))
-

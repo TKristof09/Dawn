@@ -1,0 +1,85 @@
+open Core
+
+type t = {
+    dependencies : (Node.t, Node.t Hash_set.t) Hashtbl.t;
+    dependants : (Node.t, Node.t Hash_set.t) Hashtbl.t;
+    nodes : Node.t Hash_set.t;
+    start : Node.t;
+  }
+
+let create () =
+    {
+      dependencies = Hashtbl.create (module Node);
+      dependants = Hashtbl.create (module Node);
+      nodes = Hash_set.create (module Node);
+      start = Start_node.create ();
+    }
+
+let get_start g = g.start
+
+let add_dependencies g node dependencies =
+    Hash_set.add g.nodes node;
+    Hashtbl.update g.dependencies node ~f:(function
+      | None -> Hash_set.of_list (module Node) dependencies
+      | Some s ->
+          List.iter dependencies ~f:(fun d -> Hash_set.add s d);
+          s);
+    List.iter dependencies ~f:(fun d ->
+        Hash_set.add g.nodes d;
+        Hashtbl.update g.dependants d ~f:(function
+          | None -> Hash_set.of_list (module Node) [ node ]
+          | Some s ->
+              Hash_set.add s node;
+              s))
+
+let remove_dependency g ~node ~dep =
+    Hashtbl.change g.dependencies node ~f:(function
+      | None -> None
+      | Some s ->
+          Hash_set.remove s dep;
+          if Hash_set.is_empty s then
+            None
+          else
+            Some s);
+    Hashtbl.change g.dependants dep ~f:(function
+      | None ->
+          (* shouldn't happen *)
+          Hash_set.remove g.nodes dep;
+          None
+      | Some s ->
+          Hash_set.remove s node;
+          if Hash_set.is_empty s then (
+            Hash_set.remove g.nodes dep;
+            None)
+          else
+            Some s)
+
+let iter g = Hash_set.iter g.nodes
+
+let get_dependencies g n =
+    match Hashtbl.find g.dependencies n with
+    | None -> []
+    | Some s -> Hash_set.to_list s
+
+let get_dependants g n =
+    match Hashtbl.find g.dependants n with
+    | None -> []
+    | Some s -> Hash_set.to_list s
+
+let remove_node g n =
+    let remove_dependencies () =
+        match Hashtbl.find g.dependencies n with
+        | None -> ()
+        | Some deps ->
+            let l = Hash_set.to_list deps in
+            List.iter l ~f:(fun dep -> remove_dependency g ~node:n ~dep)
+    in
+    match Hashtbl.find g.dependants n with
+    | None ->
+        remove_dependencies ();
+        Hash_set.remove g.nodes n
+    | Some s when Hash_set.is_empty s ->
+        Hash_set.remove g.nodes n;
+        Hashtbl.remove g.dependants n;
+        remove_dependencies ()
+    | Some _ -> ()
