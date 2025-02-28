@@ -68,11 +68,11 @@ let iter_current_depth t f = Hashtbl.iteri t.symbols ~f:(fun ~key ~data -> f ~na
 
 let rec merge this other diff_fn eq =
     (* we suppose the two symbol tables have the same depth, this should be the case when merging at the end of regions *)
-    Hashtbl.merge_into ~src:other.symbols ~dst:this.symbols ~f:(fun ~key:_ n_other n_this ->
+    Hashtbl.merge_into ~src:other.symbols ~dst:this.symbols ~f:(fun ~key n_other n_this ->
         match n_this with
         | None -> Set_to n_other (* I don't think this can actually happen when merging regions *)
         | Some n_this when eq n_this n_other -> Set_to n_this
-        | Some n_this -> Set_to (diff_fn ~this:n_this ~other:n_other));
+        | Some n_this -> Set_to (diff_fn ~name:key ~this:n_this ~other:n_other));
     match (this.parent, other.parent) with
     | None, None -> ()
     | _, None

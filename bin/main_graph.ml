@@ -2,17 +2,15 @@ open Dawn
 
 let test_str =
     {|
-    let j: int = 0;  
-    let x: int = 5;
-    if(j == 10){
-        if(x == 5){
-            j = x + 10;
-        }else{
-            j = -1;
+    let a:int = 1;
+    let b:int  = 2;
+    while(a == 10) {
+        if (a == 2){
+            a = 3;
         }
-    }
-    else {
-        j = 2;
+        else {
+            b = 4;
+        }
     }
     |}
 

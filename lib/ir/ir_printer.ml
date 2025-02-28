@@ -39,6 +39,14 @@ let to_dot g =
     Graph.iter g ~f:(fun node ->
         match node.kind with
         | Scope _ -> () (* Skip scopes for now *)
+        | Ctrl Start ->
+            Buffer.add_string buf
+              (Printf.sprintf "  { rank = source; n%d [shape=%s,label=\"%s\",tooltip=\"%s\"]};\n"
+                 node.id (node_shape node) (node_label node) (Types.show_node_type node.typ))
+        | Ctrl Stop ->
+            Buffer.add_string buf
+              (Printf.sprintf "  { rank = sink; n%d [shape=%s,label=\"%s\",tooltip=\"%s\"]};\n"
+                 node.id (node_shape node) (node_label node) (Types.show_node_type node.typ))
         | _ ->
             Buffer.add_string buf
               (Printf.sprintf "  n%d [shape=%s,label=\"%s\",tooltip=\"%s\"];\n" node.id

@@ -1,7 +1,7 @@
 open Core
 
 type t = {
-    dependencies : (Node.t, Node.t Hash_set.t) Hashtbl.t;
+    dependencies : (Node.t, Node.t list) Hashtbl.t;
     dependants : (Node.t, Node.t Hash_set.t) Hashtbl.t;
     nodes : Node.t Hash_set.t;
     start : Node.t;
@@ -20,10 +20,8 @@ let get_start g = g.start
 let add_dependencies g node dependencies =
     Hash_set.add g.nodes node;
     Hashtbl.update g.dependencies node ~f:(function
-      | None -> Hash_set.of_list (module Node) dependencies
-      | Some s ->
-          List.iter dependencies ~f:(fun d -> Hash_set.add s d);
-          s);
+      | None -> dependencies
+      | Some l -> dependencies @ l);
     List.iter dependencies ~f:(fun d ->
         Hash_set.add g.nodes d;
         Hashtbl.update g.dependants d ~f:(function
@@ -35,12 +33,11 @@ let add_dependencies g node dependencies =
 let remove_dependency g ~node ~dep =
     Hashtbl.change g.dependencies node ~f:(function
       | None -> None
-      | Some s ->
-          Hash_set.remove s dep;
-          if Hash_set.is_empty s then
+      | Some l ->
+          if List.equal Node.equal l [ dep ] then
             None
           else
-            Some s);
+            Some (List.filter l ~f:(fun n -> not (Node.equal n dep))));
     Hashtbl.change g.dependants dep ~f:(function
       | None ->
           (* shouldn't happen *)
@@ -59,7 +56,7 @@ let iter g = Hash_set.iter g.nodes
 let get_dependencies g n =
     match Hashtbl.find g.dependencies n with
     | None -> []
-    | Some s -> Hash_set.to_list s
+    | Some l -> l
 
 let get_dependants g n =
     match Hashtbl.find g.dependants n with
@@ -70,9 +67,7 @@ let remove_node g n =
     let remove_dependencies () =
         match Hashtbl.find g.dependencies n with
         | None -> ()
-        | Some deps ->
-            let l = Hash_set.to_list deps in
-            List.iter l ~f:(fun dep -> remove_dependency g ~node:n ~dep)
+        | Some deps -> List.iter deps ~f:(fun dep -> remove_dependency g ~node:n ~dep)
     in
     match Hashtbl.find g.dependants n with
     | None ->

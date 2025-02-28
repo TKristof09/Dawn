@@ -1,4 +1,5 @@
 let create () = Node.create_scope ()
+let ctrl_identifier = "$ctrl"
 
 let define g (n : Node.t) name node =
     match n.kind with
@@ -7,20 +8,43 @@ let define g (n : Node.t) name node =
         Graph.add_dependencies g n [ node ]
     | _ -> assert false
 
-let assign g (n : Node.t) name node =
+let rec assign g (n : Node.t) name node =
     match n.kind with
     | Scope tbl ->
-        let old_symbol = Symbol_table.find_symbol tbl name in
+        let symbol = Symbol_table.find_symbol tbl name in
+        let old_symbol =
+            match symbol.kind with
+            | Scope _ ->
+                let phi = Phi_node.create g (get_ctrl g symbol) [ get g symbol name ] in
+                assign g symbol name phi;
+                phi
+            | _ -> symbol
+        in
         Symbol_table.reassign_symbol tbl name node;
-        Printf.printf "Reassign %s\n" name;
         Graph.add_dependencies g n [ node ];
         Graph.remove_dependency g ~node:n ~dep:old_symbol
     | _ -> assert false
 
-let get (n : Node.t) name =
+and get g (n : Node.t) name =
     match n.kind with
-    | Scope tbl -> Symbol_table.find_symbol tbl name
+    | Scope tbl -> (
+        let symbol = Symbol_table.find_symbol tbl name in
+        match symbol.kind with
+        | Scope _ ->
+            let phi = Phi_node.create g (get_ctrl g symbol) [ get g symbol name ] in
+            assign g n name phi;
+            assign g symbol name phi;
+            phi
+        | _ ->
+            Printf.printf "The symbol %s is %s\n" name (Node.show symbol);
+            symbol)
     | _ -> assert false
+
+and get_ctrl g n = get g n ctrl_identifier
+
+let set_ctrl g n ctrl =
+    try assign g n ctrl_identifier ctrl with
+    | _ -> define g n ctrl_identifier ctrl
 
 let push (n : Node.t) =
     match n.kind with
@@ -47,22 +71,43 @@ let dup g (n : Node.t) =
         n_dup
     | _ -> assert false
 
-let ctrl_identifier = "$ctrl"
-
-let set_ctrl g n ctrl =
-    try assign g n ctrl_identifier ctrl with
-    | _ -> define g n ctrl_identifier ctrl
-
-let get_ctrl n = get n ctrl_identifier
+(* Set symbols to point to the current symbol node itself (not the duped one), that way we can easily detect the symbols when they are first used in the loop and create phi nodes for them *)
+let dup_loop g (n : Node.t) =
+    match n.kind with
+    | Scope tbl ->
+        let n_dup = Node.create_scope () in
+        Symbol_table.iter tbl (fun ~name ~symbol ~depth:_ ->
+            match symbol with
+            | None -> push n_dup
+            | Some _ ->
+                if name = ctrl_identifier then
+                  define g n_dup name (get_ctrl g n)
+                else
+                  define g n_dup name n);
+        n_dup
+    | _ -> assert false
 
 let merge g ~(this : Node.t) ~(other : Node.t) =
+    (* Same as `get` but can't have it assign the name to the phi node in the current table as we can't mutate the tabl while iterating *)
+    let get_no_insert g tbl name =
+        let symbol : Node.t = Symbol_table.find_symbol tbl name in
+        match symbol.kind with
+        | Scope _ ->
+            let phi = Phi_node.create g (get_ctrl g symbol) [ get g symbol name ] in
+            assign g symbol name phi;
+            phi
+        | _ -> symbol
+    in
     match (this.kind, other.kind) with
     | Scope this_tbl, Scope other_tbl ->
-        let region = Region_node.create g (get_ctrl this, get_ctrl other) in
-        let old_ctrl = get_ctrl this in
-        let diff_fn ~this:n_this ~other:n_other =
+        let region = Region_node.create g (get_ctrl g this, get_ctrl g other) in
+        let old_ctrl = get_ctrl g this in
+        let diff_fn ~name ~this:n_this ~other:_ =
             if n_this <> old_ctrl then (
-              let phi = Phi_node.create g region [ n_this; n_other ] in
+              let phi =
+                  Phi_node.create g region
+                    [ get_no_insert g this_tbl name; get_no_insert g other_tbl name ]
+              in
               Graph.add_dependencies g this [ phi ];
               Graph.remove_dependency g ~node:this ~dep:n_this;
               phi)
@@ -72,4 +117,26 @@ let merge g ~(this : Node.t) ~(other : Node.t) =
         Symbol_table.merge this_tbl other_tbl diff_fn Node.equal;
         set_ctrl g this region;
         Graph.remove_node g other
+    | _ -> assert false
+
+let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
+    match (this.kind, body.kind, exit.kind) with
+    | Scope _, Scope body_tbl, Scope exit_tbl ->
+        Symbol_table.iter body_tbl (fun ~name ~symbol ~depth:_ ->
+            match symbol with
+            | None -> ()
+            | Some symbol ->
+                if name <> ctrl_identifier && not (Node.equal symbol this) then
+                  (* Set the second input of the phi node *)
+                  Phi_node.add_input g (get g this name) [ get g body name ]);
+
+        Symbol_table.iter exit_tbl (fun ~name ~symbol ~depth:_ ->
+            match symbol with
+            | None -> ()
+            | Some symbol ->
+                if not (Node.equal symbol this) then
+                  assign g this name symbol);
+        set_ctrl g this (get_ctrl g exit);
+        Graph.remove_node g body;
+        Graph.remove_node g exit
     | _ -> assert false
