@@ -36,7 +36,6 @@ and do_expr g (e : Ast.expr Ast.node) scope =
         match idx_expr with
         | None ->
             let node = Scope_node.get g scope name in
-            Printf.printf "Lookup %s -- %s\n" name (Node.show node);
             Some node
         | Some _ -> assert false)
     | Ast.VarAssign (name, expr) ->
@@ -78,13 +77,12 @@ and do_expr g (e : Ast.expr Ast.node) scope =
         let false_scope = Scope_node.dup g scope in
         Scope_node.set_ctrl g scope n_true;
         let body_true = do_expr g body scope in
+        Scope_node.set_ctrl g false_scope n_false;
         match else_body with
         | None ->
-            Graph.remove_node g n_false;
-            Graph.remove_node g false_scope;
-            body_true
+            Scope_node.merge g ~this:scope ~other:false_scope;
+            None
         | Some else_body -> (
-            Scope_node.set_ctrl g false_scope n_false;
             let body_false = do_expr g else_body false_scope in
             Scope_node.merge g ~this:scope ~other:false_scope;
             match (body_true, body_false) with

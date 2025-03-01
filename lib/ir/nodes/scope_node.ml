@@ -12,17 +12,21 @@ let rec assign g (n : Node.t) name node =
     match n.kind with
     | Scope tbl ->
         let symbol = Symbol_table.find_symbol tbl name in
-        let old_symbol =
+        let symbol =
             match symbol.kind with
-            | Scope _ ->
-                let phi = Phi_node.create g (get_ctrl g symbol) [ get g symbol name ] in
-                assign g symbol name phi;
-                phi
+            | Scope old_tbl -> (
+                let tmp = Symbol_table.find_symbol old_tbl name in
+                match tmp.kind with
+                | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> symbol
+                | _ ->
+                    let phi = Phi_node.create g (get_ctrl g symbol) [ get g symbol name ] in
+                    assign g symbol name phi;
+                    phi)
             | _ -> symbol
         in
         Symbol_table.reassign_symbol tbl name node;
         Graph.add_dependencies g n [ node ];
-        Graph.remove_dependency g ~node:n ~dep:old_symbol
+        Graph.remove_dependency g ~node:n ~dep:symbol
     | _ -> assert false
 
 and get g (n : Node.t) name =
@@ -30,14 +34,19 @@ and get g (n : Node.t) name =
     | Scope tbl -> (
         let symbol = Symbol_table.find_symbol tbl name in
         match symbol.kind with
-        | Scope _ ->
-            let phi = Phi_node.create g (get_ctrl g symbol) [ get g symbol name ] in
-            assign g n name phi;
-            assign g symbol name phi;
-            phi
-        | _ ->
-            Printf.printf "The symbol %s is %s\n" name (Node.show symbol);
-            symbol)
+        | Scope old_tbl ->
+            let tmp = Symbol_table.find_symbol old_tbl name in
+            let symbol =
+                match tmp.kind with
+                | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> symbol
+                | _ ->
+                    let phi = Phi_node.create g (get_ctrl g symbol) [ get g symbol name ] in
+                    assign g symbol name phi;
+                    phi
+            in
+            assign g n name symbol;
+            symbol
+        | _ -> symbol)
     | _ -> assert false
 
 and get_ctrl g n = get g n ctrl_identifier
@@ -92,10 +101,15 @@ let merge g ~(this : Node.t) ~(other : Node.t) =
     let get_no_insert g tbl name =
         let symbol : Node.t = Symbol_table.find_symbol tbl name in
         match symbol.kind with
-        | Scope _ ->
-            let phi = Phi_node.create g (get_ctrl g symbol) [ get g symbol name ] in
-            assign g symbol name phi;
-            phi
+        | Scope _ -> (
+            (* 
+               This happens if the if statement is in a loop's body.
+               At this point the phi node must exist as one of the branches has changed (used) this symbol.
+               What can happen is that if only the "else" branch modifies a symbol, the phi node gets created in the "else" scope and the original scope (the loop's original scope, so not the loop body). Because of this we don't want to create a new phi, just get it from the original scope *)
+            let node = get g symbol name in
+            match node.kind with
+            | Scope _ -> assert false (* This shouldn't happen i think *)
+            | _ -> node)
         | _ -> symbol
     in
     match (this.kind, other.kind) with
