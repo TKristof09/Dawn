@@ -1,18 +1,18 @@
 type data_kind =
     | Constant
-    | Add of t * t
-    | Sub of t * t
-    | Mul of t * t
-    | Div of t * t
-    | Proj of t
-    | Eq of t * t
-    | Phi of t * t list
+    | Add
+    | Sub
+    | Mul
+    | Div
+    | Proj of int
+    | Eq
+    | Phi
 
 and ctrl_kind =
     | Start
     | Stop
-    | Proj of t
-    | If of t * t
+    | Proj of int
+    | If
     | Region
 
 and kind =
@@ -27,10 +27,17 @@ and t = {
   }
 [@@deriving sexp_of]
 
+val is_same : t -> t list -> t -> t list -> bool
+(** Check for semantical equality. Basically same kind and same inputs *)
+
+val hard_equal : t -> t -> bool
+(** Chek for equality of ids *)
+
 val compare : t -> t -> int
-val equal : t -> t -> bool
 val hash : t -> int
 val create_data : Types.node_type -> data_kind -> t
 val create_ctrl : Types.node_type -> ctrl_kind -> t
 val create_scope : unit -> t
 val show : t -> string
+val is_ctrl : t -> bool
+val is_data : t -> bool

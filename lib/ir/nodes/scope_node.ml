@@ -128,7 +128,7 @@ let merge g ~(this : Node.t) ~(other : Node.t) =
             else
               old_ctrl
         in
-        Symbol_table.merge this_tbl other_tbl diff_fn Node.equal;
+        Symbol_table.merge this_tbl other_tbl diff_fn Node.hard_equal;
         set_ctrl g this region;
         Graph.remove_node g other
     | _ -> assert false
@@ -140,7 +140,7 @@ let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
             match symbol with
             | None -> ()
             | Some symbol ->
-                if name <> ctrl_identifier && not (Node.equal symbol this) then
+                if name <> ctrl_identifier && not (Node.hard_equal symbol this) then
                   (* Set the second input of the phi node *)
                   Phi_node.add_input g (get g this name) [ get g body name ]);
 
@@ -148,7 +148,7 @@ let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
             match symbol with
             | None -> ()
             | Some symbol ->
-                if not (Node.equal symbol this) then
+                if not (Node.hard_equal symbol this) then
                   assign g this name symbol);
         set_ctrl g this (get_ctrl g exit);
         Graph.remove_node g body;

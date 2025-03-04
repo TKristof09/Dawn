@@ -34,10 +34,10 @@ let remove_dependency g ~node ~dep =
     Hashtbl.change g.dependencies node ~f:(function
       | None -> None
       | Some l ->
-          if List.equal Node.equal l [ dep ] then
+          if List.equal Node.hard_equal l [ dep ] then
             None
           else
-            Some (List.filter l ~f:(fun n -> not (Node.equal n dep))));
+            Some (List.filter l ~f:(fun n -> not (Node.hard_equal n dep))));
     Hashtbl.change g.dependants dep ~f:(function
       | None ->
           (* shouldn't happen *)

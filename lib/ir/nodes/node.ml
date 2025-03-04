@@ -2,19 +2,19 @@ open Core
 
 type data_kind =
     | Constant
-    | Add of t * t
-    | Sub of t * t
-    | Mul of t * t
-    | Div of t * t
-    | Proj of t
-    | Eq of t * t
-    | Phi of t * t list
+    | Add
+    | Sub
+    | Mul
+    | Div
+    | Proj of int
+    | Eq
+    | Phi
 
 and ctrl_kind =
     | Start
     | Stop
-    | Proj of t
-    | If of t * t
+    | Proj of int
+    | If
     | Region
 
 and kind =
@@ -52,8 +52,32 @@ let show node =
     Printf.sprintf "Node { id : %d ; kind : %s; type :%s}" node.id kind_str type_string
 
 let compare n1 n2 = Int.compare n1.id n2.id
-let equal n1 n2 = Int.equal n1.id n2.id
+let hard_equal n1 n2 = Int.equal n1.id n2.id
+
+let is_same n1 deps1 n2 deps2 =
+    let is_same_kind n1 n2 =
+        let constant_same n1 n2 =
+            match (n1.typ, n2.typ) with
+            | Integer (Value v1), Integer (Value v2) -> v1 = v2
+            | _ -> false
+        in
+        match (n1.kind, n2.kind) with
+        | Data Constant, Data Constant -> constant_same n1 n2
+        | _, _ -> Poly.equal n1.kind n2.kind
+    in
+    is_same_kind n1 n2 && List.equal hard_equal deps1 deps2
+
 let hash n = Int.hash n.id
 let create_data typ kind = { typ; kind = Data kind; id = next_id () }
 let create_ctrl typ kind = { typ; kind = Ctrl kind; id = next_id () }
 let create_scope () = { typ = Types.BOTTOM; kind = Scope (Symbol_table.create ()); id = next_id () }
+
+let is_ctrl n =
+    match n.kind with
+    | Ctrl _ -> true
+    | _ -> false
+
+let is_data n =
+    match n.kind with
+    | Data _ -> true
+    | _ -> false

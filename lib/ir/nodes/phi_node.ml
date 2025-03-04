@@ -1,8 +1,15 @@
 let create g ctrl nodes =
-    let typ = Types.Tuple (Value (Core.List.map nodes ~f:(fun (n : Node.t) -> n.typ))) in
-    let n = Node.create_data typ (Phi (ctrl, nodes)) in
-    Graph.add_dependencies g n (ctrl :: nodes);
-    n
+    let n =
+        let typ = Types.Tuple (Value (Core.List.map nodes ~f:(fun (n : Node.t) -> n.typ))) in
+        let n = Node.create_data typ Phi in
+        Graph.add_dependencies g n (ctrl :: nodes);
+        n
+    in
+    match nodes with
+    | [ _ ] ->
+        n
+        (* don't try to use gvn for phi with single input (these are created at the start of loops before backedge is filled *)
+    | _ -> Gvn.finalize g n
 
 let add_input g (n : Node.t) ins =
     match n.typ with

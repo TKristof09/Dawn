@@ -1,1 +1,1 @@
-val create : Graph.t -> Node.t -> Node.t
+val create : unit -> Node.t
