@@ -103,4 +103,6 @@ let of_ast ast =
     Graph.get_dependants g (Graph.get_start g)
     |> List.iter ~f:(fun n ->
            if Graph.get_dependants g n |> List.is_empty then Graph.remove_node g n);
+    Scheduler.schedule_early g;
+    Scheduler.schedule_late g;
     g
