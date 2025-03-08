@@ -47,11 +47,12 @@ let show node =
         match node.kind with
         | Data d -> show_sexp (sexp_of_data_kind d)
         | Ctrl c -> show_sexp (sexp_of_ctrl_kind c)
-        | Scope _ -> ""
+        | Scope _ -> "Scope"
     in
     let type_string = Types.show_node_type node.typ in
     Printf.sprintf "Node { id : %d ; kind : %s; type :%s}" node.id kind_str type_string
 
+let pp fmt node = Format.fprintf fmt "%s" (show node)
 let compare n1 n2 = Int.compare n1.id n2.id
 let hard_equal n1 n2 = Int.equal n1.id n2.id
 
@@ -90,4 +91,14 @@ let is_ctrl n =
 let is_data n =
     match n.kind with
     | Data _ -> true
+    | _ -> false
+
+let is_blockhead n =
+    match n.kind with
+    | Ctrl Start
+    | Ctrl (Proj _)
+    | Ctrl Region
+    | Ctrl Loop
+    | Ctrl Stop ->
+        true
     | _ -> false

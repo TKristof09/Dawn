@@ -139,7 +139,6 @@ let remove_node g n =
     | Some _ -> Printf.printf "Couldn't remove node %s because it has dependants\n" (Node.show n)
 
 let replace_node_with g base new_node =
-    Printf.printf "Replacing %s with %s\n" (Node.show base) (Node.show new_node);
     (match Hashtbl.find g.dependants base with
     | None -> ()
     | Some s ->
@@ -169,5 +168,6 @@ let finalize_node g n =
         Hash_set.add g.gvn n;
         n
     | Some old_n ->
-        remove_node g n;
+        if not (Node.hard_equal n old_n) then
+          remove_node g n;
         old_n

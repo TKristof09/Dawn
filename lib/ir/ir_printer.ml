@@ -68,7 +68,7 @@ let to_dot g =
                 let style =
                     match (dep.kind, node.kind) with
                     | Ctrl _, Data Constant -> ""
-                    | Ctrl _, Data _ -> "color=red,style=dotted"
+                    | Ctrl _, Data _ -> "color=yellow,style=dashed,arrowhead=none"
                     | Ctrl _, _ -> "color=red"
                     | _ -> ""
                 in

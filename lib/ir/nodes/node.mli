@@ -40,5 +40,7 @@ val create_data : Types.node_type -> data_kind -> t
 val create_ctrl : Types.node_type -> ctrl_kind -> t
 val create_scope : unit -> t
 val show : t -> string
+val pp : Format.formatter -> t -> unit
 val is_ctrl : t -> bool
 val is_data : t -> bool
+val is_blockhead : t -> bool

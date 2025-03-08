@@ -35,19 +35,20 @@ let rec idepth g (node : Node.t) =
         |> List.fold ~init:0 ~f:(fun acc n ->
                match n with
                | Some n -> max acc (idepth g n)
-               | _ -> assert false)
-    | Ctrl Loop -> 1 + idepth g (Graph.get_dependency g node 1 |> Option.value_exn)
+               | None -> acc)
+    | Ctrl Loop -> 1 + idepth g (Loop_node.get_entry_edge g node)
     | Ctrl _ -> 1 + idepth g (Graph.get_dependency g node 0 |> Option.value_exn)
-    | Data _ -> assert false
-    | Scope _ -> assert false
+    | Data _ -> idepth g (Graph.get_dependency g node 0 |> Option.value_exn)
+    | Scope _ -> failwith @@ Printf.sprintf "Idepth called with: %s\n" (Node.show node)
 
 (* consider caching this *)
 let rec loop_depth g (n : Node.t) =
     match n.kind with
     | Ctrl Loop ->
-        let entry_depth = Graph.get_dependency g n 1 |> Option.value_exn |> loop_depth g in
+        let entry_depth = Loop_node.get_entry_edge g n |> loop_depth g in
         entry_depth + 1
     | Ctrl Start -> 1
+    | Ctrl Region -> Graph.get_dependency g n 1 |> Option.value_exn |> loop_depth g
     | _ -> Graph.get_dependency g n 0 |> Option.value_exn |> loop_depth g
 
 let schedule_early g =
@@ -60,18 +61,22 @@ let schedule_early g =
           && not (Poly.equal node.kind (Data Constant))
         then (
           Hash_set.add already_scheduled node;
-          let deps = Graph.get_dependencies g node |> List.filter_opt in
-          List.iter deps ~f:schedule;
+          let deps = Graph.get_dependencies g node in
+          List.filter_opt deps |> List.iter ~f:schedule;
           let scheduled_n, _ =
-              List.fold deps
-                ~init:(Graph.get_start g, 0)
+              List.fold
+                (List.tl deps |> Option.value ~default:[])
+                ~init:(Graph.get_start g, idepth g (Graph.get_start g))
                 ~f:(fun (max_n, max_depth) n ->
-                  let cfg = Graph.get_dependency g n 0 |> Option.value_exn in
-                  let d = idepth g cfg in
-                  if d > max_depth then
-                    (cfg, d)
-                  else
-                    (max_n, max_depth))
+                  match n with
+                  | None -> (max_n, max_depth)
+                  | Some n ->
+                      let cfg = Graph.get_dependency g n 0 |> Option.value_exn in
+                      let d = idepth g cfg in
+                      if d > max_depth then
+                        (cfg, d)
+                      else
+                        (max_n, max_depth))
           in
           if not (Poly.equal node.kind (Data Phi)) then
             Graph.set_dependency g node (Some scheduled_n) 0)
@@ -94,14 +99,12 @@ let schedule_late g =
     let m = Hashtbl.create ~size:(Graph.get_num_nodes g) (module Node) in
     let is_forward_edge node (dependant : Node.t) =
         match dependant.kind with
-        | Ctrl Loop ->
-            Graph.get_dependency g dependant 0 |> Option.value_exn |> Node.hard_equal node
+        | Ctrl Loop -> not (Loop_node.get_back_edge g dependant |> Node.hard_equal node)
         | Data Phi -> (
             match (Graph.get_dependency g dependant 0 |> Option.value_exn).kind with
-            | Ctrl Loop ->
-                Graph.get_dependency g dependant 1 |> Option.value_exn |> Node.hard_equal node
-            | _ -> false)
-        | _ -> false
+            | Ctrl Loop -> not (Loop_node.get_back_edge g dependant |> Node.hard_equal node)
+            | _ -> true)
+        | _ -> true
     in
     let get_block node (dependant : Node.t) =
         match dependant.kind with
@@ -118,13 +121,14 @@ let schedule_late g =
             Graph.get_dependency g region idx |> Option.value_exn
         | _ -> Hashtbl.find_exn m dependant
     in
-    let dom (n : Node.t) =
+    let rec dom (n : Node.t) =
         match n.kind with
-        | Ctrl Loop -> assert false
-        | Ctrl Region -> assert false
+        | Ctrl Start -> assert false
+        | Ctrl Loop -> Loop_node.get_entry_edge g n
+        | Ctrl Region ->
+            Graph.get_dependencies g n |> List.filter_opt |> List.reduce_exn ~f:common_dom
         | _ -> Graph.get_dependency g n 0 |> Option.value_exn
-    in
-    let rec common_dom lhs rhs =
+    and common_dom lhs rhs =
         if Node.hard_equal lhs rhs then
           lhs
         else
@@ -137,12 +141,16 @@ let schedule_late g =
     let find_best early late =
         let rec get_path cur =
             if Node.hard_equal cur early then
-              []
+              [ early ]
             else
-              late :: get_path (dom late)
+              cur :: get_path (dom cur)
         in
-        let ( < ) a b = loop_depth g a > loop_depth g b in
-        List.max_elt (get_path late) ~compare:(fun a b -> if a < b then 1 else -1)
+        let ( < ) a b =
+            loop_depth g a > loop_depth g b
+            || idepth g a < idepth g b
+            || Poly.equal a.kind (Ctrl If)
+        in
+        List.max_elt (get_path late) ~compare:(fun a b -> if a < b then -1 else 1)
         |> Option.value_exn
     in
     let rec schedule (node : Node.t) =
@@ -158,10 +166,11 @@ let schedule_late g =
           | Data Phi
           | Ctrl _ ->
               ()
+          | Scope _ -> ()
           | _ ->
               let lca =
-                  List.fold (Graph.get_dependants g node) ~init:node ~f:(fun lca n ->
-                      get_block node n |> common_dom lca)
+                  List.map (Graph.get_dependants g node) ~f:(get_block node)
+                  |> List.reduce_exn ~f:common_dom
               in
               let early = Graph.get_dependency g node 0 |> Option.value_exn in
               let best = find_best early lca in

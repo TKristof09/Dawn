@@ -3,3 +3,5 @@ val create : Graph.t -> Node.t -> Node.t
     will get filled later on. *)
 
 val set_back_edge : Graph.t -> Node.t -> Node.t -> unit
+val get_back_edge : Graph.t -> Node.t -> Node.t
+val get_entry_edge : Graph.t -> Node.t -> Node.t
