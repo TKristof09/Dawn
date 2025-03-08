@@ -17,6 +17,10 @@ let node_label node =
             | Sexplib.Sexp.List [] -> assert false
         in
         match node.Node.kind with
+        | Data Constant -> "Const"
+        | Data (Proj i)
+        | Ctrl (Proj i) ->
+            Printf.sprintf "Proj %d" i
         | Data d -> show_sexp (Node.sexp_of_data_kind d)
         | Ctrl c -> show_sexp (Node.sexp_of_ctrl_kind c)
         | Scope _ -> ""
@@ -62,20 +66,24 @@ let to_dot g =
     Graph.iter g ~f:(fun node ->
         match node.kind with
         | Scope _ -> ()
+        | Data Constant -> ()
         | _ ->
-            let deps = Graph.get_dependencies g node |> List.filter_opt in
-            List.iter deps ~f:(fun dep ->
-                let style =
-                    match (dep.kind, node.kind) with
-                    | Ctrl _, Data Constant -> ""
-                    | Ctrl _, Data _ -> "color=yellow,style=dashed,arrowhead=none"
-                    | Ctrl _, _ -> "color=red"
-                    | _ -> ""
-                in
+            let deps = Graph.get_dependencies g node in
+            List.iteri deps ~f:(fun i dep ->
+                match dep with
+                | None -> ()
+                | Some dep ->
+                    let style =
+                        match (dep.kind, node.kind) with
+                        | Ctrl _, Data Constant -> ""
+                        | Ctrl _, Data _ -> "color=yellow,style=dashed,arrowhead=none"
+                        | Ctrl _, _ -> "color=red"
+                        | _ -> ""
+                    in
 
-                Buffer.add_string buf
-                  (Printf.sprintf "  %s -> %s[%s];\n" (node_to_dot_id dep) (node_to_dot_id node)
-                     style)));
+                    Buffer.add_string buf
+                      (Printf.sprintf "  %s -> %s[arrowsize=0.5,headlabel=%d,%s];\n"
+                         (node_to_dot_id dep) (node_to_dot_id node) i style)));
 
     Buffer.add_string buf "}\n";
 
