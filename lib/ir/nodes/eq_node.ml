@@ -8,7 +8,7 @@ let create g (lhs : Node.t) (rhs : Node.t) =
               Const_node.create_int g (Bool.to_int (lhs_v = rhs_v))
           | _ ->
               let n = Node.create_data (Integer Top) Eq in
-              Graph.add_dependencies g n [ lhs; rhs ];
+              Graph.add_dependencies g n [ None; Some lhs; Some rhs ];
               n
     in
-    Gvn.finalize g n
+    Graph.finalize_node g n

@@ -14,6 +14,7 @@ and ctrl_kind =
     | Proj of int
     | If
     | Region
+    | Loop
 
 and kind =
     | Data of data_kind
@@ -27,7 +28,7 @@ and t = {
   }
 [@@deriving sexp_of]
 
-val is_same : t -> t list -> t -> t list -> bool
+val is_same : t -> t option list -> t -> t option list -> bool
 (** Check for semantical equality. Basically same kind and same inputs *)
 
 val hard_equal : t -> t -> bool

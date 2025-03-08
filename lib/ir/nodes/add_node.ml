@@ -1,7 +1,7 @@
 let create g (lhs : Node.t) (rhs : Node.t) =
     let create_aux lhs rhs =
         let n = Node.create_data (Integer Top) Add in
-        Graph.add_dependencies g n [ lhs; rhs ];
+        Graph.add_dependencies g n [ None; Some lhs; Some rhs ];
         n
     in
     let n =
@@ -16,4 +16,4 @@ let create g (lhs : Node.t) (rhs : Node.t) =
             | _ -> create_aux lhs rhs)
         | _ -> create_aux lhs rhs
     in
-    Gvn.finalize g n
+    Graph.finalize_node g n

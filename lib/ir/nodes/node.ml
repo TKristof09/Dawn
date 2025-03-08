@@ -16,6 +16,7 @@ and ctrl_kind =
     | Proj of int
     | If
     | Region
+    | Loop
 
 and kind =
     | Data of data_kind
@@ -65,7 +66,16 @@ let is_same n1 deps1 n2 deps2 =
         | Data Constant, Data Constant -> constant_same n1 n2
         | _, _ -> Poly.equal n1.kind n2.kind
     in
-    is_same_kind n1 n2 && List.equal hard_equal deps1 deps2
+    is_same_kind n1 n2
+    && List.equal
+         (fun a b ->
+           match (a, b) with
+           | None, None -> true
+           | Some _, None
+           | None, Some _ ->
+               false
+           | Some a, Some b -> hard_equal a b)
+         deps1 deps2
 
 let hash n = Int.hash n.id
 let create_data typ kind = { typ; kind = Data kind; id = next_id () }

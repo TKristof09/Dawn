@@ -63,17 +63,19 @@ let to_dot g =
         match node.kind with
         | Scope _ -> ()
         | _ ->
-            let deps = Graph.get_dependencies g node in
+            let deps = Graph.get_dependencies g node |> List.filter_opt in
             List.iter deps ~f:(fun dep ->
-                let color =
+                let style =
                     match (dep.kind, node.kind) with
                     | Ctrl _, Data Constant -> ""
+                    | Ctrl _, Data _ -> "color=red,style=dotted"
                     | Ctrl _, _ -> "color=red"
                     | _ -> ""
                 in
+
                 Buffer.add_string buf
                   (Printf.sprintf "  %s -> %s[%s];\n" (node_to_dot_id dep) (node_to_dot_id node)
-                     color)));
+                     style)));
 
     Buffer.add_string buf "}\n";
 

@@ -13,7 +13,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope =
             Scope_node.define g scope name default_init
         | _ -> assert false)
     | Ast.While (cond, body) ->
-        let loop_node = Region_node.create_loop g (Scope_node.get_ctrl g scope) in
+        let loop_node = Loop_node.create g (Scope_node.get_ctrl g scope) in
         let body_scope = Scope_node.dup_loop g scope in
         Scope_node.set_ctrl g body_scope loop_node;
         Scope_node.set_ctrl g scope loop_node;
@@ -25,7 +25,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope =
         Scope_node.set_ctrl g body_scope n_true;
         let _n_body = do_expr g body body_scope in
         Scope_node.set_ctrl g exit_scope n_false;
-        Region_node.set_loop_back_edge g loop_node (Scope_node.get_ctrl g body_scope);
+        Loop_node.set_back_edge g loop_node (Scope_node.get_ctrl g body_scope);
         Scope_node.merge_loop g ~this:scope ~body:body_scope ~exit:exit_scope
     | _ -> assert false
 
@@ -98,7 +98,8 @@ let of_ast ast =
     Scope_node.set_ctrl g scope (Graph.get_start g);
     Core.List.iter ast ~f:(fun s -> do_statement g s scope);
     let ctrl = Scope_node.get_ctrl g scope in
-    Stop_node.create g ctrl |> Scope_node.set_ctrl g scope;
+    Graph.set_stop_ctrl g ctrl;
+    Scope_node.set_ctrl g scope (Graph.get_stop g);
     Graph.get_dependants g (Graph.get_start g)
     |> List.iter ~f:(fun n ->
            if Graph.get_dependants g n |> List.is_empty then Graph.remove_node g n);

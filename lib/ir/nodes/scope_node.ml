@@ -5,7 +5,7 @@ let define g (n : Node.t) name node =
     match n.kind with
     | Scope tbl ->
         Symbol_table.add_symbol tbl name node;
-        Graph.add_dependencies g n [ node ]
+        Graph.add_dependencies g n [ Some node ]
     | _ -> assert false
 
 let rec assign g (n : Node.t) name node =
@@ -19,13 +19,13 @@ let rec assign g (n : Node.t) name node =
                 match tmp.kind with
                 | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> symbol
                 | _ ->
-                    let phi = Phi_node.create g (get_ctrl g symbol) [ get g symbol name ] in
+                    let phi = Phi_node.create_half g (get_ctrl g symbol) (get g symbol name) in
                     assign g symbol name phi;
                     phi)
             | _ -> symbol
         in
         Symbol_table.reassign_symbol tbl name node;
-        Graph.add_dependencies g n [ node ];
+        Graph.add_dependencies g n [ Some node ];
         Graph.remove_dependency g ~node:n ~dep:symbol
     | _ -> assert false
 
@@ -40,7 +40,7 @@ and get g (n : Node.t) name =
                 match tmp.kind with
                 | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> symbol
                 | _ ->
-                    let phi = Phi_node.create g (get_ctrl g symbol) [ get g symbol name ] in
+                    let phi = Phi_node.create_half g (get_ctrl g symbol) (get g symbol name) in
                     assign g symbol name phi;
                     phi
             in
@@ -63,8 +63,7 @@ let push (n : Node.t) =
 let pop g (n : Node.t) =
     match n.kind with
     | Scope tbl ->
-        Symbol_table.iter_current_depth tbl (fun ~name ~symbol ->
-            Printf.printf "Removing %s\n" name;
+        Symbol_table.iter_current_depth tbl (fun ~name:_ ~symbol ->
             Graph.remove_dependency g ~node:n ~dep:symbol);
         n.kind <- Scope (Symbol_table.pop tbl)
     | _ -> assert false
@@ -122,7 +121,7 @@ let merge g ~(this : Node.t) ~(other : Node.t) =
                   Phi_node.create g region
                     [ get_no_insert g this_tbl name; get_no_insert g other_tbl name ]
               in
-              Graph.add_dependencies g this [ phi ];
+              Graph.add_dependencies g this [ Some phi ];
               Graph.remove_dependency g ~node:this ~dep:n_this;
               phi)
             else
@@ -142,7 +141,15 @@ let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
             | Some symbol ->
                 if name <> ctrl_identifier && not (Node.hard_equal symbol this) then
                   (* Set the second input of the phi node *)
-                  Phi_node.add_input g (get g this name) [ get g body name ]);
+                  let n_this = get g this name in
+                  let n_body = get g body name in
+                  if Node.hard_equal n_this n_body then (
+                    let value = Graph.get_dependency g n_this 2 |> Core.Option.value_exn in
+                    Graph.replace_node_with g n_this value;
+                    (* symbols get assigned from exit table to this table later *)
+                    assign g exit name value)
+                  else
+                    Phi_node.add_input g n_this n_body);
 
         Symbol_table.iter exit_tbl (fun ~name ~symbol ~depth:_ ->
             match symbol with
