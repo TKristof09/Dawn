@@ -85,12 +85,17 @@ let remove_dependency g ~node ~dep =
     Hashtbl.change g.dependants dep ~f:(function
       | None ->
           (* shouldn't happen *)
-          Hash_set.remove g.nodes dep;
-          Hash_set.remove g.gvn dep;
+          if (not (Node.hard_equal dep g.start)) && not (Node.hard_equal dep g.stop) then (
+            Hash_set.remove g.nodes dep;
+            Hash_set.remove g.gvn dep);
           None
       | Some s ->
           Hash_set.remove s node;
-          if Hash_set.is_empty s then (
+          if
+            Hash_set.is_empty s
+            && (not (Node.hard_equal dep g.start))
+            && not (Node.hard_equal dep g.stop)
+          then (
             Hash_set.remove g.nodes dep;
             Hash_set.remove g.gvn dep;
             None)

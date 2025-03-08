@@ -107,4 +107,10 @@ let of_ast ast =
     Graph.remove_node g scope;
     Scheduler.schedule_early g;
     Scheduler.schedule_late g;
+    let l = Scheduler.schedule_flat g in
+    List.iter l ~f:(fun ll ->
+        Printf.printf "%s\n" (Node.show (List.hd_exn ll));
+        List.iter
+          (List.tl ll |> Option.value ~default:[])
+          ~f:(fun n -> Printf.printf "|-- %s\n" (Node.show n)));
     g

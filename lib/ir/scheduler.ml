@@ -1,6 +1,6 @@
 open Core
 
-let rev_post_order_bfs_ctrl g node f =
+let rev_post_order_bfs_ctrl g node =
     let visited = Hash_set.create (module Node) in
     Hash_set.add visited node;
 
@@ -10,8 +10,8 @@ let rev_post_order_bfs_ctrl g node f =
             Hash_set.add visited node;
 
             let new_acc =
-                List.fold_right (Graph.get_dependants g node)
-                  ~f:(fun dep current_acc ->
+                List.fold (Graph.get_dependants g node)
+                  ~f:(fun current_acc dep ->
                     if not (Hash_set.mem visited dep) then
                       dfs dep current_acc
                     else
@@ -22,9 +22,7 @@ let rev_post_order_bfs_ctrl g node f =
             node :: new_acc
         | _ -> acc
     in
-
-    let nodes = dfs node [] in
-    List.iter nodes ~f
+    dfs node []
 
 (* consider caching this *)
 let rec idepth g (node : Node.t) =
@@ -81,19 +79,20 @@ let schedule_early g =
           if not (Poly.equal node.kind (Data Phi)) then
             Graph.set_dependency g node (Some scheduled_n) 0)
     in
-    rev_post_order_bfs_ctrl g (Graph.get_start g) (fun n ->
-        let nodes =
-            match n.kind with
-            | Ctrl Region
-            | Ctrl Loop ->
-                (* TODO consider filtering for phis? don't think it's needed for now though, only phis or ctrl nodes are dependants of regions *)
-                Graph.get_dependants g n
-            | _ -> Graph.get_dependencies g n |> List.filter_opt
-        in
-        List.iter nodes ~f:(fun n ->
-            match n.kind with
-            | Ctrl _ -> ()
-            | _ -> schedule n))
+    rev_post_order_bfs_ctrl g (Graph.get_start g)
+    |> List.iter ~f:(fun n ->
+           let nodes =
+               match n.kind with
+               | Ctrl Region
+               | Ctrl Loop ->
+                   (* TODO consider filtering for phis? don't think it's needed for now though, only phis or ctrl nodes are dependants of regions *)
+                   Graph.get_dependants g n
+               | _ -> Graph.get_dependencies g n |> List.filter_opt
+           in
+           List.iter nodes ~f:(fun n ->
+               match n.kind with
+               | Ctrl _ -> ()
+               | _ -> schedule n))
 
 let schedule_late g =
     let m = Hashtbl.create ~size:(Graph.get_num_nodes g) (module Node) in
@@ -183,3 +182,53 @@ let schedule_late g =
         | Ctrl _ ->
             ()
         | _ -> Graph.set_dependency g key (Some data) 0)
+
+let schedule_flat g =
+    let score (n : Node.t) =
+        match n.kind with
+        | Data (Proj _)
+        | Ctrl (Proj _) ->
+            1001
+        | Data Phi -> 1000
+        | Ctrl _ -> 1
+        | _ -> 500
+    in
+    let schedule_main nodes =
+        let scheduled = Dynarray.create () in
+        let not_ready = Hash_set.of_list (module Node) nodes in
+        let ready =
+            Hash_set.filter not_ready ~f:(fun n ->
+                let deps =
+                    Graph.get_dependencies g n |> List.filter_opt |> Hash_set.of_list (module Node)
+                in
+                Hash_set.for_all deps ~f:(fun x -> not (Hash_set.mem not_ready x)))
+        in
+        let not_ready = Hash_set.diff not_ready ready in
+        (*Printf.printf "READY: %s\n" ([%derive.show: Node.t list] (Hash_set.to_list ready));*)
+        (*Printf.printf "NOT  READY: %s\n" ([%derive.show: Node.t list] (Hash_set.to_list not_ready));*)
+        let is_ready node =
+            List.for_all
+              (Graph.get_dependencies g node |> List.tl_exn)
+              ~f:(function
+                | None -> true
+                | Some n -> (not (Hash_set.mem ready n)) && not (Hash_set.mem not_ready n))
+        in
+        while not (Hash_set.is_empty ready && Hash_set.is_empty not_ready) do
+          let best =
+              Hash_set.max_elt ready ~compare:(fun a b -> Int.compare (score a) (score b))
+              |> Option.value_exn (* ready should never be empty if not_ready isnt empty *)
+          in
+          Dynarray.add_last scheduled best;
+          Hash_set.remove ready best;
+          List.iter (Graph.get_dependants g best) ~f:(fun n ->
+              if Hash_set.mem not_ready n && is_ready n then (
+                (*Printf.printf "Moving %s from %s\n" (Node.show n) (Node.show best);*)
+                Hash_set.add ready n;
+                Hash_set.remove not_ready n))
+        done;
+        Dynarray.to_list scheduled
+    in
+    let cfg = rev_post_order_bfs_ctrl g (Graph.get_start g) in
+    cfg
+    |> List.filter ~f:Node.is_blockhead
+    |> List.map ~f:(fun bb -> bb :: Graph.get_dependants g bb |> schedule_main)
