@@ -43,4 +43,5 @@ val show : t -> string
 val pp : Format.formatter -> t -> unit
 val is_ctrl : t -> bool
 val is_data : t -> bool
+val is_scope : t -> bool
 val is_blockhead : t -> bool

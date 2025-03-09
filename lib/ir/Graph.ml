@@ -1,50 +1,125 @@
 open Core
 
+let remove_arr_elt arr elt =
+    match Dynarray.find_index (Node.hard_equal elt) arr with
+    | None -> assert false
+    | Some idx ->
+        let last = Dynarray.pop_last arr in
+        if idx < Dynarray.length arr then Dynarray.set arr idx last
+
 (* TODO: aren't nodes and gvn basically the same thing? *)
 type t = {
     dependencies : (Node.t, Node.t option Dynarray.t) Hashtbl.t;
-    dependants : (Node.t, Node.t Hash_set.t) Hashtbl.t;
+    dependants : (Node.t, Node.t Dynarray.t) Hashtbl.t;
     nodes : Node.t Hash_set.t;
     start : Node.t;
     stop : Node.t;
     gvn : Node.t Hash_set.t;
   }
 
+let check g =
+    let debug_check () =
+        let dependencies_keys_match =
+            Hash_set.of_hashtbl_keys g.dependencies |> Hash_set.equal g.nodes
+        in
+        if not dependencies_keys_match then
+          failwith
+          @@ Printf.sprintf "Depedencies keys not match: +dep: %s ------ +nodes: %s"
+               ([%derive.show: Node.t list]
+                  (Hash_set.diff (Hash_set.of_hashtbl_keys g.dependencies) g.nodes
+                  |> Hash_set.to_list))
+               ([%derive.show: Node.t list]
+                  (Hash_set.diff g.nodes (Hash_set.of_hashtbl_keys g.dependencies)
+                  |> Hash_set.to_list));
+        let dependants_keys_match =
+            Hash_set.of_hashtbl_keys g.dependants |> Hash_set.equal g.nodes
+        in
+        if not dependants_keys_match then
+          failwith
+          @@ Printf.sprintf "Dependants keys not match: +dep: %s ------ +nodes: %s"
+               ([%derive.show: Node.t list]
+                  (Hash_set.diff (Hash_set.of_hashtbl_keys g.dependants) g.nodes |> Hash_set.to_list))
+               ([%derive.show: Node.t list]
+                  (Hash_set.diff g.nodes (Hash_set.of_hashtbl_keys g.dependants) |> Hash_set.to_list));
+        Hashtbl.iteri g.dependencies ~f:(fun ~key ~data ->
+            Dynarray.iter
+              (function
+                | None -> ()
+                | Some n -> (
+                    match Hashtbl.find g.dependants n with
+                    | None ->
+                        failwith
+                        @@ Printf.sprintf
+                             "Depedencies not in sync with dependants: couldn't find dependants of \
+                              dependency %s of %s"
+                             (Node.show n) (Node.show key)
+                    | Some arr ->
+                        if not (Dynarray.mem key arr) then
+                          failwith
+                          @@ Printf.sprintf
+                               "Depedencies not in sync with dependants: dependency %s of %s"
+                               (Node.show n) (Node.show key)))
+              data);
+
+        Hashtbl.iteri g.dependants ~f:(fun ~key ~data ->
+            Dynarray.iter
+              (fun n ->
+                match Hashtbl.find g.dependencies n with
+                | None ->
+                    failwith
+                    @@ Printf.sprintf
+                         "Dependants not in sync with depedencies: couldn't find depedencies of \
+                          dependant %s of %s"
+                         (Node.show n) (Node.show key)
+                | Some arr ->
+                    if not (Dynarray.mem (Some key) arr) then
+                      failwith
+                      @@ Printf.sprintf
+                           "Dependants not in sync with depedencies: dependant %s of %s"
+                           (Node.show n) (Node.show key))
+              data)
+    in
+    match Sys.getenv "GRAPH_CHECK" with
+    | None -> ()
+    | Some _ -> debug_check ()
+
+let add_node g n =
+    if Hash_set.mem g.nodes n then
+      ()
+    else (
+      check g;
+      assert (not (Hashtbl.mem g.dependants n));
+      assert (not (Hashtbl.mem g.dependencies n));
+      Hash_set.add g.nodes n;
+      Hashtbl.set g.dependencies ~key:n ~data:(Dynarray.create ());
+      Hashtbl.set g.dependants ~key:n ~data:(Dynarray.create ());
+      check g)
+
 let create () =
     let start = Start_node.create () in
     let stop = Stop_node.create () in
-    {
-      dependencies = Hashtbl.create (module Node);
-      dependants = Hashtbl.create (module Node);
-      nodes = Hash_set.of_list (module Node) [ start; stop ];
-      start;
-      stop;
-      gvn = Hash_set.of_list (module Node) [ start; stop ];
-    }
+    let g =
+        {
+          dependencies = Hashtbl.create (module Node);
+          dependants = Hashtbl.create (module Node);
+          nodes = Hash_set.create (module Node);
+          start;
+          stop;
+          gvn = Hash_set.of_list (module Node) [ start; stop ];
+        }
+    in
+    add_node g start;
+    add_node g stop;
+    check g;
+    g
 
 let get_start g = g.start
 let get_stop g = g.stop
 
-let add_dependencies g node dependencies =
-    Hash_set.add g.nodes node;
-    Hashtbl.update g.dependencies node ~f:(function
-      | None -> Dynarray.of_list dependencies
-      | Some arr ->
-          Dynarray.append_list arr dependencies;
-          arr);
-    List.iter dependencies ~f:(fun d ->
-        match d with
-        | None -> ()
-        | Some d ->
-            Hash_set.add g.nodes d;
-            Hashtbl.update g.dependants d ~f:(function
-              | None -> Hash_set.of_list (module Node) [ node ]
-              | Some s ->
-                  Hash_set.add s node;
-                  s))
-
 let set_dependency g node dep idx =
-    assert (idx <> 0 || Node.is_ctrl (Option.value_exn dep));
+    assert (idx <> 0 || Option.value_map dep ~default:true ~f:Node.is_ctrl || Node.is_scope node);
+
+    check g;
     let arr = Hashtbl.find_exn g.dependencies node in
     let prev = Dynarray.get arr idx in
     (match prev with
@@ -53,55 +128,114 @@ let set_dependency g node dep idx =
         let s = Hashtbl.find g.dependants n in
         match s with
         | None -> assert false
-        | Some s -> Hash_set.remove s node));
+        | Some s ->
+            remove_arr_elt s node;
+            Dynarray.set arr idx None));
+
+    Option.iter dep ~f:(add_node g);
     Dynarray.set arr idx dep;
-    match dep with
+    (match dep with
     | None -> ()
     | Some dep ->
-        Hash_set.add g.nodes dep;
         Hashtbl.update g.dependants dep ~f:(function
-          | None -> Hash_set.of_list (module Node) [ node ]
+          | None -> assert false
           | Some s ->
-              Hash_set.add s node;
-              s)
+              Dynarray.add_last s node;
+              s));
 
-let remove_dependency g ~node ~dep =
+    check g
+
+let add_dependencies g node dependencies =
+    check g;
+    add_node g node;
+    let arr = Hashtbl.find_exn g.dependencies node in
+    List.iter dependencies ~f:(fun d ->
+        let idx = Dynarray.length arr in
+        Dynarray.add_last arr None;
+        set_dependency g node d idx);
+    check g
+
+let rec remove_dependency g ~node ~dep =
+    check g;
     Hashtbl.change g.dependencies node ~f:(function
       | None -> None
       | Some arr -> (
           match
-            Dynarray.find_index
-              (fun dep_opt ->
-                match dep_opt with
-                | None -> false
-                | Some x -> Node.hard_equal dep x)
-              arr
+            Dynarray.find_index (Option.value_map ~default:false ~f:(Node.hard_equal dep)) arr
           with
           | None -> Some arr
           | Some idx ->
-              Dynarray.set arr idx None;
+              set_dependency g node None idx;
               Some arr));
+    check g;
 
-    Hashtbl.change g.dependants dep ~f:(function
-      | None ->
-          (* shouldn't happen *)
-          if (not (Node.hard_equal dep g.start)) && not (Node.hard_equal dep g.stop) then (
-            Hash_set.remove g.nodes dep;
-            Hash_set.remove g.gvn dep);
-          None
-      | Some s ->
-          Hash_set.remove s node;
-          if
-            Hash_set.is_empty s
-            && (not (Node.hard_equal dep g.start))
-            && not (Node.hard_equal dep g.stop)
-          then (
-            Hash_set.remove g.nodes dep;
-            Hash_set.remove g.gvn dep;
-            None)
-          else
-            Some s)
+    (match Hashtbl.find g.dependants dep with
+    | None ->
+        (* shouldn't happen *)
+        Printf.printf "ERROR: %s\n" (Node.show node);
+        Printf.printf "ERROR: %s\n" (Node.show dep);
+        assert false
+    | Some arr ->
+        (*TODO remove this as it is done already in set_dependency remove_arr_elt arr node;*)
+        if
+          Dynarray.is_empty arr
+          && (not (Node.hard_equal dep g.start))
+          && (not (Node.hard_equal dep g.stop))
+          && not (Node.is_scope dep)
+        then
+          remove_node g dep);
+    check g
 
+and remove_node g n =
+    check g;
+    let remove_dependencies () =
+        match Hashtbl.find g.dependencies n with
+        | None -> ()
+        | Some deps ->
+            Dynarray.iter
+              (fun dep ->
+                match dep with
+                | None -> ()
+                | Some dep -> remove_dependency g ~node:n ~dep)
+              deps
+    in
+    (match Hashtbl.find g.dependants n with
+    | None -> assert false
+    | Some s when Dynarray.is_empty s ->
+        remove_dependencies ();
+        Hashtbl.remove g.dependants n;
+        Hashtbl.remove g.dependencies n;
+        Hash_set.remove g.nodes n;
+        Hash_set.remove g.gvn n
+    | Some _ -> Printf.printf "Couldn't remove node %s because it has dependants\n" (Node.show n));
+    check g
+
+let replace_node_with g base new_node =
+    check g;
+    (match Hashtbl.find g.dependants base with
+    | None -> ()
+    | Some s ->
+        Dynarray.copy s
+        |> Dynarray.iter (fun n ->
+               match Hashtbl.find g.dependencies n with
+               | None -> assert false
+               | Some arr ->
+                   let idx =
+                       Dynarray.find_index
+                         (Option.value_map ~default:false ~f:(Node.hard_equal base))
+                         arr
+                       |> Option.value_exn
+                   in
+                   set_dependency g n (Some new_node) idx));
+    remove_node g base;
+    check g
+
+let set_stop_ctrl g ctrl =
+    check g;
+    add_dependencies g g.stop [ Some ctrl ];
+    check g
+
+let get_num_nodes g = Hash_set.length g.nodes
 let iter g = Hash_set.iter g.nodes
 
 let get_dependencies g n =
@@ -117,54 +251,7 @@ let get_dependency g n idx =
 let get_dependants g n =
     match Hashtbl.find g.dependants n with
     | None -> []
-    | Some s -> Hash_set.to_list s
-
-let remove_node g n =
-    let remove_dependencies () =
-        match Hashtbl.find g.dependencies n with
-        | None -> ()
-        | Some deps ->
-            Dynarray.iter
-              (fun dep ->
-                match dep with
-                | None -> ()
-                | Some dep -> remove_dependency g ~node:n ~dep)
-              deps
-    in
-    match Hashtbl.find g.dependants n with
-    | None ->
-        remove_dependencies ();
-        Hash_set.remove g.nodes n;
-        Hash_set.remove g.gvn n
-    | Some s when Hash_set.is_empty s ->
-        Hash_set.remove g.nodes n;
-        Hash_set.remove g.gvn n;
-        Hashtbl.remove g.dependants n;
-        remove_dependencies ()
-    | Some _ -> Printf.printf "Couldn't remove node %s because it has dependants\n" (Node.show n)
-
-let replace_node_with g base new_node =
-    (match Hashtbl.find g.dependants base with
-    | None -> ()
-    | Some s ->
-        Hash_set.to_list s
-        |> List.iter ~f:(fun n ->
-               match Hashtbl.find g.dependencies n with
-               | None -> assert false
-               | Some arr ->
-                   let idx =
-                       Dynarray.find_index
-                         (function
-                           | None -> false
-                           | Some x -> Node.hard_equal base x)
-                         arr
-                       |> Option.value_exn
-                   in
-                   set_dependency g n (Some new_node) idx));
-    remove_node g base
-
-let set_stop_ctrl g ctrl = add_dependencies g g.stop [ Some ctrl ]
-let get_num_nodes g = Hash_set.length g.nodes
+    | Some s -> Dynarray.to_list s
 
 let finalize_node g n =
     let n_deps = get_dependencies g n in
@@ -176,3 +263,10 @@ let finalize_node g n =
         if not (Node.hard_equal n old_n) then
           remove_node g n;
         old_n
+
+let cleanup g =
+    let dead_code = Hashtbl.filter g.dependants ~f:Dynarray.is_empty in
+    Hashtbl.iter_keys dead_code ~f:(fun n ->
+        match n.kind with
+        | Ctrl Stop -> ()
+        | _ -> remove_node g n)

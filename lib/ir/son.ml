@@ -23,8 +23,8 @@ let rec do_statement g (s : Ast.statement Ast.node) scope =
         let n_true = Proj_node.create g n_if 0 in
         let n_false = Proj_node.create g n_if 1 in
         Scope_node.set_ctrl g body_scope n_true;
-        let _n_body = do_expr g body body_scope in
         Scope_node.set_ctrl g exit_scope n_false;
+        let _ = do_expr g body body_scope in
         Loop_node.set_back_edge g loop_node (Scope_node.get_ctrl g body_scope);
         Scope_node.merge_loop g ~this:scope ~body:body_scope ~exit:exit_scope
     | _ -> assert false
@@ -100,11 +100,12 @@ let of_ast ast =
     let ctrl = Scope_node.get_ctrl g scope in
     Graph.set_stop_ctrl g ctrl;
     Scope_node.set_ctrl g scope (Graph.get_stop g);
+    (* makes life easier and we dont need the scope anymore i think*)
+    Graph.remove_node g scope;
+    Graph.cleanup g;
     Graph.get_dependants g (Graph.get_start g)
     |> List.iter ~f:(fun n ->
            if Graph.get_dependants g n |> List.is_empty then Graph.remove_node g n);
-    (* makes life easier and we dont need the scope anymore i think*)
-    Graph.remove_node g scope;
     Scheduler.schedule_early g;
     Scheduler.schedule_late g;
     let l = Scheduler.schedule_flat g in

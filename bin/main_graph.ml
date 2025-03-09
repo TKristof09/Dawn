@@ -10,7 +10,7 @@ let test_str =
         let j:int = 0;
         while(j == 11){
             sum = sum + j;
-            j = j + 1;
+            j = j + 2;
         }
     }
     |}
@@ -19,15 +19,10 @@ let test_str =
 (*    {|*)
 (*    let i:int = 0;*)
 (*    let arg:int = 69;*)
-(*    if(arg == 1){*)
+(*    if(arg == 3){*)
 (*        i = arg + 2;*)
 (*    }*)
-(*    else{*)
-(*        i = arg - 2;*)
-(*    }*)
-(*    let res:int = i + arg;*)
-(*    if(res == 0){*)
-(*    }*)
+(*    i + 1;*)
 (*    |}*)
 
 let () =

@@ -20,3 +20,5 @@ val get_dependants : t -> Node.t -> Node.t list
 val remove_node : t -> Node.t -> unit
 val get_num_nodes : t -> int
 val finalize_node: t -> Node.t -> Node.t
+
+val cleanup: t -> unit

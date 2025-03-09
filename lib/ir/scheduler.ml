@@ -10,13 +10,16 @@ let rev_post_order_bfs_ctrl g node =
             Hash_set.add visited node;
 
             let new_acc =
-                List.fold (Graph.get_dependants g node)
-                  ~f:(fun current_acc dep ->
-                    if not (Hash_set.mem visited dep) then
-                      dfs dep current_acc
-                    else
-                      current_acc)
-                  ~init:acc
+                (* Use fold right to get the true branch of if statements first, this helps put the loop body before the loop exit *)
+                Graph.get_dependants g node
+                |> List.filter ~f:Node.is_ctrl
+                |> List.fold_right
+                     ~f:(fun dep current_acc ->
+                       if not (Hash_set.mem visited dep) then
+                         dfs dep current_acc
+                       else
+                         current_acc)
+                     ~init:acc
             in
 
             node :: new_acc

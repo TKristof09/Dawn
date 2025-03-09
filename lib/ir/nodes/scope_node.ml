@@ -25,8 +25,14 @@ let rec assign g (n : Node.t) name node =
             | _ -> symbol
         in
         Symbol_table.reassign_symbol tbl name node;
-        Graph.add_dependencies g n [ Some node ];
-        Graph.remove_dependency g ~node:n ~dep:symbol
+        let idx =
+            Graph.get_dependencies g n
+            |> List.find_index (function
+                 | None -> false
+                 | Some x -> Node.hard_equal x symbol)
+            |> Core.Option.value_exn
+        in
+        Graph.set_dependency g n (Some node) idx
     | _ -> assert false
 
 and get g (n : Node.t) name =
@@ -134,20 +140,20 @@ let merge g ~(this : Node.t) ~(other : Node.t) =
 
 let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
     match (this.kind, body.kind, exit.kind) with
-    | Scope _, Scope body_tbl, Scope exit_tbl ->
+    | Scope this_tbl, Scope body_tbl, Scope exit_tbl ->
         Symbol_table.iter body_tbl (fun ~name ~symbol ~depth:_ ->
             match symbol with
             | None -> ()
             | Some symbol ->
                 if name <> ctrl_identifier && not (Node.hard_equal symbol this) then
                   (* Set the second input of the phi node *)
-                  let n_this = get g this name in
-                  let n_body = get g body name in
+                  let n_this = Symbol_table.find_symbol this_tbl name in
+                  let n_body = Symbol_table.find_symbol body_tbl name in
                   if Node.hard_equal n_this n_body then (
                     let value = Graph.get_dependency g n_this 2 |> Core.Option.value_exn in
                     Graph.replace_node_with g n_this value;
                     (* symbols get assigned from exit table to this table later *)
-                    assign g exit name value)
+                    Symbol_table.reassign_symbol exit_tbl name value)
                   else
                     Phi_node.add_input g n_this n_body);
 
@@ -155,8 +161,8 @@ let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
             match symbol with
             | None -> ()
             | Some symbol ->
-                if not (Node.hard_equal symbol this) then
-                  assign g this name symbol);
+                if name <> ctrl_identifier && not (Node.hard_equal symbol this) then
+                  Symbol_table.reassign_symbol this_tbl name symbol);
         set_ctrl g this (get_ctrl g exit);
         Graph.remove_node g body;
         Graph.remove_node g exit

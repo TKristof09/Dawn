@@ -45,6 +45,9 @@ let show node =
             | Sexplib.Sexp.List [] -> assert false
         in
         match node.kind with
+        | Data (Proj i)
+        | Ctrl (Proj i) ->
+            Printf.sprintf "Proj %d" i
         | Data d -> show_sexp (sexp_of_data_kind d)
         | Ctrl c -> show_sexp (sexp_of_ctrl_kind c)
         | Scope _ -> "Scope"
@@ -91,6 +94,11 @@ let is_ctrl n =
 let is_data n =
     match n.kind with
     | Data _ -> true
+    | _ -> false
+
+let is_scope n =
+    match n.kind with
+    | Scope _ -> true
     | _ -> false
 
 let is_blockhead n =
