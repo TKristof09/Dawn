@@ -1,23 +1,40 @@
 open Core
 
-let remove_arr_elt arr elt =
-    match Dynarray.find_index (Node.hard_equal elt) arr with
+module type GraphNode = sig
+  type t
+
+  val show : t -> string
+  val pp : Format.formatter -> t -> unit
+  val equal : t -> t -> bool
+  val semantic_equal : t -> t option list -> t -> t option list -> bool
+  val hash : t -> int
+  val compare : t -> t -> int
+  val sexp_of_t : t -> Sexplib0.Sexp.t
+
+  (* TODO: This is for scope nodes so they don't get removed for not having any dependants. It feels very hacky though so i don't like it *)
+  val is_persistent : t -> bool
+end
+
+(* TODO: aren't nodes and gvn basically the same thing? *)
+type 'n t = {
+    dependencies : ('n, 'n option Dynarray.t) Hashtbl.t;
+    dependants : ('n, 'n Dynarray.t) Hashtbl.t;
+    nodes : 'n Hash_set.t;
+    start : 'n;
+    stop : 'n;
+    gvn : 'n Hash_set.t;
+    node_module : (module GraphNode with type t = 'n);
+  }
+
+let remove_arr_elt arr elt ~eq =
+    match Dynarray.find_index (eq elt) arr with
     | None -> assert false
     | Some idx ->
         let last = Dynarray.pop_last arr in
         if idx < Dynarray.length arr then Dynarray.set arr idx last
 
-(* TODO: aren't nodes and gvn basically the same thing? *)
-type t = {
-    dependencies : (Node.t, Node.t option Dynarray.t) Hashtbl.t;
-    dependants : (Node.t, Node.t Dynarray.t) Hashtbl.t;
-    nodes : Node.t Hash_set.t;
-    start : Node.t;
-    stop : Node.t;
-    gvn : Node.t Hash_set.t;
-  }
-
-let check g =
+let check (type n) (g : n t) =
+    let module Node = (val g.node_module : GraphNode with type t = n) in
     let debug_check () =
         let dependencies_keys_match =
             Hash_set.of_hashtbl_keys g.dependencies |> Hash_set.equal g.nodes
@@ -95,17 +112,16 @@ let add_node g n =
       Hashtbl.set g.dependants ~key:n ~data:(Dynarray.create ());
       check g)
 
-let create () =
-    let start = Start_node.create () in
-    let stop = Stop_node.create () in
+let create (type a) (module M : GraphNode with type t = a) (start : a) (stop : a) =
     let g =
         {
-          dependencies = Hashtbl.create (module Node);
-          dependants = Hashtbl.create (module Node);
-          nodes = Hash_set.create (module Node);
+          dependencies = Hashtbl.create (module M);
+          dependants = Hashtbl.create (module M);
+          nodes = Hash_set.create (module M);
           start;
           stop;
-          gvn = Hash_set.of_list (module Node) [ start; stop ];
+          gvn = Hash_set.of_list (module M) [ start; stop ];
+          node_module = (module M);
         }
     in
     add_node g start;
@@ -116,9 +132,9 @@ let create () =
 let get_start g = g.start
 let get_stop g = g.stop
 
-let set_dependency g node dep idx =
-    assert (idx <> 0 || Option.value_map dep ~default:true ~f:Node.is_ctrl || Node.is_scope node);
-
+let set_dependency (type a) (g : a t) node dep idx =
+    let module Node = (val g.node_module : GraphNode with type t = a) in
+    (* assert (idx <> 0 || Option.value_map dep ~default:true ~f:Node.is_ctrl || Node.is_scope node); *)
     check g;
     let arr = Hashtbl.find_exn g.dependencies node in
     let prev = Dynarray.get arr idx in
@@ -129,7 +145,7 @@ let set_dependency g node dep idx =
         match s with
         | None -> assert false
         | Some s ->
-            remove_arr_elt s node;
+            remove_arr_elt s node ~eq:Node.equal;
             Dynarray.set arr idx None));
 
     Option.iter dep ~f:(add_node g);
@@ -155,14 +171,18 @@ let add_dependencies g node dependencies =
         set_dependency g node d idx);
     check g
 
-let rec remove_dependency g ~node ~dep =
+let node_is_removable (type a) (g : a t) n =
+    let module Node = (val g.node_module : GraphNode with type t = a) in
+    not (Node.equal n g.start || Node.equal n g.stop || Node.is_persistent n)
+
+let rec remove_dependency : type a. a t -> node:a -> dep:a -> unit =
+   fun g ~node ~dep ->
+    let module Node = (val g.node_module : GraphNode with type t = a) in
     check g;
     Hashtbl.change g.dependencies node ~f:(function
       | None -> None
       | Some arr -> (
-          match
-            Dynarray.find_index (Option.value_map ~default:false ~f:(Node.hard_equal dep)) arr
-          with
+          match Dynarray.find_index (Option.value_map ~default:false ~f:(Node.equal dep)) arr with
           | None -> Some arr
           | Some idx ->
               set_dependency g node None idx;
@@ -176,20 +196,18 @@ let rec remove_dependency g ~node ~dep =
         Printf.printf "ERROR: %s\n" (Node.show dep);
         assert false
     | Some arr ->
-        (*TODO remove this as it is done already in set_dependency remove_arr_elt arr node;*)
-        if
-          Dynarray.is_empty arr
-          && (not (Node.hard_equal dep g.start))
-          && (not (Node.hard_equal dep g.stop))
-          && not (Node.is_scope dep)
-        then
+        if Dynarray.is_empty arr && node_is_removable g dep then
           remove_node g dep);
     check g
 
-and remove_node g n =
+and remove_node : type a. a t -> a -> unit =
+   fun g n ->
+    let module Node = (val g.node_module : GraphNode with type t = a) in
     check g;
-    let remove_dependencies () =
-        match Hashtbl.find g.dependencies n with
+    (match Hashtbl.find g.dependants n with
+    | None -> assert false
+    | Some s when Dynarray.is_empty s ->
+        (match Hashtbl.find g.dependencies n with
         | None -> ()
         | Some deps ->
             Dynarray.iter
@@ -197,20 +215,18 @@ and remove_node g n =
                 match dep with
                 | None -> ()
                 | Some dep -> remove_dependency g ~node:n ~dep)
-              deps
-    in
-    (match Hashtbl.find g.dependants n with
-    | None -> assert false
-    | Some s when Dynarray.is_empty s ->
-        remove_dependencies ();
+              deps);
         Hashtbl.remove g.dependants n;
         Hashtbl.remove g.dependencies n;
         Hash_set.remove g.nodes n;
         Hash_set.remove g.gvn n
-    | Some _ -> Printf.printf "Couldn't remove node %s because it has dependants\n" (Node.show n));
+    | Some _ ->
+        Printf.printf "Couldn't remove node %s because it has dependants or is a persistent node\n"
+          (Node.show n));
     check g
 
-let replace_node_with g base new_node =
+let replace_node_with (type a) (g : a t) base new_node =
+    let module Node = (val g.node_module : GraphNode with type t = a) in
     check g;
     (match Hashtbl.find g.dependants base with
     | None -> ()
@@ -222,7 +238,7 @@ let replace_node_with g base new_node =
                | Some arr ->
                    let idx =
                        Dynarray.find_index
-                         (Option.value_map ~default:false ~f:(Node.hard_equal base))
+                         (Option.value_map ~default:false ~f:(Node.equal base))
                          arr
                        |> Option.value_exn
                    in
@@ -237,6 +253,8 @@ let set_stop_ctrl g ctrl =
 
 let get_num_nodes g = Hash_set.length g.nodes
 let iter g = Hash_set.iter g.nodes
+let fold g = Hash_set.fold g.nodes
+let find g = Hash_set.find g.nodes
 
 let get_dependencies g n =
     match Hashtbl.find g.dependencies n with
@@ -253,20 +271,21 @@ let get_dependants g n =
     | None -> []
     | Some s -> Dynarray.to_list s
 
-let finalize_node g n =
+let finalize_node (type a) (g : a t) n =
+    let module Node = (val g.node_module : GraphNode with type t = a) in
     let n_deps = get_dependencies g n in
-    match Hash_set.find g.gvn ~f:(fun x -> Node.is_same n n_deps x (get_dependencies g x)) with
+    match
+      Hash_set.find g.gvn ~f:(fun x -> Node.semantic_equal n n_deps x (get_dependencies g x))
+    with
     | None ->
         Hash_set.add g.gvn n;
         n
     | Some old_n ->
-        if not (Node.hard_equal n old_n) then
+        if not (Node.equal n old_n) then
           remove_node g n;
         old_n
 
-let cleanup g =
+let cleanup (type a) (g : a t) =
+    let module Node = (val g.node_module : GraphNode with type t = a) in
     let dead_code = Hashtbl.filter g.dependants ~f:Dynarray.is_empty in
-    Hashtbl.iter_keys dead_code ~f:(fun n ->
-        match n.kind with
-        | Ctrl Stop -> ()
-        | _ -> remove_node g n)
+    Hashtbl.iter_keys dead_code ~f:(fun n -> if not (Node.equal n g.stop) then remove_node g n)

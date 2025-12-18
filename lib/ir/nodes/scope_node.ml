@@ -29,7 +29,7 @@ let rec assign g (n : Node.t) name node =
             Graph.get_dependencies g n
             |> List.find_index (function
                  | None -> false
-                 | Some x -> Node.hard_equal x symbol)
+                 | Some x -> Node.equal x symbol)
             |> Core.Option.value_exn
         in
         Graph.set_dependency g n (Some node) idx
@@ -133,7 +133,7 @@ let merge g ~(this : Node.t) ~(other : Node.t) =
             else
               old_ctrl
         in
-        Symbol_table.merge this_tbl other_tbl diff_fn Node.hard_equal;
+        Symbol_table.merge this_tbl other_tbl diff_fn Node.equal;
         set_ctrl g this region;
         Graph.remove_node g other
     | _ -> assert false
@@ -145,11 +145,11 @@ let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
             match symbol with
             | None -> ()
             | Some symbol ->
-                if name <> ctrl_identifier && not (Node.hard_equal symbol this) then
+                if name <> ctrl_identifier && not (Node.equal symbol this) then
                   (* Set the second input of the phi node *)
                   let n_this = Symbol_table.find_symbol this_tbl name in
                   let n_body = Symbol_table.find_symbol body_tbl name in
-                  if Node.hard_equal n_this n_body then (
+                  if Node.equal n_this n_body then (
                     let value = Graph.get_dependency g n_this 2 |> Core.Option.value_exn in
                     Graph.replace_node_with g n_this value;
                     (* symbols get assigned from exit table to this table later *)
@@ -161,7 +161,7 @@ let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
             match symbol with
             | None -> ()
             | Some symbol ->
-                if name <> ctrl_identifier && not (Node.hard_equal symbol this) then
+                if name <> ctrl_identifier && not (Node.equal symbol this) then
                   Symbol_table.reassign_symbol this_tbl name symbol);
         set_ctrl g this (get_ctrl g exit);
         Graph.remove_node g body;

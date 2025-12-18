@@ -1,3 +1,1 @@
-val schedule_early : Graph.t -> unit
-val schedule_late : Graph.t -> unit
-val schedule_flat : Graph.t -> Node.t list list
+val schedule : Machine_node.t Graph.t -> Machine_node.t list list

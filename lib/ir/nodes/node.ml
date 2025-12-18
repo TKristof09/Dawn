@@ -36,30 +36,30 @@ let next_id () =
     incr id_counter;
     !id_counter
 
-let show node =
-    let kind_str =
-        let show_sexp s =
-            match s with
-            | Sexplib.Sexp.List (h :: _) -> Sexplib.Sexp.to_string h
-            | Sexplib.Sexp.Atom a -> a
-            | Sexplib.Sexp.List [] -> assert false
-        in
-        match node.kind with
-        | Data (Proj i)
-        | Ctrl (Proj i) ->
-            Printf.sprintf "Proj %d" i
-        | Data d -> show_sexp (sexp_of_data_kind d)
-        | Ctrl c -> show_sexp (sexp_of_ctrl_kind c)
-        | Scope _ -> "Scope"
+let show_kind kind =
+    let show_sexp s =
+        match s with
+        | Sexplib.Sexp.List (h :: _) -> Sexplib.Sexp.to_string h
+        | Sexplib.Sexp.Atom a -> a
+        | Sexplib.Sexp.List [] -> assert false
     in
+    match kind with
+    | Data (Proj i) -> Printf.sprintf "DProj %d" i
+    | Ctrl (Proj i) -> Printf.sprintf "CProj %d" i
+    | Data d -> show_sexp (sexp_of_data_kind d)
+    | Ctrl c -> show_sexp (sexp_of_ctrl_kind c)
+    | Scope _ -> "Scope"
+
+let show node =
+    let kind_str = show_kind node.kind in
     let type_string = Types.show_node_type node.typ in
     Printf.sprintf "Node { id : %d ; kind : %s; type :%s}" node.id kind_str type_string
 
 let pp fmt node = Format.fprintf fmt "%s" (show node)
 let compare n1 n2 = Int.compare n1.id n2.id
-let hard_equal n1 n2 = Int.equal n1.id n2.id
+let equal n1 n2 = Int.equal n1.id n2.id
 
-let is_same n1 deps1 n2 deps2 =
+let semantic_equal n1 deps1 n2 deps2 =
     let is_same_kind n1 n2 =
         let constant_same n1 n2 =
             match (n1.typ, n2.typ) with
@@ -78,7 +78,7 @@ let is_same n1 deps1 n2 deps2 =
            | Some _, None
            | None, Some _ ->
                false
-           | Some a, Some b -> hard_equal a b)
+           | Some a, Some b -> equal a b)
          deps1 deps2
 
 let hash n = Int.hash n.id

@@ -93,7 +93,17 @@ and do_expr g (e : Ast.expr Ast.node) scope =
     | _ -> assert false
 
 let of_ast ast =
-    let g = Graph.create () in
+    let start = Start_node.create () in
+    let stop = Stop_node.create () in
+    let g =
+        Graph.create
+          (module struct
+            include Node
+
+            let is_persistent = Node.is_scope
+          end)
+          start stop
+    in
     let scope = Scope_node.create () in
     Scope_node.set_ctrl g scope (Graph.get_start g);
     Core.List.iter ast ~f:(fun s -> do_statement g s scope);
@@ -106,12 +116,12 @@ let of_ast ast =
     Graph.get_dependants g (Graph.get_start g)
     |> List.iter ~f:(fun n ->
            if Graph.get_dependants g n |> List.is_empty then Graph.remove_node g n);
-    Scheduler.schedule_early g;
-    Scheduler.schedule_late g;
-    let l = Scheduler.schedule_flat g in
+    Ir_printer.to_dot g |> Printf.printf "\n\n%s\n";
+    let g = Machine_node.convert_graph g in
+    let l = Scheduler.schedule g in
     List.iter l ~f:(fun ll ->
-        Printf.printf "%s\n" (Node.show (List.hd_exn ll));
+        Printf.printf "%s\n" (Machine_node.show (List.hd_exn ll));
         List.iter
           (List.tl ll |> Option.value ~default:[])
-          ~f:(fun n -> Printf.printf "|-- %s\n" (Node.show n)));
+          ~f:(fun n -> Printf.printf "|-- %s\n" (Machine_node.show n)));
     g
