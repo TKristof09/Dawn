@@ -124,4 +124,5 @@ let of_ast ast =
         List.iter
           (List.tl ll |> Option.value ~default:[])
           ~f:(fun n -> Printf.printf "|-- %s\n" (Machine_node.show n)));
+    Basic_reg_allocator.allocate g (List.concat l) |> ignore;
     g
