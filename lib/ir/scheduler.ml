@@ -183,10 +183,8 @@ let schedule_late (g : Machine_node.t Graph.t) =
     schedule (Graph.get_start g);
     Hashtbl.iteri m ~f:(fun ~key ~data ->
         match key.kind with
-        | Ideal Phi
-        | _
-          when Machine_node.is_control_node key ->
-            ()
+        | Ideal Phi -> ()
+        | _ when Machine_node.is_control_node key -> ()
         | _ -> Graph.set_dependency g key (Some data) 0)
 
 let score (g : Machine_node.t Graph.t) (n : Machine_node.t) =
@@ -242,7 +240,9 @@ let schedule_flat g =
     let cfg = rev_post_order_bfs_ctrl g (Graph.get_start g) in
     cfg
     |> List.filter ~f:Machine_node.is_blockhead
-    |> List.map ~f:(fun bb -> bb :: Graph.get_dependants g bb |> schedule_main)
+    |> List.map ~f:(fun bb ->
+           bb :: (Graph.get_dependants g bb |> List.filter ~f:(Fun.negate Machine_node.is_blockhead))
+           |> schedule_main)
 
 let schedule (g : Machine_node.t Graph.t) =
     schedule_early g;
