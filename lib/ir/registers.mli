@@ -5,8 +5,6 @@ type reg =
     | RDX
     | RSI
     | RDI
-    | RSP
-    | RBP
     | R8
     | R9
     | R10
@@ -15,7 +13,10 @@ type reg =
     | R13
     | R14
     | R15
+    | RSP
+    | RBP
     | Flags
+[@@deriving show]
 
 module Mask : sig
   type t [@@deriving show, sexp_of]
@@ -31,6 +32,13 @@ module Mask : sig
   val flags : t
   val of_list : reg list -> t
   val common : t -> t -> t
-  val any : t -> reg
+  val choose : t -> reg option
+  val mem : t -> reg -> bool
+  val add : t -> reg -> t
+  val remove : t -> reg -> t
+  val are_disjoint : t -> t -> bool
+  val equal : t -> t -> bool
+  val diff : t -> t -> t
+  val is_empty : t -> bool
   val sexp_of_t : t -> Sexplib0.Sexp.t
 end

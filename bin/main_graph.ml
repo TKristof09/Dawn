@@ -1,17 +1,30 @@
 open Dawn
 
+(* let test_str = *)
+(*     {| *)
+(*     let i:int = 0; *)
+(*     let sum:int = 0; *)
+(*     let c: int = 5; *)
+(*     while(i == c - 1) { *)
+(*         i = i + 1; *)
+(*         let j:int = 0; *)
+(*         while(j == 11){ *)
+(*             sum = sum + j; *)
+(*             j = j + 2; *)
+(*         } *)
+(*     } *)
+(*     |} *)
 let test_str =
     {|
-    let i:int = 0;
-    let sum:int = 0;
-    let c: int = 5;
-    while(i == c - 1) {
-        i = i + 1;
-        let j:int = 0;
-        while(j == 11){
-            sum = sum + j;
-            j = j + 2;
-        }
+    let x:int = 0;
+    let y:int = 0;
+    while(x == 0) {
+        let tmp:int = x + y;
+        y = x;
+        x = tmp;
+    }
+    if(y==1){
+        x = 1;
     }
     |}
 

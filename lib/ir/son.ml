@@ -119,10 +119,13 @@ let of_ast ast =
     Ir_printer.to_dot g |> Printf.printf "\n\n%s\n";
     let g = Machine_node.convert_graph g in
     let l = Scheduler.schedule g in
+    Ir_printer.to_dot_machine g |> Printf.printf "\n\n%s\n";
+    Printf.printf "{\n";
     List.iter l ~f:(fun ll ->
         Printf.printf "%s\n" (Machine_node.show (List.hd_exn ll));
         List.iter
           (List.tl ll |> Option.value ~default:[])
           ~f:(fun n -> Printf.printf "|-- %s\n" (Machine_node.show n)));
-    Basic_reg_allocator.allocate g (List.concat l) |> ignore;
+    Printf.printf "}\n";
+    Basic_reg_allocator.allocate g l |> ignore;
     g

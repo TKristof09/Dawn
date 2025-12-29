@@ -27,6 +27,7 @@ type machine_node_kind =
     | Set of cmp
     | Jmp of cmp
     | Int
+    | Mov
     | DProj of int
     (* nodes that have no machine equivalent *)
     | Ideal of ideal
@@ -44,6 +45,11 @@ type t = {
 let equal n n' = n.id = n'.id
 let compare n n' = Int.compare n.id n'.id
 let hash n = Int.hash n.id
+
+let is_cheap_to_clone n =
+    match n.kind with
+    | Int -> true
+    | _ -> false
 
 let is_control_node n =
     match n.kind with
@@ -63,6 +69,7 @@ let is_control_node n =
     | CmpImm _
     | Set _
     | Int
+    | Mov
     | DProj _ ->
         false
 
@@ -73,6 +80,15 @@ let is_blockhead n =
     | Ideal Region
     | Ideal Loop
     | Ideal Stop ->
+        true
+    | _ -> false
+
+let is_two_address n =
+    match n.kind with
+    | Add
+    | AddImm _
+    | Sub
+    | SubImm _ ->
         true
     | _ -> false
 
@@ -108,6 +124,10 @@ let get_in_reg_mask (kind : machine_node_kind) =
         fun _ _ i ->
           assert (i = 0);
           Some Registers.Mask.flags
+    | Mov ->
+        fun _ _ i ->
+          assert (i = 0);
+          Some Registers.Mask.all
     | Ideal _ -> no_regs
 
 and get_out_reg_mask (kind : machine_node_kind) =
@@ -136,6 +156,10 @@ and get_out_reg_mask (kind : machine_node_kind) =
         fun _ _ i ->
           assert (i = 0);
           Some Registers.Mask.general_w
+    | Mov ->
+        fun _ _ i ->
+          assert (i = 0);
+          Some Registers.Mask.all
     | Jmp _ -> no_regs
     | Ideal _ -> no_regs
 
@@ -340,6 +364,17 @@ and of_ctrl_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.ctrl_
         node
     | Loop ->
         let kind = Ideal Loop in
+        let in_regs = get_in_reg_mask kind
+        and out_reg = get_out_reg_mask kind in
+        let node = { id = next_id (); kind; ir_node = n; in_regs; out_reg } in
+        Graph.add_dependencies machine_g node [];
+        let deps =
+            Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node g machine_g))
+        in
+        Graph.add_dependencies machine_g node deps;
+        node
+    | Region ->
+        let kind = Ideal Region in
         let in_regs = get_in_reg_mask kind
         and out_reg = get_out_reg_mask kind in
         let node = { id = next_id (); kind; ir_node = n; in_regs; out_reg } in
