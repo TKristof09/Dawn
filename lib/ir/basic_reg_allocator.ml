@@ -172,10 +172,7 @@ let find_conflicts (g : Machine_node.t Graph.t) (program : Machine_node.t list l
         Queue.enqueue_front queue bb);
     while not (Queue.is_empty queue) do
       let bb = Queue.dequeue_exn queue in
-      Printf.printf "PROCESSING: %s\n" (Machine_node.show bb.head);
       let changed = do_block bb in
-      Printf.printf "CHANGED: %s\n"
-        (List.map changed ~f:(fun b -> b.head) |> [%derive.show: Machine_node.t list]);
       Queue.enqueue_all queue changed
     done;
     conflicts
@@ -594,24 +591,6 @@ let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list
     in
     aux endpoints Set.Poly.empty program Registers.Mask.all
 
-(* match suff with *)
-(* | [] -> [] *)
-(* | h :: t -> *)
-(*     let active_ranges = *)
-(*         List.filter ranges ~f:(fun (_, _, _, first, last) -> first <= idx && idx <= last) *)
-(*     in *)
-(*     let unassigned_active_ranges = *)
-(*         List.filter active_ranges ~f:(fun r -> not (Hashtbl.mem register_assoc r)) *)
-(*     in *)
-(*     [] *)
-
-let print_program g program =
-    Printf.printf "\nPROGRAM: {\n";
-    List.iter program ~f:(fun m ->
-        Printf.printf "%s --- ( %s )\n" (Machine_node.show m)
-          ([%derive.show: Machine_node.t option list] (Graph.get_dependencies g m)));
-    Printf.printf "}\n"
-
 let cleanup_movs g (program : Machine_node.t list) register_assoc =
     List.filter program ~f:(fun n ->
         match n.kind with
@@ -635,7 +614,6 @@ let expand_register_assoc register_assoc =
 
 let allocate (g : Machine_node.t Graph.t) (program : Machine_node.t list list) =
     let flat_program = List.concat program in
-    print_program g flat_program;
     let live_ranges = get_live_ranges g flat_program in
     let conflicts = find_conflicts g program live_ranges in
     conflicts
@@ -664,32 +642,31 @@ let allocate (g : Machine_node.t Graph.t) (program : Machine_node.t list list) =
                let c1 = Int.compare first first' in
                if c1 <> 0 then c1 else Int.compare last last')
     in
-    (* Printf.printf "RANGES: {\n"; *)
-    (* List.iter ranges ~f:(fun r -> Printf.printf "%s\n" (show_range r)); *)
-    (* Printf.printf "}\n"; *)
     let register_assoc = Hashtbl.Poly.create () in
     assign_registers g program ranges register_assoc;
-    Printf.printf "=================== ALLOCATION RESULTS =============================\n";
-    Hashtbl.iteri register_assoc ~f:(fun ~key ~data ->
-        let _, _, first, last = key in
-        Printf.printf "[%d - %d] -> %s\n" first last (Registers.show_reg data));
+    (* Printf.printf "=================== ALLOCATION RESULTS =============================\n"; *)
+    (* Hashtbl.iteri register_assoc ~f:(fun ~key ~data -> *)
+    (*     let _, _, first, last = key in *)
+    (*     Printf.printf "[%d - %d] -> %s\n" first last (Registers.show_reg data)); *)
     let register_assoc = expand_register_assoc register_assoc in
     let program = cleanup_movs g program register_assoc in
-    List.iter program ~f:(fun n ->
-        match n.kind with
-        | Ideal _ -> Printf.printf "(%s)\n" (Machine_node.show_machine_node_kind n.kind)
-        | _ -> (
-            match Hashtbl.find register_assoc n with
-            | None -> ()
-            | Some reg ->
-                Printf.printf "#%s = %s " (Registers.show_reg reg)
-                  (Machine_node.show_machine_node_kind n.kind);
-                Graph.get_dependencies g n
-                |> List.tl
-                |> Option.value ~default:[]
-                |> List.filter_opt
-                |> List.iter ~f:(fun dep ->
-                       Printf.printf "#%s,"
-                         (Registers.show_reg (Hashtbl.find_exn register_assoc dep)));
-                Printf.printf "\n"));
+    (* List.iter program ~f:(fun n -> *)
+    (*     match n.kind with *)
+    (*     | Ideal _ -> Printf.printf "(%s)\n" (Machine_node.show_machine_node_kind n.kind) *)
+    (*     | _ -> ( *)
+    (*         match Hashtbl.find register_assoc n with *)
+    (*         | None -> () *)
+    (*         | Some reg -> *)
+    (*             Printf.printf "#%s = %s " (Registers.show_reg reg) *)
+    (*               (Machine_node.show_machine_node_kind n.kind); *)
+    (*             Graph.get_dependencies g n *)
+    (*             |> List.tl *)
+    (*             |> Option.value ~default:[] *)
+    (*             |> List.filter_opt *)
+    (*             |> List.iter ~f:(fun dep -> *)
+    (*                    Printf.printf "#%s," *)
+    (*                      (Registers.show_reg (Hashtbl.find_exn register_assoc dep))); *)
+    (*             Printf.printf "\n")); *)
+    Ir_printer.to_string_machine_linear g program |> Printf.printf "%s\n";
+    Ir_printer.to_string_machine_linear_regs g program register_assoc |> Printf.printf "%s\n";
     program

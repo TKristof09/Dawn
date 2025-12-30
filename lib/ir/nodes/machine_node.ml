@@ -384,7 +384,6 @@ and of_ctrl_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.ctrl_
         in
         Graph.add_dependencies machine_g node deps;
         node
-    | _ -> assert false
 
 and convert_node (g : Node.t Graph.t) (machine_g : t Graph.t) (n : Node.t) =
     match
