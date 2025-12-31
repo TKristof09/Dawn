@@ -266,7 +266,7 @@ let resolve_conflicts (g : Machine_node.t Graph.t) (program : Machine_node.t lis
         in
         match program with
         | [] -> []
-        | h :: t when Machine_node.equal h node ->
+        | h :: _ when Machine_node.equal h node ->
             let dependants = Graph.get_dependants g node in
             let n' =
                 if Machine_node.is_cheap_to_clone node then
@@ -474,7 +474,7 @@ let find_splittable (program : Machine_node.t list) (pref : Machine_node.t list)
             if not (Registers.Mask.is_empty (Registers.Mask.common mask reg_mask)) then
               let last_in_pref = find_last pref r in
               match last_in_pref.kind with
-              | Int -> Some (last_in_pref, range)
+              | Int _ -> Some (last_in_pref, range)
               | _ -> None
             else
               None)
@@ -669,4 +669,4 @@ let allocate (g : Machine_node.t Graph.t) (program : Machine_node.t list list) =
     (*             Printf.printf "\n")); *)
     Ir_printer.to_string_machine_linear g program |> Printf.printf "%s\n";
     Ir_printer.to_string_machine_linear_regs g program register_assoc |> Printf.printf "%s\n";
-    program
+    (program, register_assoc)

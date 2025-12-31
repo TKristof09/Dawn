@@ -156,7 +156,7 @@ let to_dot_machine (g : Machine_node.t Graph.t) =
     (* Second pass: Add edges *)
     Graph.iter g ~f:(fun node ->
         match node.kind with
-        | Int -> ()
+        | Int _ -> ()
         | _ ->
             let deps = Graph.get_dependencies g node in
             List.iteri deps ~f:(fun i dep ->
@@ -165,7 +165,7 @@ let to_dot_machine (g : Machine_node.t Graph.t) =
                 | Some dep ->
                     let style =
                         match (dep.kind, node.kind) with
-                        | _, Int when Machine_node.is_control_node dep -> ""
+                        | _, Int _ when Machine_node.is_control_node dep -> ""
                         | _, _
                           when Machine_node.is_control_node dep
                                && not (Machine_node.is_control_node node) ->

@@ -6,7 +6,10 @@ let next_id () =
     incr id_counter;
     !id_counter
 
-type cmp = Eq [@@deriving show { with_path = false }, sexp_of]
+type cmp =
+    | Eq
+    | Neq
+[@@deriving show { with_path = false }, sexp_of]
 
 type ideal =
     | Loop
@@ -25,8 +28,9 @@ type machine_node_kind =
     | Cmp
     | CmpImm of int
     | Set of cmp
+    | JmpAlways
     | Jmp of cmp
-    | Int
+    | Int of int
     | Mov
     | DProj of int
     (* nodes that have no machine equivalent *)
@@ -35,7 +39,7 @@ type machine_node_kind =
 
 type t = {
     id : int;
-    kind : machine_node_kind;
+    mutable kind : machine_node_kind;
     ir_node : Node.t; [@opaque]
     in_regs : t Graph.t -> t -> int -> Registers.Mask.t option;
     out_reg : t Graph.t -> t -> int -> Registers.Mask.t option;
@@ -46,14 +50,20 @@ let equal n n' = n.id = n'.id
 let compare n n' = Int.compare n.id n'.id
 let hash n = Int.hash n.id
 
+let invert_cond cond =
+    match cond with
+    | Eq -> Neq
+    | Neq -> Eq
+
 let is_cheap_to_clone n =
     match n.kind with
-    | Int -> true
+    | Int _ -> true
     | _ -> false
 
 let is_control_node n =
     match n.kind with
     | Jmp _
+    | JmpAlways
     | Ideal Start
     | Ideal Stop
     | Ideal Loop
@@ -68,7 +78,7 @@ let is_control_node n =
     | Cmp
     | CmpImm _
     | Set _
-    | Int
+    | Int _
     | Mov
     | DProj _ ->
         false
@@ -106,7 +116,7 @@ let get_in_reg_mask (kind : machine_node_kind) =
         fun _ _ i ->
           assert (i = 0);
           Some Registers.Mask.general_w
-    | Int -> no_regs
+    | Int _ -> no_regs
     | DProj _ -> no_regs
     | Cmp ->
         fun _ _ i ->
@@ -120,6 +130,7 @@ let get_in_reg_mask (kind : machine_node_kind) =
         fun _ _ i ->
           assert (i = 0);
           Some Registers.Mask.flags
+    | JmpAlways -> no_regs
     | Jmp _ ->
         fun _ _ i ->
           assert (i = 0);
@@ -139,7 +150,7 @@ and get_out_reg_mask (kind : machine_node_kind) =
         fun _ _ i ->
           assert (i = 0);
           Some Registers.Mask.general_w
-    | Int ->
+    | Int _ ->
         fun _ _ i ->
           assert (i = 0);
           Some Registers.Mask.general_w
@@ -160,6 +171,7 @@ and get_out_reg_mask (kind : machine_node_kind) =
         fun _ _ i ->
           assert (i = 0);
           Some Registers.Mask.all
+    | JmpAlways -> no_regs
     | Jmp _ -> no_regs
     | Ideal _ -> no_regs
 
@@ -235,7 +247,12 @@ let rec of_data_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.d
                   (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
                 node))
     | Constant ->
-        let kind = Int in
+        let i =
+            match n.typ with
+            | Integer (Value i) -> i
+            | _ -> assert false
+        in
+        let kind = Int i in
         let in_regs = get_in_reg_mask kind
         and out_reg = get_out_reg_mask kind in
         let node = { id = next_id (); kind; ir_node = n; in_regs; out_reg } in
@@ -414,7 +431,7 @@ let post_process (machine_g : t Graph.t) =
     let temp_node =
         {
           id = next_id ();
-          kind = Int;
+          kind = Int 0;
           in_regs = no_regs;
           out_reg = no_regs;
           ir_node = { typ = TOP; kind = Data Constant; id = 0 };

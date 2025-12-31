@@ -58,7 +58,10 @@ let schedule_early (g : Machine_node.t Graph.t) =
         if
           (not (Hash_set.mem already_scheduled node))
           && (not (Machine_node.is_control_node node))
-          && not (Poly.equal node.kind Int)
+          &&
+          match node.kind with
+          | Int _ -> false
+          | _ -> true
         then (
           Hash_set.add already_scheduled node;
           let deps = Graph.get_dependencies g node in
