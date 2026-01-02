@@ -95,13 +95,13 @@ let find_conflicts (g : Machine_node.t Graph.t) (program : Machine_node.t list l
                            Hashtbl.set prec_live_outs ~key:lrg ~data:def;
                            true
                        | Some n' ->
-                           if Machine_node.equal n n' then
+                           if Machine_node.equal def n' then
                              ()
                            else
                              Hashtbl.update conflicts lrg ~f:(function
-                               | None -> NodeSet.of_list [ n; n' ]
+                               | None -> NodeSet.of_list [ def; n' ]
                                | Some s ->
-                                   let s = Set.add s n in
+                                   let s = Set.add s def in
                                    Set.add s n');
                            acc))
         |> List.filter_opt
@@ -125,10 +125,14 @@ let find_conflicts (g : Machine_node.t Graph.t) (program : Machine_node.t list l
         (* lrg -> bb where the lrg is defined *)
         let actives = get_actives bb in
         List.rev bb.nodes
+        |> List.filter ~f:(fun n ->
+               match n.kind with
+               | Ideal _ -> false
+               | _ -> true)
         |> List.iter ~f:(fun node ->
                match Hashtbl.find ranges node with
-               | None -> () (* not every node is in a range, eg ideals arent for the most part*)
-               | Some range -> (
+               | None -> () (* not every node is in a range, e.g jmp nodes (if) *)
+               | Some range ->
                    (* check def side conflict. eg. if there is already a def y for the lrg and node != y then conflict *)
                    (match check_self_conflict actives range node with
                    | Some other ->
@@ -140,29 +144,25 @@ let find_conflicts (g : Machine_node.t Graph.t) (program : Machine_node.t list l
                    | None -> ());
                    (* remove the def *)
                    Hashtbl.remove actives range;
-                   match node.kind with
-                   | Ideal Phi -> ()
-                   | _ ->
-                       (* add the nodes it uses *)
-                       Graph.get_dependencies g node
-                       |> List.tl
-                       |> Option.value ~default:[]
-                       |> List.iter ~f:(function
+                   (* add the nodes it uses *)
+                   Graph.get_dependencies g node
+                   |> List.tl
+                   |> Option.value ~default:[]
+                   |> List.iter ~f:(function
+                        | None -> ()
+                        | Some dep -> (
+                            match Hashtbl.find ranges dep with
                             | None -> ()
-                            | Some dep -> (
-                                match Hashtbl.find ranges dep with
-                                | None -> ()
-                                | Some r ->
-                                    (match check_self_conflict actives r dep with
-                                    | Some other ->
-                                        Hashtbl.update conflicts r ~f:(function
-                                          | None -> NodeSet.of_list [ dep; other ]
-                                          | Some s ->
-                                              let s = Set.add s dep in
-                                              Set.add s other)
-                                    | None -> ());
-                                    Hashtbl.set actives ~key:r ~data:dep))));
-
+                            | Some r ->
+                                (match check_self_conflict actives r dep with
+                                | Some other ->
+                                    Hashtbl.update conflicts r ~f:(function
+                                      | None -> NodeSet.of_list [ dep; other ]
+                                      | Some s ->
+                                          let s = Set.add s dep in
+                                          Set.add s other)
+                                | None -> ());
+                                Hashtbl.set actives ~key:r ~data:dep)));
         update_bb_outs bb actives
     in
     let queue = Queue.create () in
@@ -201,6 +201,7 @@ let resolve_conflicts (g : Machine_node.t Graph.t) (program : Machine_node.t lis
                     | Some dep -> Machine_node.equal dep node_to_insert)
             in
             Graph.set_dependency g before_this (Some n') dep_idx;
+            Printf.printf "INSERT BEFORE: %s\n" (Machine_node.show n');
             n' :: h :: t
         | h :: t -> h :: insert_before t ~node_to_insert ~before_this
     and insert_before_phi program ~node_to_insert ~(before_this : Machine_node.t) =
@@ -217,7 +218,7 @@ let resolve_conflicts (g : Machine_node.t Graph.t) (program : Machine_node.t lis
         let end_of_bb =
             List.fold_until (List.tl_exn program) ~init:None
               ~f:(fun acc n ->
-                let cfg = Graph.get_dependency g n 0 in
+                let cfg = if Machine_node.equal n bb then Some n else Graph.get_dependency g n 0 in
                 match cfg with
                 | None -> Continue acc
                 | Some cfg -> (
@@ -225,7 +226,10 @@ let resolve_conflicts (g : Machine_node.t Graph.t) (program : Machine_node.t lis
                     | None -> if Machine_node.equal bb cfg then Continue (Some n) else Continue None
                     | Some n' ->
                         if Machine_node.equal bb cfg then Continue (Some n) else Stop (Some n')))
-              ~finish:(fun _ -> failwithf "Couldn't find end of bb %s" (Machine_node.show bb) ())
+              ~finish:(fun res ->
+                match res with
+                | Some n -> Some n
+                | None -> failwithf "Couldn't find end of bb %s" (Machine_node.show bb) ())
             |> Option.value_exn
         in
         let rec aux l =
@@ -246,6 +250,7 @@ let resolve_conflicts (g : Machine_node.t Graph.t) (program : Machine_node.t lis
                         | Some dep -> Machine_node.equal dep node_to_insert)
                 in
                 Graph.set_dependency g before_this (Some n') dep_idx;
+                Printf.printf "INSERT BEFORE: %s\n" (Machine_node.show n');
                 h :: n' :: t
             | h :: t -> h :: aux t
         in
@@ -283,15 +288,42 @@ let resolve_conflicts (g : Machine_node.t Graph.t) (program : Machine_node.t lis
                            | Some dep -> Machine_node.equal dep node)
                    in
                    Graph.set_dependency g use (Some n') dep_idx);
+            Printf.printf "INSERT AFTER: %s\n" (Machine_node.show n');
             skip_phis program n'
         | h :: t -> h :: duplicate_after t node
     in
 
+    (* TODO: same function as in scheduler.ml, deduplicate *)
+    let rec idepth g (node : Machine_node.t) =
+        match node.kind with
+        | Ideal Start -> 0
+        | Ideal Region ->
+            Graph.get_dependencies g node
+            |> List.fold ~init:0 ~f:(fun acc n ->
+                   match n with
+                   | Some n -> max acc (idepth g n)
+                   | None -> acc)
+        | Ideal Loop -> 1 + idepth g (Loop_node.get_entry_edge g node)
+        | _ when Machine_node.is_control_node node ->
+            1 + idepth g (Graph.get_dependency g node 0 |> Option.value_exn)
+        | _ -> idepth g (Graph.get_dependency g node 0 |> Option.value_exn)
+    in
     List.fold conflicts ~init:program ~f:(fun program n ->
         let program =
             List.fold (Graph.get_dependants g n) ~init:program ~f:(fun program use ->
                 match use.kind with
-                | Ideal Phi -> insert_before program ~node_to_insert:n ~before_this:use
+                | Ideal Phi ->
+                    let cfg = Graph.get_dependency g use 0 |> Option.value_exn in
+                    let def_cfg = Graph.get_dependency g n 0 |> Option.value_exn in
+                    let is_backedge = Machine_node.equal (Loop_node.get_back_edge g use) n in
+                    if
+                      is_backedge
+                      && Poly.equal cfg.kind (Ideal Loop)
+                      && idepth g def_cfg > idepth g cfg
+                    then
+                      program
+                    else
+                      insert_before program ~node_to_insert:n ~before_this:use
                 | _
                   when Machine_node.is_two_address use
                        && Machine_node.equal (Graph.get_dependency g use 1 |> Option.value_exn) n ->
@@ -305,7 +337,7 @@ let resolve_conflicts (g : Machine_node.t Graph.t) (program : Machine_node.t lis
             insert_before program ~node_to_insert:backedge ~before_this:n
         | _ when Machine_node.is_two_address n ->
             let dep = Graph.get_dependency g n 1 |> Option.value_exn in
-            insert_before program ~node_to_insert:n ~before_this:dep
+            insert_before program ~node_to_insert:dep ~before_this:n
         | _ -> program)
 
 let get_live_ranges (g : Machine_node.t Graph.t) (program : Machine_node.t list) =
@@ -314,7 +346,7 @@ let get_live_ranges (g : Machine_node.t Graph.t) (program : Machine_node.t list)
         match n.kind with
         | Ideal Phi ->
             (* merge all depedencies into same live range except for the control depedency, we don't care about that *)
-            let depedencies = List.drop (Graph.get_dependencies g n) 1 |> List.filter_opt in
+            let depedencies = Graph.get_dependencies g n |> List.tl_exn |> List.filter_opt in
             let merged =
                 NodeSet.union_list
                   (List.filter_map depedencies ~f:(fun dep ->
@@ -325,44 +357,163 @@ let get_live_ranges (g : Machine_node.t Graph.t) (program : Machine_node.t list)
                              (Hashtbl.find_or_add ranges dep ~default:(fun () ->
                                   NodeSet.singleton dep))))
             in
-            let merged = Set.add merged n in
+            let this_lrg = Hashtbl.find ranges n |> Option.value ~default:(NodeSet.singleton n) in
+            let merged = Set.union merged this_lrg in
             Set.iter merged ~f:(fun n -> Hashtbl.set ranges ~key:n ~data:merged)
         | _ when Machine_node.is_two_address n ->
             let input1 = Graph.get_dependency g n 1 |> Option.value_exn in
-            let output = Graph.get_dependants g n |> List.hd_exn in
             let input_lrg =
                 Hashtbl.find_or_add ranges input1 ~default:(fun () -> NodeSet.singleton input1)
             in
-            let output_lrg =
-                Hashtbl.find_or_add ranges output ~default:(fun () -> NodeSet.singleton output)
-            in
-            let merged = Set.union input_lrg output_lrg in
-            let merged = Set.add merged n in
+            let this_lrg = Hashtbl.find ranges n |> Option.value ~default:(NodeSet.singleton n) in
+            let merged = Set.union input_lrg this_lrg in
             Set.iter merged ~f:(fun n -> Hashtbl.set ranges ~key:n ~data:merged)
         | _ when Option.is_none (n.out_reg g n 0) -> ()
         | _ -> Hashtbl.add ranges ~key:n ~data:(NodeSet.singleton n) |> ignore);
     ranges
 
-let process_range (g : Machine_node.t Graph.t) (program : Machine_node.t list) (range : NodeSet.t) :
-    range =
-    let indices =
+(* TODO: this is basically the same calculations as in find_conflicts, so they should be merged together *)
+let compute_liveness (g : Machine_node.t Graph.t) (program : Machine_node.t list)
+    (ranges : (Machine_node.t, NodeSet.t) Hashtbl.t) =
+    let program = List.group program ~break:(fun _ n -> Machine_node.is_blockhead n) in
+    let bb_outs = Hashtbl.create (module Machine_node) in
+    let bbs =
+        match
+          Hashtbl.create_mapped
+            (module Machine_node)
+            ~get_key:List.hd_exn
+            ~get_data:(fun l ->
+              { head = List.hd_exn l; nodes = List.tl l |> Option.value ~default:[] })
+            program
+        with
+        | `Ok m -> m
+        | `Duplicate_keys _ -> assert false
+    in
+    let range_uses = Hashtbl.Poly.create () in
+    let update_bb_outs bb (actives : (NodeSet.t, Machine_node.t) Hashtbl.t) =
+        let rec get_blockhead n =
+            if Machine_node.is_blockhead n then
+              n
+            else
+              Graph.get_dependency g n 0 |> Option.value_exn |> get_blockhead
+        in
+        let precs =
+            match bb.head.kind with
+            | Ideal Region -> Graph.get_dependencies g bb.head
+            | Ideal Loop -> Graph.get_dependencies g bb.head
+            | Ideal Start -> []
+            | _ -> [ Graph.get_dependency g bb.head 0 ]
+        in
+        List.map precs ~f:(Option.map ~f:get_blockhead)
+        |> List.filteri ~f:(fun i prec ->
+               match prec with
+               | None -> false
+               | Some prec ->
+                   let prec_live_outs =
+                       Hashtbl.find_or_add bb_outs prec ~default:(fun _ -> Hashtbl.Poly.create ())
+                   in
+                   Hashtbl.fold actives ~init:false ~f:(fun ~key:lrg ~data:n acc ->
+                       let def =
+                           match n.kind with
+                           | Ideal Phi ->
+                               if
+                                 Machine_node.equal
+                                   (Graph.get_dependency g n 0 |> Option.value_exn)
+                                   bb.head
+                               then (
+                                 assert (i <> 0);
+                                 Graph.get_dependency g n i |> Option.value_exn)
+                               else
+                                 n
+                           | _ -> n
+                       in
+                       match Hashtbl.find prec_live_outs lrg with
+                       | None ->
+                           Hashtbl.set prec_live_outs ~key:lrg ~data:def;
+                           let prec_bb = Hashtbl.find_exn bbs prec in
+                           let last_node = List.last prec_bb.nodes |> Option.value ~default:prec in
+                           Hashtbl.update range_uses lrg ~f:(function
+                             | None -> [ last_node ]
+                             | Some l -> last_node :: l);
+                           true
+                       | Some n' -> acc))
+        |> List.filter_opt
+        |> List.map ~f:(Hashtbl.find_exn bbs)
+    in
+    let get_actives bb =
+        match Hashtbl.find bb_outs bb.head with
+        | None -> Hashtbl.Poly.create ()
+        | Some outs -> Hashtbl.copy outs
+    in
+    let do_block (bb : basic_block) =
+        (* lrg -> bb where the lrg is defined *)
+        let actives = get_actives bb in
+        List.rev bb.nodes
+        |> List.filter ~f:(fun n ->
+               match n.kind with
+               | Ideal _ -> false
+               | _ -> true)
+        |> List.iter ~f:(fun node ->
+               (match Hashtbl.find ranges node with
+               | None -> () (* not every node is in a range, e.g jmp nodes (if) *)
+               | Some range ->
+                   (* remove the def *)
+                   Hashtbl.remove actives range);
+               (* add the nodes it uses *)
+               Graph.get_dependencies g node
+               |> List.tl
+               |> Option.value ~default:[]
+               |> List.filter_opt
+               |> List.iter ~f:(fun dep ->
+                      match Hashtbl.find ranges dep with
+                      | None -> ()
+                      | Some r ->
+                          Hashtbl.set actives ~key:r ~data:dep;
+                          Hashtbl.update range_uses r ~f:(function
+                            | None -> [ node ]
+                            | Some l -> node :: l)));
+        let live_ins = actives in
+        update_bb_outs bb live_ins
+    in
+    let queue = Queue.create () in
+    List.iter program ~f:(fun l ->
+        (* we want the blocks in reverse order *)
+        let bb = { head = List.hd_exn l; nodes = List.tl l |> Option.value ~default:[] } in
+        Queue.enqueue_front queue bb);
+    while not (Queue.is_empty queue) do
+      let bb = Queue.dequeue_exn queue in
+      let changed = do_block bb in
+      Queue.enqueue_all queue changed
+    done;
+    range_uses
+
+let process_range (g : Machine_node.t Graph.t) (program : Machine_node.t list)
+    (range_uses : (NodeSet.t, Machine_node.t list) Hashtbl.t) (range : NodeSet.t) : range =
+    if
+      Set.exists range ~f:(fun n ->
+          match n.kind with
+          | SubImm _ -> true
+          | _ -> false)
+    then
+      Printf.printf "%s\n"
+        (Set.union range (NodeSet.of_list (Hashtbl.find_exn range_uses range))
+        |> Set.to_list
+        |> [%derive.show: Machine_node.t list]);
+    let first_def =
         Set.to_list range
         |> List.map ~f:(fun n ->
                List.findi_exn program ~f:(fun _ n' -> Machine_node.equal n n') |> fst)
+        |> List.min_elt ~compare:Int.compare
+        |> Option.value_exn
     in
-    let first_def = List.min_elt indices ~compare:Int.compare |> Option.value_exn in
     let last_usage =
-        Set.fold range ~init:(-1) ~f:(fun acc n ->
-            let max_usage =
-                Graph.get_dependants g n
-                |> List.fold ~init:(-1) ~f:(fun max_idx dep ->
-                       let idx =
-                           List.findi_exn program ~f:(fun _ n' -> Machine_node.equal dep n') |> fst
-                       in
-                       max max_idx idx)
-            in
-            max acc max_usage)
+        Hashtbl.find_exn range_uses range
+        |> List.map ~f:(fun n ->
+               List.findi_exn program ~f:(fun _ n' -> Machine_node.equal n n') |> fst)
+        |> List.max_elt ~compare:Int.compare
+        |> Option.value_exn
     in
+
     (* let in_reg_mask = *)
     (*     Set.fold range ~init:Registers.Mask.all ~f:(fun mask node -> *)
     (*         Graph.get_dependencies g node *)
@@ -382,63 +533,63 @@ let process_range (g : Machine_node.t Graph.t) (program : Machine_node.t list) (
     in
     (range, reg_mask, first_def, last_usage)
 
-let split_range (g : Machine_node.t Graph.t) (program : Machine_node.t list) (ranges : range list)
-    (pref : Machine_node.t list) (suff : Machine_node.t list) (node : Machine_node.t) =
-    failwith "TODO: idk if this function is correct or not";
-    let uses = Graph.get_dependants g node |> Hash_set.of_list (module Machine_node) in
-    (* NOTE: could use dlists for fast list concats *)
-    let rec insert_before_use l idx =
-        match l with
-        | [] -> (-1, [])
-        | h :: t ->
-            if Hash_set.mem uses h then
-              (idx, node :: h :: t)
-            else
-              let res_idx, tail = insert_before_use t (idx + 1) in
-              (res_idx, h :: tail)
-    in
-    let rec remove_in_prefix_and_merge l new_suff idx =
-        match l with
-        | [] -> (idx, new_suff)
-        | h :: t ->
-            if Machine_node.equal h node then
-              (idx, t @ new_suff)
-            else
-              let delete_idx, tail = remove_in_prefix_and_merge t new_suff (idx + 1) in
-              (delete_idx, h :: tail)
-    in
-    let rec replace_range (l : range list) insert_idx delete_idx : range * range * range list =
-        match l with
-        | [] -> assert false
-        | (r, _, _, _) :: t when Set.mem r node ->
-            let first_range = List.filter pref ~f:(fun n -> Set.mem r n) |> NodeSet.of_list in
-            let second_range = Set.diff r first_range in
-            let first_range = process_range g program first_range in
-            let second_range = process_range g program second_range in
-            (first_range, second_range, first_range :: second_range :: t)
-        | (r, reg_mask, first_def, last_use) :: t ->
-            let first_def = if first_def >= insert_idx then first_def + 1 else first_def
-            and last_use = if last_use >= insert_idx then last_use + 1 else last_use in
-            let first_def, last_use =
-                match delete_idx with
-                | None -> (first_def, last_use)
-                | Some delete_idx ->
-                    let first_def = if first_def >= delete_idx then first_def - 1 else first_def
-                    and last_use = if last_use >= delete_idx then last_use - 1 else last_use in
-                    (first_def, last_use)
-            in
-            let first, second, l = replace_range t insert_idx delete_idx in
-            (first, second, (r, reg_mask, first_def, last_use) :: l)
-    in
-    let insert_idx, new_suff = insert_before_use suff (List.length pref) in
-    if List.exists pref ~f:(fun n -> Hash_set.mem uses n) then
-      let new_program = pref @ new_suff in
-      let first, second, new_ranges = replace_range ranges insert_idx None in
-      (new_ranges, new_program, first, second)
-    else
-      let delete_idx, new_program = remove_in_prefix_and_merge pref new_suff 0 in
-      let first, second, new_ranges = replace_range ranges insert_idx (Some delete_idx) in
-      (new_ranges, new_program, first, second)
+(* let split_range (g : Machine_node.t Graph.t) (program : Machine_node.t list) (ranges : range list) *)
+(*     (pref : Machine_node.t list) (suff : Machine_node.t list) (node : Machine_node.t) = *)
+(*     failwith "TODO: idk if this function is correct or not"; *)
+(*     let uses = Graph.get_dependants g node |> Hash_set.of_list (module Machine_node) in *)
+(*     (* NOTE: could use dlists for fast list concats *) *)
+(*     let rec insert_before_use l idx = *)
+(*         match l with *)
+(*         | [] -> (-1, []) *)
+(*         | h :: t -> *)
+(*             if Hash_set.mem uses h then *)
+(*               (idx, node :: h :: t) *)
+(*             else *)
+(*               let res_idx, tail = insert_before_use t (idx + 1) in *)
+(*               (res_idx, h :: tail) *)
+(*     in *)
+(*     let rec remove_in_prefix_and_merge l new_suff idx = *)
+(*         match l with *)
+(*         | [] -> (idx, new_suff) *)
+(*         | h :: t -> *)
+(*             if Machine_node.equal h node then *)
+(*               (idx, t @ new_suff) *)
+(*             else *)
+(*               let delete_idx, tail = remove_in_prefix_and_merge t new_suff (idx + 1) in *)
+(*               (delete_idx, h :: tail) *)
+(*     in *)
+(*     let rec replace_range (l : range list) insert_idx delete_idx : range * range * range list = *)
+(*         match l with *)
+(*         | [] -> assert false *)
+(*         | (r, _, _, _) :: t when Set.mem r node -> *)
+(*             let first_range = List.filter pref ~f:(fun n -> Set.mem r n) |> NodeSet.of_list in *)
+(*             let second_range = Set.diff r first_range in *)
+(*             let first_range = process_range g program first_range in *)
+(*             let second_range = process_range g program second_range in *)
+(*             (first_range, second_range, first_range :: second_range :: t) *)
+(*         | (r, reg_mask, first_def, last_use) :: t -> *)
+(*             let first_def = if first_def >= insert_idx then first_def + 1 else first_def *)
+(*             and last_use = if last_use >= insert_idx then last_use + 1 else last_use in *)
+(*             let first_def, last_use = *)
+(*                 match delete_idx with *)
+(*                 | None -> (first_def, last_use) *)
+(*                 | Some delete_idx -> *)
+(*                     let first_def = if first_def >= delete_idx then first_def - 1 else first_def *)
+(*                     and last_use = if last_use >= delete_idx then last_use - 1 else last_use in *)
+(*                     (first_def, last_use) *)
+(*             in *)
+(*             let first, second, l = replace_range t insert_idx delete_idx in *)
+(*             (first, second, (r, reg_mask, first_def, last_use) :: l) *)
+(*     in *)
+(*     let insert_idx, new_suff = insert_before_use suff (List.length pref) in *)
+(*     if List.exists pref ~f:(fun n -> Hash_set.mem uses n) then *)
+(*       let new_program = pref @ new_suff in *)
+(*       let first, second, new_ranges = replace_range ranges insert_idx None in *)
+(*       (new_ranges, new_program, first, second) *)
+(*     else *)
+(*       let delete_idx, new_program = remove_in_prefix_and_merge pref new_suff 0 in *)
+(*       let first, second, new_ranges = replace_range ranges insert_idx (Some delete_idx) in *)
+(*       (new_ranges, new_program, first, second) *)
 
 let find_splittable (program : Machine_node.t list) (pref : Machine_node.t list)
     (ranges : range list) (mask : Registers.Mask.t) =
@@ -525,13 +676,27 @@ let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list
             let start = min first_def last_use
             and stop = max first_def last_use in
             (start, `Start range) :: (stop, `End range) :: acc)
-        |> List.sort ~compare:(fun (i, _) (i', _) -> Int.compare i i')
+        |> List.sort ~compare:(fun (i, r) (i', r') ->
+               (* Sort by index, but put End before Start. This allows the
+                  allocator to reuse registers for ranges that touch at a
+                  single point, e.g., [1,2] and [2,3] can share the same
+                  register (because def "happens after" use). When we split
+                  self conflicting ranges we create a lot of Movs, sorting this
+                  way enables same-to-same-reg copies that get eliminated later
+                  on *)
+               if i = i' then
+                 match (r, r') with
+                 | `Start _, `End _ -> 1
+                 | `End _, `Start _ -> -1
+                 | _ -> 0
+               else
+                 Int.compare i i')
     in
     let rec aux l active_ranges program (free_regs : Registers.Mask.t) =
         match l with
         | [] -> ()
         | (idx, `Start range) :: t ->
-            let _, reg_mask, first_def, last_use = range in
+            let _, reg_mask, start, _ = range in
             let new_ranges, new_program, reg_used =
                 match Registers.Mask.common free_regs reg_mask |> Registers.Mask.choose with
                 | Some r ->
@@ -552,32 +717,32 @@ let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list
                     let pref, suff = List.split_n program (idx - 1) in
                     match find_splittable program pref ranges reg_mask with
                     | None -> failwithf "TODO spill %s" (show_range range) ()
-                    | Some (split_after_node, candidate_range) ->
-                        let new_ranges, new_program, split_range1, split_range2 =
-                            split_range g program ranges pref suff split_after_node
-                        in
-                        let old_reg =
-                            Hashtbl.find_and_remove register_assoc candidate_range
-                            |> Option.value_exn
-                        in
-                        List.iter new_ranges ~f:(fun range ->
-                            Hashtbl.change register_assoc range ~f:(function
-                              | None ->
-                                  if Poly.equal range split_range1 then
-                                    Some old_reg
-                                  else if Poly.equal range split_range2 then
-                                    None
-                                  else
-                                    None
-                              | Some reg -> Some reg));
-                        Hashtbl.set register_assoc ~key:range ~data:old_reg;
-                        let new_ranges =
-                            List.fold ranges ~init:[]
-                              ~f:(fun acc ((_, _, first_def, last_use) as range) ->
-                                (first_def, `Start range) :: (last_use, `End range) :: acc)
-                            |> List.sort ~compare:(fun (i, _) (i', _) -> Int.compare i i')
-                        in
-                        (new_ranges, new_program, None))
+                    | Some (split_after_node, candidate_range) -> failwith "TODO split ranges"
+                    (* let new_ranges, new_program, split_range1, split_range2 = *)
+                    (*     split_range g program ranges pref suff split_after_node *)
+                    (* in *)
+                    (* let old_reg = *)
+                    (*     Hashtbl.find_and_remove register_assoc candidate_range *)
+                    (*     |> Option.value_exn *)
+                    (* in *)
+                    (* List.iter new_ranges ~f:(fun range -> *)
+                    (*     Hashtbl.change register_assoc range ~f:(function *)
+                    (*       | None -> *)
+                    (*           if Poly.equal range split_range1 then *)
+                    (*             Some old_reg *)
+                    (*           else if Poly.equal range split_range2 then *)
+                    (*             None *)
+                    (*           else *)
+                    (*             None *)
+                    (*       | Some reg -> Some reg)); *)
+                    (* Hashtbl.set register_assoc ~key:range ~data:old_reg; *)
+                    (* let new_ranges = *)
+                    (*     List.fold ranges ~init:[] *)
+                    (*       ~f:(fun acc ((_, _, first_def, last_use) as range) -> *)
+                    (*         (first_def, `Start range) :: (last_use, `End range) :: acc) *)
+                    (*     |> List.sort ~compare:(fun (i, _) (i', _) -> Int.compare i i') *)
+                    (* in *)
+                    (* (new_ranges, new_program, None) *))
             in
             let free_regs =
                 match reg_used with
@@ -614,6 +779,7 @@ let expand_register_assoc register_assoc =
 
 let allocate (g : Machine_node.t Graph.t) (program : Machine_node.t list list) =
     let flat_program = List.concat program in
+    Ir_printer.to_string_machine_linear g flat_program |> Printf.printf "%s\n";
     let live_ranges = get_live_ranges g flat_program in
     let conflicts = find_conflicts g program live_ranges in
     conflicts
@@ -621,7 +787,7 @@ let allocate (g : Machine_node.t Graph.t) (program : Machine_node.t list list) =
     |> NodeSet.union_list
     |> Set.to_list
     |> [%derive.show: Machine_node.t list]
-    |> Printf.printf "\nCONFLICTS: {\n%s\n}";
+    |> Printf.printf "\nCONFLICTS: {\n%s\n}\n";
     let program = resolve_conflicts g flat_program conflicts in
 
     Graph.cleanup g;
@@ -633,15 +799,20 @@ let allocate (g : Machine_node.t Graph.t) (program : Machine_node.t list list) =
             Graph.find g ~f:(fun n' -> Machine_node.equal n n') |> Option.is_some)
     in
     let live_ranges = get_live_ranges g program in
-
+    let range_uses = compute_liveness g program live_ranges in
+    Hashtbl.iteri range_uses ~f:(fun ~key ~data ->
+        Printf.printf "%s ----------- %s\n\n\n"
+          (Set.to_list key |> [%derive.show: Machine_node.t list])
+          ([%derive.show: Machine_node.t list] data));
     let ranges =
         Hashtbl.data live_ranges
         |> List.stable_dedup ~compare:Set.compare_direct
-        |> List.map ~f:(process_range g program)
+        |> List.map ~f:(process_range g program range_uses)
         |> List.sort ~compare:(fun (_, _, first, last) (_, _, first', last') ->
                let c1 = Int.compare first first' in
                if c1 <> 0 then c1 else Int.compare last last')
     in
+    Printf.printf "RANGES: \n%s\n" (List.map ranges ~f:show_range |> String.concat ~sep:";\n");
     let register_assoc = Hashtbl.Poly.create () in
     assign_registers g program ranges register_assoc;
     (* Printf.printf "=================== ALLOCATION RESULTS =============================\n"; *)

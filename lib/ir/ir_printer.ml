@@ -23,7 +23,7 @@ let node_label node =
             Printf.sprintf "Proj %d" i
         | Data d -> show_sexp (Node.sexp_of_data_kind d)
         | Ctrl c -> show_sexp (Node.sexp_of_ctrl_kind c)
-        | Scope _ -> "Scope"
+        | Scope _ -> Printf.sprintf "Scope %d" node.id
     in
     kind_str
 
@@ -93,7 +93,7 @@ let to_dot (g : Node.t Graph.t) =
         | Scope tbl ->
             Buffer.add_string buf (Printf.sprintf "subgraph cluster_scope_%d {\n" node.id);
             Buffer.add_string buf "  rank=sink;\n";
-            Buffer.add_string buf "  label=\"Scope\";\n";
+            Buffer.add_string buf (Printf.sprintf "  label=\"%s\";\n" (node_label node));
 
             (* Only create symbol nodes inside the subgraph *)
             Symbol_table.iter tbl (fun ~name ~symbol:_ ~depth:_ ->
@@ -113,7 +113,6 @@ let to_dot (g : Node.t Graph.t) =
                 | None -> ())
         | _ -> ());
 
-    Buffer.add_string buf "}\n";
     Buffer.add_string buf "}\n";
     Buffer.contents buf
 
@@ -210,6 +209,7 @@ let to_string_linear (g : Node.t Graph.t) =
 
     List.iter control_nodes ~f:(fun block ->
         Buffer.add_string buf
+          (* TODO: show block successors like in the machine version *)
           (Printf.sprintf "Block %d (%s):\n" block.id (Node.show_kind block.kind));
 
         let dependants = Graph.get_dependants g block in
@@ -271,8 +271,28 @@ let to_string_machine_linear (g : Machine_node.t Graph.t) (program : Machine_nod
 
     List.iter program ~f:(fun n ->
         if Machine_node.is_blockhead n then
+          let successors =
+              Graph.get_dependants g n
+              |> List.filter_map ~f:(fun n ->
+                     if Machine_node.is_blockhead n then
+                       Some (Printf.sprintf "#%d" n.id)
+                     else
+                       match n.kind with
+                       | Jmp _ ->
+                           let t, f =
+                               match Graph.get_dependants g n with
+                               | [ t; f ] -> (t, f)
+                               | _ -> assert false
+                           in
+
+                           Some (Printf.sprintf "T: #%d,F: #%d" t.id f.id)
+                       | _ -> None)
+              |> String.concat ~sep:", "
+          in
           Buffer.add_string buf
-            (Printf.sprintf "\nBlock %d (%s):\n" n.id (Machine_node.show_machine_node_kind n.kind))
+            (Printf.sprintf "\nBlock #%d (%s): -> [%s]\n" n.id
+               (Machine_node.show_machine_node_kind n.kind)
+               successors)
         else
           Buffer.add_string buf (Printf.sprintf "  %s\n" (show_machine_compact g n)));
     Buffer.add_string buf "\n";
@@ -285,8 +305,28 @@ let to_string_machine_linear_regs (g : Machine_node.t Graph.t) (program : Machin
 
     List.iter program ~f:(fun n ->
         if Machine_node.is_blockhead n then
+          let successors =
+              Graph.get_dependants g n
+              |> List.filter_map ~f:(fun n ->
+                     if Machine_node.is_blockhead n then
+                       Some (Printf.sprintf "#%d" n.id)
+                     else
+                       match n.kind with
+                       | Jmp _ ->
+                           let t, f =
+                               match Graph.get_dependants g n with
+                               | [ t; f ] -> (t, f)
+                               | _ -> assert false
+                           in
+
+                           Some (Printf.sprintf "T: #%d,F: #%d" t.id f.id)
+                       | _ -> None)
+              |> String.concat ~sep:", "
+          in
           Buffer.add_string buf
-            (Printf.sprintf "\nBlock %d (%s):\n" n.id (Machine_node.show_machine_node_kind n.kind))
+            (Printf.sprintf "\nBlock #%d (%s): -> [%s]\n" n.id
+               (Machine_node.show_machine_node_kind n.kind)
+               successors)
         else
           Buffer.add_string buf (Printf.sprintf "  %s\n" (show_machine_compact ~reg_assoc g n)));
     Buffer.add_string buf "\n";
