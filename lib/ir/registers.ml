@@ -26,6 +26,7 @@ module Mask : sig
   val general_r : t
   val all : t
   val rax : t
+  val div : t
   val flags : t
   val of_list : reg list -> t
   val common : t -> t -> t
@@ -62,6 +63,7 @@ end = struct
         [ RAX; RBX; RCX; RDX; RSI; RDI; RSP; RBP; R8; R9; R10; R11; R12; R13; R14; R15; Flags ]
 
   let rax = S.of_list [ RAX ]
+  let div = Set.diff general_r (S.of_list [ RAX; RDX ])
   let flags = S.singleton Flags
   let of_list = S.of_list
   let common a b = Set.inter a b

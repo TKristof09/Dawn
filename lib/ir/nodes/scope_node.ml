@@ -10,12 +10,14 @@ let define g (n : Node.t) name node =
 
 let rec assign g (n : Node.t) name node =
     match n.kind with
-    | Scope tbl ->
+    | Scope tbl -> (
         let symbol = Symbol_table.find_symbol tbl name in
         let symbol =
             match symbol.kind with
             | Scope old_tbl -> (
+                Printf.printf "TABLE: %s\n" name;
                 let tmp = Symbol_table.find_symbol old_tbl name in
+                Printf.printf "TMP: %s\n" (Node.show tmp);
                 match tmp.kind with
                 | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> symbol
                 | _ ->
@@ -30,9 +32,10 @@ let rec assign g (n : Node.t) name node =
             |> List.find_index (function
                  | None -> false
                  | Some x -> Node.equal x symbol)
-            |> Core.Option.value_exn
         in
-        Graph.set_dependency g n (Some node) idx
+        match idx with
+        | None -> Graph.add_dependencies g n [ Some node ]
+        | Some idx -> Graph.set_dependency g n (Some node) idx)
     | _ -> assert false
 
 and get g (n : Node.t) name =

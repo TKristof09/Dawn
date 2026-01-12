@@ -29,6 +29,7 @@ module Mask : sig
   val general_r : t
   val all : t
   val rax : t
+  val div : t
   val flags : t
   val of_list : reg list -> t
   val common : t -> t -> t

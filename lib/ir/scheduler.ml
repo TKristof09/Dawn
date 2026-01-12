@@ -248,6 +248,7 @@ let schedule_flat g =
            |> schedule_main)
 
 let schedule (g : Machine_node.t Graph.t) =
+    (* FIXME schedule early pulls out nodes from branches of an if to before the if. They then get pulled back in to the branch in schedule_flat but it still feels wrong for schedule_early to be able to pull them out *)
     schedule_early g;
     schedule_late g;
     schedule_flat g

@@ -11,6 +11,10 @@ let asm_of_op (n : Machine_node.t) =
     | Cmp
     | CmpImm _ ->
         "cmp"
+    | Mul
+    | MulImm _ ->
+        "imul"
+    | Div -> "idiv"
     | JmpAlways -> "jmp"
     | Jmp cond -> (
         match cond with
@@ -50,6 +54,14 @@ let asm_of_node g reg_assoc (n : Machine_node.t) =
         let op_str = asm_of_op n in
         let reg_str = regs |> List.map ~f:asm_of_reg |> String.concat ~sep:", " in
         Printf.sprintf "\t%s %s, %d" op_str reg_str i
+    | Div ->
+        let deps = Graph.get_dependencies g n |> List.tl_exn in
+        let reg_divisor = List.nth_exn deps 1 |> Option.value_exn |> Hashtbl.find_exn reg_assoc in
+        let reg_str = asm_of_reg reg_divisor in
+        let op_str = asm_of_op n in
+        (* have to sign extend RAX into RDX for signed division *)
+        (* TODO: use xor rdx, rdx  for unsigned division once we have that distinction *)
+        Printf.sprintf "\tcqo\n\t%s %s \t\t// rax = rax / %s" op_str reg_str reg_str
     | Ideal Loop -> Printf.sprintf "%s:" (get_label n)
     | Ideal (CProj 0) -> Printf.sprintf "%s:" (get_label n)
     | Ideal _ -> ""
