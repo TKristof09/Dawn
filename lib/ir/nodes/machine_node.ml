@@ -58,6 +58,11 @@ let invert_cond cond =
     | Eq -> Neq
     | Neq -> Eq
 
+let invert_jmp kind =
+    match kind with
+    | Jmp cond -> Jmp (invert_cond cond)
+    | _ -> assert false
+
 let is_cheap_to_clone n =
     match n.kind with
     | Int _ -> true

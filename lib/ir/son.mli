@@ -1,1 +1,1 @@
-val of_ast : Ast.statement Ast.node list -> Machine_node.t Graph.t
+val of_ast : Ast.statement Ast.node list -> Node.t Graph.t

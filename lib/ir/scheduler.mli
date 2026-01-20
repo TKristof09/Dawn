@@ -1,1 +1,1 @@
-val schedule : Machine_node.t Graph.t -> Machine_node.t list list
+val schedule : Node.t Graph.t -> Machine_node.t Graph.t * Machine_node.t list list

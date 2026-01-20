@@ -10,16 +10,20 @@ module NodeSet = Set.Make_plain (ComparableNode)
 module Range = struct
   type t = NodeSet.t * Registers.Mask.t * int * int [@@deriving sexp_of]
 
-  let show (s, regs, first, last) =
-      let s = Set.to_list s |> [%derive.show: Machine_node.t list] in
-      Printf.sprintf "[%d - %d]: %s --> %s" first last s (Registers.Mask.show regs)
+  (* let show (s, regs, first, last) = *)
+  (*     let s = Set.to_list s |> [%derive.show: Machine_node.t list] in *)
+  (*     Printf.sprintf "[%d - %d]: %s --> %s" first last s (Registers.Mask.show regs) *)
 
+  (* let pp fmt r = Format.fprintf fmt "%s" (show r) *)
   let compare (s1, _, _, _) (s2, _, _, _) = Set.compare_direct s1 s2
+  let equal r1 r2 = compare r1 r2 = 0
 
   let hash (s, _, _, _) =
       let state = Hash.alloc () in
       Set.fold s ~init:state ~f:(fun s n -> Hash.fold_int s (Machine_node.hash n))
       |> Hash.get_hash_value
+
+  include (val Comparator.make ~compare ~sexp_of_t)
 end
 
 let clone_node g (n : Machine_node.t) =
@@ -538,13 +542,12 @@ let process_range (g : Machine_node.t Graph.t) (program : Machine_node.t list)
     (range, reg_mask, first_def, last_usage)
 
 let split_range_by_cloning (g : Machine_node.t Graph.t) (program : Machine_node.t list)
-    (ranges : Range.t list) (pref : Machine_node.t list) (suff : Machine_node.t list)
-    (node : Machine_node.t) =
+    (pref : Machine_node.t list) (suff : Machine_node.t list) (node : Machine_node.t) =
     let uses = Graph.get_dependants g node |> Hash_set.of_list (module Machine_node) in
     (* NOTE: could use dlists for fast list concats *)
     let rec insert_before_use l idx =
         match l with
-        | [] -> failwith "No uses found"
+        | [] -> failwithf "No uses found for %s" (Machine_node.show node) ()
         | h :: t ->
             if Hash_set.mem uses h then (
               let node' = clone_node g node in
@@ -565,31 +568,28 @@ let split_range_by_cloning (g : Machine_node.t Graph.t) (program : Machine_node.
                           | Some dep -> Machine_node.equal dep node)
                   in
                   Graph.set_dependency g use (Some node') dep_idx);
-              (idx, node', node' :: h :: t))
+              (node', node' :: h :: t))
             else
-              let res_idx, new_node, tail = insert_before_use t (idx + 1) in
-              (res_idx, new_node, h :: tail)
+              let new_node, tail = insert_before_use t (idx + 1) in
+              (new_node, h :: tail)
     in
-    let rec remove_in_prefix_and_merge l new_suff idx =
+    let rec remove_in_prefix_and_merge l new_suff =
         match l with
-        | [] -> (idx, new_suff)
+        | [] -> new_suff
         | h :: t ->
             if Machine_node.equal h node then
-              (idx, t @ new_suff)
+              t @ new_suff
             else
-              let delete_idx, tail = remove_in_prefix_and_merge t new_suff (idx + 1) in
-              (delete_idx, h :: tail)
+              h :: remove_in_prefix_and_merge t new_suff
     in
-    let insert_idx, new_node, new_suff =
-        insert_before_use (List.tl_exn suff) (List.length pref + 1)
-    in
+    let new_node, new_suff = insert_before_use (List.tl_exn suff) (List.length pref + 1) in
     let new_suff = List.hd_exn suff :: new_suff in
     let new_program =
         if List.is_empty @@ Graph.get_dependants g node then
           (* if the node has no uses in prefix (aka no uses at all since uses in
          suffix now point to the cloned node) we can remove it as it got cloned into
          suffix already *)
-          let delete_idx, new_program = remove_in_prefix_and_merge pref new_suff 0 in
+          let new_program = remove_in_prefix_and_merge pref new_suff in
           new_program
         else (* if the node has uses in the prefix we can't delete it *)
           pref @ new_suff
@@ -610,7 +610,7 @@ let split_range_by_cloning (g : Machine_node.t Graph.t) (program : Machine_node.
     (ranges, new_program, first_range, second_range)
 
 let find_splittable_by_cloning (program : Machine_node.t list) (pref : Machine_node.t list)
-    (ranges : Range.t list) (mask : Registers.Mask.t) =
+    active_ranges (mask : Registers.Mask.t) =
     let find_last instr_list range =
         let rec aux l last =
             match l with
@@ -639,28 +639,31 @@ let find_splittable_by_cloning (program : Machine_node.t list) (pref : Machine_n
         Int.compare next_idx next_idx'
     in
     let possible_splits =
-        List.filter_map ranges ~f:(fun ((r, reg_mask, _, _) as range) ->
-            if not (Registers.Mask.is_empty (Registers.Mask.common mask reg_mask)) then
-              let last_in_pref = find_last pref r in
-              if Machine_node.is_cheap_to_clone last_in_pref then
-                Some (last_in_pref, range)
-              else
-                None
-            else
-              None)
+        Set.to_list active_ranges
+        |> List.filter_map ~f:(fun ((r, reg_mask, _, _) as range) ->
+               if not (Registers.Mask.is_empty (Registers.Mask.common mask reg_mask)) then
+                 let last_in_pref = find_last pref r in
+                 if Machine_node.is_cheap_to_clone last_in_pref then
+                   Some (last_in_pref, range)
+                 else
+                   None
+               else
+                 None)
     in
     List.max_elt possible_splits ~compare
 
-let find_swappable range free_regs active_ranges ranges register_assoc =
+let find_swappable range free_regs active_ranges ranges
+    (register_assoc : (Range.t, Reg_allocator_intf.loc) Base.Hashtbl.t) =
     let does_overlap (start, stop) (start', stop') =
         let earlier_stop = min stop stop'
         and later_start = max start start' in
-        not (earlier_stop < later_start)
+        not (earlier_stop <= later_start)
     in
     let _, wanted_reg_mask, cur_start, cur_stop = range in
     let potentials =
         Set.to_list active_ranges
-        |> List.filter_map ~f:(fun ((_, candidate_reg_mask, start, stop) as r) ->
+        |> List.filter_map
+             ~f:(fun ((_, candidate_reg_mask, candidate_start, candidate_stop) as r) ->
                let shared_with_current = Registers.Mask.common wanted_reg_mask candidate_reg_mask in
                let free_for_candidate = Registers.Mask.common free_regs candidate_reg_mask in
                if
@@ -671,11 +674,17 @@ let find_swappable range free_regs active_ranges ranges register_assoc =
                else
                  let unusables =
                      List.filter ranges ~f:(fun (_, _, first_def, last_use) ->
-                         does_overlap (start, stop) (first_def, last_use)
-                         || does_overlap (cur_start, cur_stop) (first_def, last_use))
+                         (* only check ranges that have already been assigned a register (aka those that start earlier) *)
+                         cur_start > first_def
+                         && (candidate_start <> first_def && candidate_stop <> last_use)
+                         && (does_overlap (candidate_start, candidate_stop) (first_def, last_use)
+                            || does_overlap (cur_start, cur_stop) (first_def, last_use)))
                      |> List.fold ~init:Registers.Mask.empty ~f:(fun acc r ->
-                            Registers.Mask.add acc (Hashtbl.find_exn register_assoc r))
+                            match Hashtbl.find_exn register_assoc r with
+                            | Reg reg -> Registers.Mask.add acc reg
+                            | Stack _ -> acc)
                  in
+
                  let available_for_candidate = Registers.Mask.diff free_for_candidate unusables in
                  let freed_up_regs = Registers.Mask.diff shared_with_current unusables in
                  if
@@ -688,9 +697,110 @@ let find_swappable range free_regs active_ranges ranges register_assoc =
     in
     List.hd potentials
 
+let spill (g : Machine_node.t Graph.t) program range active_ranges
+    (register_assoc : (Range.t, Reg_allocator_intf.loc) Base.Hashtbl.t) =
+    let _, reg_mask, first_def, _ = range in
+    let spilled_node, next_use_idx, next_use, best_spill =
+        Set.fold active_ranges ~init:(None, -1, None, range)
+          ~f:(fun ((_, best_idx, _, _) as best) ((s, _, _, _) as cur) ->
+            match Hashtbl.find_exn register_assoc cur with
+            | Reg reg ->
+                if Registers.Mask.mem reg_mask reg then
+                  let def, next_use_dist, next_use =
+                      Set.fold s ~init:(None, Int.max_value, None)
+                        ~f:(fun ((_, closest_dist, _) as closest) n ->
+                          let next_use_dist, next_use =
+                              Graph.get_dependants g n
+                              |> List.map ~f:(fun use ->
+                                     let idx, _ =
+                                         List.findi_exn program ~f:(fun _ n' ->
+                                             Machine_node.equal use n')
+                                     in
+                                     if idx - first_def < 0 then
+                                       (Int.max_value, use)
+                                     else
+                                       (idx - first_def, use))
+                              |> List.min_elt ~compare:(fun (d, _) (d', _) -> Int.compare d d')
+                              |> Option.value_exn
+                          in
+                          if next_use_dist < closest_dist then
+                            (Some n, next_use_dist, Some next_use)
+                          else
+                            closest)
+                  in
+                  let next_use_idx = next_use_dist + first_def in
+                  if Option.is_some next_use && next_use_idx > best_idx then
+                    (def, next_use_idx, next_use, cur)
+                  else
+                    best
+                else
+                  best
+            | Stack _ -> best)
+    in
+    (* this should never be none as that would mean every active range is on stack so we wouldnt be trying to spill in the first place *)
+    let next_use = Option.value_exn next_use in
+    let spilled_node = Option.value_exn spilled_node in
+    (* Printf.printf "SPILLING: %s\nAT NODE:%s\n" (Range.show best_spill) *)
+    (*   (Machine_node.show spilled_node); *)
+    let orig_uses = Graph.get_dependants g spilled_node in
+    (* TODO: choose place to spill at better, like at least loop depth or something *)
+    let spill_idx = first_def in
+    let reload_idx = next_use_idx in
+    assert (spill_idx < reload_idx);
+
+    let spill_mov = copy_node g spilled_node in
+    let reload_mov = copy_node g spill_mov in
+    Graph.set_dependency g reload_mov (Graph.get_dependency g next_use 0) 0;
+    List.iter orig_uses ~f:(fun use ->
+        let dep_idx, _ =
+            List.findi_exn (Graph.get_dependencies g use) ~f:(fun _ dep ->
+                match dep with
+                | None -> false
+                | Some dep -> Machine_node.equal dep spilled_node)
+        in
+        Graph.set_dependency g use (Some reload_mov) dep_idx);
+    let rec insert_spills l cur_idx =
+        match l with
+        | [] -> assert false
+        | h :: t ->
+            if spill_idx = cur_idx then
+              spill_mov :: h :: insert_spills t (cur_idx + 1)
+            else if cur_idx = reload_idx then
+              reload_mov :: h :: t
+            else
+              h :: insert_spills t (cur_idx + 1)
+    in
+    let new_program = insert_spills program 0 in
+    let live_ranges = get_live_ranges g new_program in
+    let range_uses = compute_liveness g new_program live_ranges in
+    let ranges =
+        Hashtbl.data live_ranges
+        |> List.stable_dedup ~compare:Set.compare_direct
+        |> List.map ~f:(process_range g new_program range_uses)
+        |> List.sort ~compare:(fun (_, _, first, last) (_, _, first', last') ->
+               let c1 = Int.compare first first' in
+               if c1 <> 0 then c1 else Int.compare last last')
+    in
+    let spill = List.find_exn ranges ~f:(fun (s, _, _, _) -> Set.mem s spill_mov) in
+    let spilled_range_first_half =
+        List.find_exn ranges ~f:(fun (s, _, _, _) -> Set.mem s spilled_node)
+    in
+    (new_program, ranges, best_spill, spill, spilled_range_first_half)
+
+let rec remove_first l ~pred =
+    match l with
+    | [] -> []
+    | h :: t -> if pred h then t else h :: remove_first t ~pred
+
 let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list)
     (ranges : Range.t list) =
-    let register_assoc = Hashtbl.create (module Range) in
+    let (register_assoc : (Range.t, Reg_allocator_intf.loc) Base.Hashtbl.t) =
+        Hashtbl.create (module Range)
+    in
+    let ranges_map = Hashtbl.create (module Machine_node) in
+    List.iter ranges ~f:(fun ((s, _, _, _) as r) ->
+        Set.iter s ~f:(fun n -> Hashtbl.set ranges_map ~key:n ~data:r));
+
     let get_sorted_endpoints ranges =
         List.fold ranges ~init:[] ~f:(fun acc ((_, _, first_def, last_use) as range) ->
             let start = min first_def last_use
@@ -717,12 +827,35 @@ let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list
         match l with
         | [] -> program
         | (idx, `Start range) :: t ->
-            let _, reg_mask, _, _ = range in
-            let new_endpoints, new_program, reg_used =
+            let s, reg_mask, _, _ = range in
+            let new_endpoints, new_program, new_active_ranges, reg_used =
                 match Registers.Mask.common free_regs reg_mask |> Registers.Mask.choose with
                 | Some r ->
-                    Hashtbl.set register_assoc ~key:range ~data:r;
-                    (t, program, Some r)
+                    let r =
+                        (* Try to assign the source reg to a range only containing
+                           a mov, this let's us easily eliminate it later *)
+                        if Set.length s = 1 then
+                          let n : Machine_node.t = Set.choose_exn s in
+                          if Poly.equal n.kind Mov then
+                            let src_n = Graph.get_dependency g n 1 |> Option.value_exn in
+                            let src_range = Hashtbl.find_exn ranges_map src_n in
+                            match Hashtbl.find register_assoc src_range with
+                            | Some (Reg src_reg) ->
+                                if
+                                  Registers.Mask.mem free_regs src_reg
+                                  && List.length (Graph.get_dependants g src_n) = 1
+                                then
+                                  src_reg
+                                else
+                                  r
+                            | _ -> r
+                          else
+                            r
+                        else
+                          r
+                    in
+                    Hashtbl.set register_assoc ~key:range ~data:(Reg r);
+                    (t, program, Set.add active_ranges range, Some r)
                 | None -> (
                     let possible_swap =
                         if Registers.Mask.is_empty free_regs then
@@ -732,21 +865,59 @@ let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list
                     in
                     match possible_swap with
                     | Some (candidate_range, available_for_candidate) ->
+                        (* Printf.printf "SWAPPING: %s ---- %s\n" (Range.show candidate_range) *)
+                        (*   (Range.show range); *)
                         let candidate_old_reg = Hashtbl.find_exn register_assoc candidate_range in
                         let candidate_new_reg =
                             Registers.Mask.choose available_for_candidate |> Option.value_exn
                         in
                         Hashtbl.set register_assoc ~key:range ~data:candidate_old_reg;
-                        Hashtbl.set register_assoc ~key:candidate_range ~data:candidate_new_reg;
-                        (t, program, Some candidate_new_reg)
+                        Hashtbl.set register_assoc ~key:candidate_range
+                          ~data:(Reg candidate_new_reg);
+                        (t, program, Set.add active_ranges range, Some candidate_new_reg)
                     | None -> (
                         let pref, suff = List.split_n program (idx - 1 + 1) in
-                        match find_splittable_by_cloning program pref ranges reg_mask with
-                        | None -> failwithf "TODO spill %s" (Range.show range) ()
-                        | Some (split_after_node, candidate_range) ->
-                            let new_ranges, new_program, split_range1, split_range2 =
-                                split_range_by_cloning g program ranges pref suff split_after_node
+                        match find_splittable_by_cloning program pref active_ranges reg_mask with
+                        | None ->
+                            (* Printf.printf "SPILLING for: %s\n" (Range.show range); *)
+                            let ( new_program,
+                                  new_ranges,
+                                  spilled_range,
+                                  spill,
+                                  spilled_range_first_half ) =
+                                spill g program range active_ranges register_assoc
                             in
+                            let active_ranges = Set.remove active_ranges spilled_range in
+                            let old_reg =
+                                Hashtbl.find_and_remove register_assoc spilled_range
+                                |> Option.value_exn
+                            in
+                            Hashtbl.set register_assoc ~key:spilled_range_first_half ~data:old_reg;
+                            (* try to put the spill into a free register if possible, otherwise put on stack *)
+                            (let _, mask, _, _ = spill in
+                             match Registers.Mask.choose (Registers.Mask.common free_regs mask) with
+                             | None -> Hashtbl.set register_assoc ~key:spill ~data:(Stack 111)
+                             | Some r -> Hashtbl.set register_assoc ~key:spill ~data:(Reg r));
+                            Hashtbl.set register_assoc ~key:range ~data:old_reg;
+                            (* TODO: we don't really need to do a full sort, it would be much cheaper to just insert the new endpoints in the correct spot *)
+                            let new_endpoints = get_sorted_endpoints new_ranges in
+                            let new_endpoints =
+                                List.drop_while new_endpoints ~f:(fun (i, _) -> i < idx + 1)
+                            in
+                            let new_endpoints =
+                                remove_first new_endpoints ~pred:(function
+                                  | _, `Start r -> Range.equal r range
+                                  | _ -> false)
+                            in
+                            List.iter new_ranges ~f:(fun ((s, _, _, _) as r) ->
+                                Set.iter s ~f:(fun n -> Hashtbl.set ranges_map ~key:n ~data:r));
+                            (new_endpoints, new_program, Set.add active_ranges range, None)
+                        | Some (split_after_node, candidate_range) ->
+                            (* Printf.printf "SPLITTING: %s\n" (Range.show candidate_range); *)
+                            let new_ranges, new_program, split_range1, _ =
+                                split_range_by_cloning g program pref suff split_after_node
+                            in
+                            let active_ranges = Set.remove active_ranges candidate_range in
                             let old_reg =
                                 Hashtbl.find_and_remove register_assoc candidate_range
                                 |> Option.value_exn
@@ -756,24 +927,36 @@ let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list
                             | Some split_range1 ->
                                 Hashtbl.set register_assoc ~key:split_range1 ~data:old_reg);
                             Hashtbl.set register_assoc ~key:range ~data:old_reg;
+                            (* TODO: we don't really need to do a full sort, it would be much cheaper to just insert the new endpoints in the correct spot *)
                             let new_endpoints = get_sorted_endpoints new_ranges in
                             let new_endpoints =
-                                List.drop_while new_endpoints ~f:(fun (i, _) -> i <= idx)
+                                List.drop_while new_endpoints ~f:(fun (i, _) -> i < idx + 1)
                             in
-                            (new_endpoints, new_program, None)))
+                            let new_endpoints =
+                                remove_first new_endpoints ~pred:(function
+                                  | _, `Start r -> Range.equal r range
+                                  | _ -> false)
+                            in
+                            List.iter new_ranges ~f:(fun ((s, _, _, _) as r) ->
+                                Set.iter s ~f:(fun n -> Hashtbl.set ranges_map ~key:n ~data:r));
+                            (new_endpoints, new_program, Set.add active_ranges range, None)))
             in
             let free_regs =
                 match reg_used with
                 | None -> free_regs
                 | Some r -> Registers.Mask.remove free_regs r
             in
-            aux new_endpoints (Set.add active_ranges range) new_program free_regs
+            aux new_endpoints new_active_ranges new_program free_regs
         | (_, `End range) :: t ->
-            let free_regs = Hashtbl.find_exn register_assoc range |> Registers.Mask.add free_regs in
+            let free_regs =
+                match Hashtbl.find_exn register_assoc range with
+                | Reg reg -> Registers.Mask.add free_regs reg
+                | Stack _ -> free_regs
+            in
             aux t (Set.remove active_ranges range) program free_regs
     in
-    let new_program = aux endpoints Set.Poly.empty program Registers.Mask.all in
-    (register_assoc, new_program)
+    let new_program = aux endpoints (Set.empty (module Range)) program Registers.Mask.all in
+    (new_program, register_assoc)
 
 let cleanup_movs g (program : Machine_node.t list) register_assoc =
     List.filter program ~f:(fun n ->
@@ -798,15 +981,14 @@ let expand_register_assoc register_assoc =
 
 let allocate (g : Machine_node.t Graph.t) (program : Machine_node.t list list) =
     let flat_program = List.concat program in
-    Ir_printer.to_string_machine_linear g flat_program |> Printf.printf "%s\n";
     let live_ranges = get_live_ranges g flat_program in
     let conflicts = find_conflicts g program live_ranges in
-    conflicts
-    |> Hashtbl.data
-    |> NodeSet.union_list
-    |> Set.to_list
-    |> [%derive.show: Machine_node.t list]
-    |> Printf.printf "\nCONFLICTS: {\n%s\n}\n";
+    (* conflicts *)
+    (* |> Hashtbl.data *)
+    (* |> NodeSet.union_list *)
+    (* |> Set.to_list *)
+    (* |> [%derive.show: Machine_node.t list] *)
+    (* |> Printf.printf "\nCONFLICTS: {\n%s\n}\n"; *)
     let program = resolve_conflicts g flat_program conflicts in
 
     Graph.cleanup g;
@@ -831,31 +1013,7 @@ let allocate (g : Machine_node.t Graph.t) (program : Machine_node.t list list) =
                let c1 = Int.compare first first' in
                if c1 <> 0 then c1 else Int.compare last last')
     in
-    Printf.printf "RANGES: \n%s\n" (List.map ranges ~f:Range.show |> String.concat ~sep:";\n");
-    let register_assoc, program = assign_registers g program ranges in
-    (* Printf.printf "=================== ALLOCATION RESULTS =============================\n"; *)
-    (* Hashtbl.iteri register_assoc ~f:(fun ~key ~data -> *)
-    (*     let _, _, first, last = key in *)
-    (*     Printf.printf "[%d - %d] -> %s\n" first last (Registers.show_reg data)); *)
+    let program, register_assoc = assign_registers g program ranges in
     let register_assoc = expand_register_assoc register_assoc in
     let program = cleanup_movs g program register_assoc in
-    (* List.iter program ~f:(fun n -> *)
-    (*     match n.kind with *)
-    (*     | Ideal _ -> Printf.printf "(%s)\n" (Machine_node.show_machine_node_kind n.kind) *)
-    (*     | _ -> ( *)
-    (*         match Hashtbl.find register_assoc n with *)
-    (*         | None -> () *)
-    (*         | Some reg -> *)
-    (*             Printf.printf "#%s = %s " (Registers.show_reg reg) *)
-    (*               (Machine_node.show_machine_node_kind n.kind); *)
-    (*             Graph.get_dependencies g n *)
-    (*             |> List.tl *)
-    (*             |> Option.value ~default:[] *)
-    (*             |> List.filter_opt *)
-    (*             |> List.iter ~f:(fun dep -> *)
-    (*                    Printf.printf "#%s," *)
-    (*                      (Registers.show_reg (Hashtbl.find_exn register_assoc dep))); *)
-    (*             Printf.printf "\n")); *)
-    Ir_printer.to_string_machine_linear g program |> Printf.printf "%s\n";
-    Ir_printer.to_string_machine_linear_regs g program register_assoc |> Printf.printf "%s\n";
     (program, register_assoc)

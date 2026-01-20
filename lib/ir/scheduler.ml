@@ -193,8 +193,9 @@ let schedule_late (g : Machine_node.t Graph.t) =
 let score (g : Machine_node.t Graph.t) (n : Machine_node.t) =
     match n.kind with
     | DProj _
-    | Ideal (CProj _) ->
+    | Ideal (CProj 0) ->
         1001
+    | Ideal (CProj 1) -> 1002
     | Ideal Phi -> 1000
     | _ when Machine_node.is_control_node n -> 1
     | Ideal _ -> 500
@@ -247,8 +248,9 @@ let schedule_flat g =
            bb :: (Graph.get_dependants g bb |> List.filter ~f:(Fun.negate Machine_node.is_blockhead))
            |> schedule_main)
 
-let schedule (g : Machine_node.t Graph.t) =
+let schedule (g : Node.t Graph.t) =
+    let g = Machine_node.convert_graph g in
     (* FIXME schedule early pulls out nodes from branches of an if to before the if. They then get pulled back in to the branch in schedule_flat but it still feels wrong for schedule_early to be able to pull them out *)
     schedule_early g;
     schedule_late g;
-    schedule_flat g
+    (g, schedule_flat g)

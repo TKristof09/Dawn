@@ -110,18 +110,11 @@ let of_ast ast =
     let ctrl = Scope_node.get_ctrl g scope in
     Graph.set_stop_ctrl g ctrl;
     Scope_node.set_ctrl g scope (Graph.get_stop g);
-    (* Ir_printer.to_dot g |> Printf.printf "\n\n%s\n"; *)
-    (* Ir_printer.to_string_linear g |> Printf.printf "%s\n"; *)
     (* makes life easier and we dont need the scope anymore i think*)
-    Graph.remove_node g scope;
-    Graph.cleanup g;
+    (* Graph.remove_node g scope; *)
+    Graph.add_dependencies g stop (Graph.get_dependencies g scope |> List.tl_exn);
+    (* Graph.cleanup g; *)
     Graph.get_dependants g (Graph.get_start g)
     |> List.iter ~f:(fun n ->
            if Graph.get_dependants g n |> List.is_empty then Graph.remove_node g n);
-    let g = Machine_node.convert_graph g in
-    (* Ir_printer.to_dot_machine g |> Printf.printf "\n\n%s\n"; *)
-    let l = Scheduler.schedule g in
-    (* Ir_printer.to_string_machine_linear g (List.concat l) |> Printf.printf "%s\n"; *)
-    let program, register_assoc = Basic_reg_allocator.allocate g l in
-    Asm_emit.emit_program g register_assoc program |> Printf.printf "%s\n";
     g

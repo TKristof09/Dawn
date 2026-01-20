@@ -14,6 +14,7 @@ open Dawn
 (*         } *)
 (*     } *)
 (*     |} *)
+(**)
 (* let test_str = *)
 (*     {| *)
 (*     let i:int = 0; *)
@@ -28,7 +29,7 @@ open Dawn
 (*     if(sum == 1) { *)
 (*     } *)
 (*     |} *)
-
+(**)
 (* let test_str = *)
 (*     {| *)
 (*     let i:int = 0; *)
@@ -40,34 +41,51 @@ open Dawn
 (*         } *)
 (*     } *)
 (*     |} *)
-(* let test_str = *)
-(*     {| *)
-(*     let x:int = 0; *)
-(*     let y:int = 1; *)
-(*     while(x == 0) { *)
-(*         let tmp:int = x + y; *)
-(*         y = x; *)
-(*         x = tmp; *)
-(*     } *)
-(*     //if(y==1){ *)
-(*     //    x = 1; *)
-(*     //} *)
-(*     |} *)
 
 let test_str =
     {|
-    let k:int = 1;
-    let i:int = k;
-    let j:int = i / 69;
-    if(i == j) {j = j+1;}
-    if(j==0){j=j+4;}
-
+    let x:int = 0;
+    let y:int = 1;
+    while(x == 0) {
+        let tmp:int = x + y;
+        y = x;
+        x = tmp;
+    }
+    //if(y==1){
+    //    x = 1;
+    //}
     |}
+
+(* let test_str = *)
+(*     {| *)
+(*     let k:int = 69; *)
+(*     let i:int = k; *)
+(*     let j:int = i / 69; *)
+(*     if(i == j) {j = j+1;} *)
+(*     if(j==0){j=j+4;} *)
+(*     |} *)
+
+(* let test_str = *)
+(*     {| *)
+(*     let k:int = 69; *)
+(*     let i:int = k; *)
+(*     let j:int = i / 69; *)
+(*     let x:int = i / 420; *)
+(*     i = i + 1; *)
+(*     if(i == j) {j = j+1;} *)
+(*     if(j==0){j=j+4;} *)
+(*     if(x==j){x=j+1;} *)
+(*     |} *)
 
 let () =
     match Parser.parse_str test_str with
     | Ok ast ->
-        let g = Son.of_ast ast in
-        (* Ir_printer.to_dot_machine g |> Printf.printf "\n\n%s\n" *)
-        ignore g
+        let son = Son.of_ast ast in
+        let machine_graph, program = Scheduler.schedule son in
+        let program, reg_assoc = Basic_reg_allocator.allocate machine_graph program in
+        let code = Asm_emit.emit_program machine_graph reg_assoc program in
+        Ir_printer.to_dot_machine machine_graph |> Printf.printf "\n\n%s\n";
+        Ir_printer.to_string_machine_linear_regs machine_graph program reg_assoc
+        |> Printf.printf "\n\n%s\n";
+        Printf.printf "%s\n" code
     | Error msg -> Printf.eprintf "%s\n" msg

@@ -15,9 +15,9 @@ let rec assign g (n : Node.t) name node =
         let symbol =
             match symbol.kind with
             | Scope old_tbl -> (
-                Printf.printf "TABLE: %s\n" name;
+                (* Printf.printf "TABLE: %s\n" name; *)
                 let tmp = Symbol_table.find_symbol old_tbl name in
-                Printf.printf "TMP: %s\n" (Node.show tmp);
+                (* Printf.printf "TMP: %s\n" (Node.show tmp); *)
                 match tmp.kind with
                 | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> symbol
                 | _ ->

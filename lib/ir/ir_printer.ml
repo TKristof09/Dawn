@@ -236,14 +236,16 @@ let to_string_linear (g : Node.t Graph.t) =
           Buffer.add_string buf (Printf.sprintf "%s\n" (show_node_compact g n)));
     Buffer.contents buf
 
-let show_machine_compact ?(reg_assoc : (Machine_node.t, Registers.reg) Hashtbl.t option) g
+let show_machine_compact
+    ?(reg_assoc : (Machine_node.t, Reg_allocator_intf.loc) Base.Hashtbl.t option) g
     (node : Machine_node.t) =
     let kind_str = Machine_node.show_machine_node_kind node.kind in
-    let output_reg_str =
+    let output_loc_str =
         match reg_assoc with
         | Some tbl -> (
             match Hashtbl.find tbl node with
-            | Some reg -> Printf.sprintf "#%-5s " (Registers.show_reg reg)
+            | Some (Reg reg) -> Printf.sprintf "#%-5s " (Registers.show_reg reg)
+            | Some (Stack offs) -> Printf.sprintf "#%-5d " offs
             | None -> "       ")
         | None -> "       "
     in
@@ -256,13 +258,14 @@ let show_machine_compact ?(reg_assoc : (Machine_node.t, Registers.reg) Hashtbl.t
                match reg_assoc with
                | Some tbl -> (
                    match Hashtbl.find tbl n with
-                   | Some reg -> Printf.sprintf "#%s (%%%d)" (Registers.show_reg reg) n.id
+                   | Some (Reg reg) -> Printf.sprintf "#%s (%%%d)" (Registers.show_reg reg) n.id
+                   | Some (Stack offs) -> Printf.sprintf "$(%-3d) (%%%d)" offs n.id
                    | None -> Printf.sprintf "%%%d" n.id)
                | None -> Printf.sprintf "%%%d" n.id)
         |> String.concat ~sep:", "
     in
     let deps_str_formatted = if String.is_empty deps_str then "" else "[ " ^ deps_str ^ " ]" in
-    Printf.sprintf "%s(%%%-3d): %-20s %-30s (Ideal IR: #%d)" output_reg_str node.id kind_str
+    Printf.sprintf "%s(%%%-3d): %-20s %-30s (Ideal IR: #%d)" output_loc_str node.id kind_str
       deps_str_formatted node.ir_node.id
 
 let to_string_machine_linear (g : Machine_node.t Graph.t) (program : Machine_node.t list) =
@@ -299,7 +302,7 @@ let to_string_machine_linear (g : Machine_node.t Graph.t) (program : Machine_nod
     Buffer.contents buf
 
 let to_string_machine_linear_regs (g : Machine_node.t Graph.t) (program : Machine_node.t list)
-    (reg_assoc : (Machine_node.t, Registers.reg) Hashtbl.t) =
+    (reg_assoc : (Machine_node.t, Reg_allocator_intf.loc) Base.Hashtbl.t) =
     let buf = Buffer.create 1024 in
     Buffer.add_string buf "=== Machine Graph (Linearized with registers) ===\n";
 
