@@ -17,15 +17,25 @@ let asm_of_op (kind : Machine_node.machine_node_kind) =
     | Div -> "idiv"
     | JmpAlways -> "jmp"
     | Jmp cond -> (
+        (* TODO: signed vs unsigned have different names *)
         match cond with
         | Eq -> "je"
-        | Neq -> "jne")
+        | NEq -> "jne"
+        | Lt -> "jl"
+        | LEq -> "jle"
+        | Gt -> "jg"
+        | GEq -> "jge")
     | Int _ -> "mov"
     | Mov -> "mov"
     | Set cond -> (
+        (* TODO: signed vs unsigned have different names *)
         match cond with
         | Eq -> "sete"
-        | Neq -> "setne")
+        | NEq -> "setne"
+        | Lt -> "setl"
+        | LEq -> "setle"
+        | Gt -> "setg"
+        | GEq -> "setge")
     | DProj _ -> failwith "TODO"
     | Ideal _ -> ""
 
@@ -53,6 +63,13 @@ let is_jmp_target g (n : Machine_node.t) =
                (* TODO: these useless CProj nodes should just get removed, that would be way cleaner *)
                List.length (Graph.get_dependants g n') = 1
            | _ -> false)
+
+let get_first_blockhead g n =
+    let n' = ref (Graph.get_dependants g n |> List.find_exn ~f:Machine_node.is_control_node) in
+    while not (Machine_node.is_blockhead !n') do
+      n' := Graph.get_dependants g !n' |> List.find_exn ~f:Machine_node.is_control_node
+    done;
+    !n'
 
 let asm_of_node g reg_assoc (n : Machine_node.t) =
     match n.kind with
@@ -98,10 +115,8 @@ let asm_of_node g reg_assoc (n : Machine_node.t) =
         in
         let op_str, label_str =
             if List.length (Graph.get_dependants g false_branch) = 1 then
-              ( asm_of_op (Machine_node.invert_jmp n.kind),
-                get_label
-                  (Graph.get_dependants g false_branch
-                  |> List.find_exn ~f:Machine_node.is_control_node) )
+              let next_false_bb = get_first_blockhead g false_branch in
+              (asm_of_op (Machine_node.invert_jmp n.kind), get_label next_false_bb)
             else
               (asm_of_op (Machine_node.invert_jmp n.kind), get_label false_branch)
         in

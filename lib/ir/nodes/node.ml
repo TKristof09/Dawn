@@ -8,6 +8,11 @@ type data_kind =
     | Div
     | Proj of int
     | Eq
+    | NEq
+    | Lt
+    | LEq
+    | Gt
+    | GEq
     | Phi
 
 and ctrl_kind =

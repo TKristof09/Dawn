@@ -8,7 +8,11 @@ let next_id () =
 
 type cmp =
     | Eq
-    | Neq
+    | NEq
+    | Lt
+    | LEq
+    | Gt
+    | GEq
 [@@deriving show { with_path = false }, sexp_of]
 
 type ideal =
@@ -55,8 +59,12 @@ let hash n = Int.hash n.id
 
 let invert_cond cond =
     match cond with
-    | Eq -> Neq
-    | Neq -> Eq
+    | Eq -> NEq
+    | NEq -> Eq
+    | Lt -> GEq
+    | LEq -> Gt
+    | Gt -> LEq
+    | GEq -> Lt
 
 let invert_jmp kind =
     match kind with
@@ -294,62 +302,105 @@ let rec of_data_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.d
         in
         Graph.add_dependencies machine_g node deps;
         node
-    | Eq ->
+    | Eq
+    | NEq
+    | Lt
+    | LEq
+    | Gt
+    | GEq ->
         let cmp_deps = Graph.get_dependencies g n in
-        let set_node =
-            {
-              id = next_id ();
-              kind = Set Eq;
-              ir_node = n;
-              in_regs = get_in_reg_mask (Set Eq);
-              out_reg = get_out_reg_mask (Set Eq);
-            }
+        let m_cmp =
+            match kind with
+            | Eq -> Eq
+            | NEq -> NEq
+            | Lt -> Lt
+            | LEq -> LEq
+            | Gt -> Gt
+            | GEq -> GEq
+            | _ -> assert false
         in
-        (match
-           List.find_map cmp_deps ~f:(fun n ->
-               Option.bind n ~f:(fun n ->
-                   match n.typ with
-                   | Integer (Value _) -> Some n
-                   | _ -> None))
-         with
-        | None ->
-            let cmp_node =
-                {
-                  id = next_id ();
-                  kind = Cmp;
-                  ir_node = n;
-                  in_regs = get_in_reg_mask Cmp;
-                  out_reg = get_out_reg_mask Cmp;
-                }
-            in
 
-            Graph.add_dependencies machine_g set_node [ Some cmp_node ];
-            Graph.add_dependencies machine_g cmp_node
-              (List.map cmp_deps ~f:(Option.map ~f:(convert_node g machine_g)))
-        | Some cn ->
-            let value =
-                match cn.typ with
-                | Integer (Value v) -> v
-                | _ -> assert false (* already checked in the List.find call above *)
-            in
-            let cmp_node =
-                {
-                  id = next_id ();
-                  kind = CmpImm value;
-                  ir_node = n;
-                  in_regs = get_in_reg_mask (CmpImm value);
-                  out_reg = get_out_reg_mask (CmpImm value);
-                }
-            in
-            Graph.add_dependencies machine_g set_node [ Some cmp_node ];
-            let deps =
-                List.filter cmp_deps ~f:(fun n ->
-                    match n with
-                    | None -> true
-                    | Some n -> not (Node.equal cn n))
-            in
-            Graph.add_dependencies machine_g cmp_node
-              (List.map deps ~f:(Option.map ~f:(convert_node g machine_g))));
+        let set_node =
+            match
+              List.find_mapi cmp_deps ~f:(fun i n ->
+                  Option.bind n ~f:(fun n ->
+                      match n.typ with
+                      | Integer (Value _) -> Some (i, n)
+                      | _ -> None))
+            with
+            | None ->
+                let set_node =
+                    {
+                      id = next_id ();
+                      kind = Set m_cmp;
+                      ir_node = n;
+                      in_regs = get_in_reg_mask (Set m_cmp);
+                      out_reg = get_out_reg_mask (Set m_cmp);
+                    }
+                in
+                let cmp_node =
+                    {
+                      id = next_id ();
+                      kind = Cmp;
+                      ir_node = n;
+                      in_regs = get_in_reg_mask Cmp;
+                      out_reg = get_out_reg_mask Cmp;
+                    }
+                in
+
+                Graph.add_dependencies machine_g set_node [ Some cmp_node ];
+                Graph.add_dependencies machine_g cmp_node
+                  (List.map cmp_deps ~f:(Option.map ~f:(convert_node g machine_g)));
+                set_node
+            | Some (idx, cn) ->
+                let value =
+                    match cn.typ with
+                    | Integer (Value v) -> v
+                    | _ -> assert false (* already checked in the List.find call above *)
+                in
+
+                let m_cmp =
+                    if idx = 2 then
+                      m_cmp
+                    else
+                      match m_cmp with
+                      | Eq
+                      | NEq ->
+                          m_cmp
+                      | Lt -> Gt
+                      | LEq -> GEq
+                      | Gt -> Lt
+                      | GEq -> LEq
+                in
+                let set_node =
+                    {
+                      id = next_id ();
+                      kind = Set m_cmp;
+                      ir_node = n;
+                      in_regs = get_in_reg_mask (Set m_cmp);
+                      out_reg = get_out_reg_mask (Set m_cmp);
+                    }
+                in
+                let cmp_node =
+                    {
+                      id = next_id ();
+                      kind = CmpImm value;
+                      ir_node = n;
+                      in_regs = get_in_reg_mask (CmpImm value);
+                      out_reg = get_out_reg_mask (CmpImm value);
+                    }
+                in
+                Graph.add_dependencies machine_g set_node [ Some cmp_node ];
+                let deps =
+                    List.filter cmp_deps ~f:(fun n ->
+                        match n with
+                        | None -> true
+                        | Some n -> not (Node.equal cn n))
+                in
+                Graph.add_dependencies machine_g cmp_node
+                  (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
+                set_node
+        in
         set_node
     | Phi ->
         let kind = Ideal Phi in
@@ -419,6 +470,11 @@ and of_ctrl_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.ctrl_
             |> List.find_map_exn ~f:(fun n ->
                    match n.kind with
                    | Data Eq -> Some Eq
+                   | Data NEq -> Some NEq
+                   | Data Lt -> Some Lt
+                   | Data LEq -> Some LEq
+                   | Data Gt -> Some Gt
+                   | Data GEq -> Some GEq
                    | _ -> None)
         in
         let kind = Jmp op in
@@ -530,6 +586,12 @@ let post_process (machine_g : t Graph.t) =
             | None -> acc
             | Some (_, cmp_n) ->
                 let set_idx, set_n = Option.value_exn set_dep in
+                let op =
+                    match set_n.kind with
+                    | Set op -> op
+                    | _ -> assert false
+                in
+                n.kind <- Jmp op;
                 (n, set_n, set_idx, cmp_n) :: acc)
         | _ -> acc)
     |> List.iter ~f:(fun (node, old_dep, idx, new_dep) ->

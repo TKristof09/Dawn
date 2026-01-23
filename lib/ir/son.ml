@@ -61,7 +61,27 @@ and do_expr g (e : Ast.expr Ast.node) scope =
     | Ast.Eq (lhs, rhs) ->
         let lhs = do_expr g lhs scope |> Option.value_exn in
         let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Eq_node.create g lhs rhs)
+        Some (Bool_nodes.create_eq g lhs rhs)
+    | Ast.NEq (lhs, rhs) ->
+        let lhs = do_expr g lhs scope |> Option.value_exn in
+        let rhs = do_expr g rhs scope |> Option.value_exn in
+        Some (Bool_nodes.create_neq g lhs rhs)
+    | Ast.Lt (lhs, rhs) ->
+        let lhs = do_expr g lhs scope |> Option.value_exn in
+        let rhs = do_expr g rhs scope |> Option.value_exn in
+        Some (Bool_nodes.create_lt g lhs rhs)
+    | Ast.LEq (lhs, rhs) ->
+        let lhs = do_expr g lhs scope |> Option.value_exn in
+        let rhs = do_expr g rhs scope |> Option.value_exn in
+        Some (Bool_nodes.create_leq g lhs rhs)
+    | Ast.Gt (lhs, rhs) ->
+        let lhs = do_expr g lhs scope |> Option.value_exn in
+        let rhs = do_expr g rhs scope |> Option.value_exn in
+        Some (Bool_nodes.create_gt g lhs rhs)
+    | Ast.GEq (lhs, rhs) ->
+        let lhs = do_expr g lhs scope |> Option.value_exn in
+        let rhs = do_expr g rhs scope |> Option.value_exn in
+        Some (Bool_nodes.create_geq g lhs rhs)
     | Ast.Block (statements, expr) ->
         Scope_node.push scope;
         List.iter statements ~f:(fun s -> do_statement g s scope |> ignore);

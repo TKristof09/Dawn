@@ -506,6 +506,7 @@ let process_range (g : Machine_node.t Graph.t) (program : Machine_node.t list)
         |> List.min_elt ~compare:Int.compare
         |> Option.value_exn
     in
+    (* TODO: dead code gives exception here as it has no uses. But there shouldnt be any deadcode left in the first place... *)
     let last_usage =
         Hashtbl.find_exn range_uses range
         |> List.map ~f:(fun n ->

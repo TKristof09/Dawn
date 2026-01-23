@@ -9,12 +9,12 @@ open Dawn
 (*         i = i + 1; *)
 (*         let j:int = 0; *)
 (*         while(i+j == 11){ *)
-(*             //sum = j; *)
+(*             sum = j; *)
 (*             j = j + 2; *)
 (*         } *)
 (*     } *)
+(*     if(sum == 0) {} *)
 (*     |} *)
-(**)
 (* let test_str = *)
 (*     {| *)
 (*     let i:int = 0; *)
@@ -29,7 +29,6 @@ open Dawn
 (*     if(sum == 1) { *)
 (*     } *)
 (*     |} *)
-(**)
 (* let test_str = *)
 (*     {| *)
 (*     let i:int = 0; *)
@@ -41,21 +40,16 @@ open Dawn
 (*         } *)
 (*     } *)
 (*     |} *)
-
 let test_str =
     {|
     let x:int = 0;
     let y:int = 1;
-    while(x == 0) {
+    while(0 <= x) { 
         let tmp:int = x + y;
         y = x;
         x = tmp;
     }
-    //if(y==1){
-    //    x = 1;
-    //}
     |}
-
 (* let test_str = *)
 (*     {| *)
 (*     let k:int = 69; *)
@@ -81,6 +75,7 @@ let () =
     match Parser.parse_str test_str with
     | Ok ast ->
         let son = Son.of_ast ast in
+        Ir_printer.to_dot son |> Printf.printf "\n\n%s\n";
         let machine_graph, program = Scheduler.schedule son in
         let program, reg_assoc = Basic_reg_allocator.allocate machine_graph program in
         let code = Asm_emit.emit_program machine_graph reg_assoc program in
