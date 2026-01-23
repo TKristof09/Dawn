@@ -45,19 +45,19 @@ and do_expr g (e : Ast.expr Ast.node) scope =
     | Ast.Add (lhs, rhs) ->
         let lhs = do_expr g lhs scope |> Option.value_exn in
         let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Add_node.create g lhs rhs)
+        Some (Arithmetic_nodes.create_add g lhs rhs)
     | Ast.Sub (lhs, rhs) ->
         let lhs = do_expr g lhs scope |> Option.value_exn in
         let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Sub_node.create g lhs rhs)
+        Some (Arithmetic_nodes.create_sub g lhs rhs)
     | Ast.Mul (lhs, rhs) ->
         let lhs = do_expr g lhs scope |> Option.value_exn in
         let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Mul_node.create g lhs rhs)
+        Some (Arithmetic_nodes.create_mul g lhs rhs)
     | Ast.Div (lhs, rhs) ->
         let lhs = do_expr g lhs scope |> Option.value_exn in
         let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Div_node.create g lhs rhs)
+        Some (Arithmetic_nodes.create_div g lhs rhs)
     | Ast.Eq (lhs, rhs) ->
         let lhs = do_expr g lhs scope |> Option.value_exn in
         let rhs = do_expr g rhs scope |> Option.value_exn in
