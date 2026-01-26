@@ -22,7 +22,7 @@ val add_dependencies : 'a t -> 'a -> 'a option list -> unit
 (** Add dependencies of a node to the graph, the node doesn't need to have been added to the graph
     already.
 
-    If the node already had dependencies, the new ones are put at the start *)
+    If the node already had dependencies, the new ones are put at the end *)
 
 val set_dependency : 'a t -> 'a -> 'a option -> int -> unit
 val remove_dependency : 'a t -> node:'a -> dep:'a -> unit

@@ -32,6 +32,14 @@ type machine_node_kind =
     | Mul
     | MulImm of int
     | Div
+    | Lsh
+    | Rsh
+    | And
+    | Or
+    | LshImm of int
+    | RshImm of int
+    | AndImm of int
+    | OrImm of int
     | Cmp
     | CmpImm of int
     | Set of cmp
@@ -94,6 +102,14 @@ let is_control_node n =
     | Mul
     | MulImm _
     | Div
+    | Lsh
+    | Rsh
+    | And
+    | Or
+    | LshImm _
+    | RshImm _
+    | AndImm _
+    | OrImm _
     | Cmp
     | CmpImm _
     | Set _
@@ -143,6 +159,23 @@ let get_in_reg_mask (kind : machine_node_kind) =
         fun _ _ i ->
           assert (i <= 1);
           Some (if i = 0 then Registers.Mask.rax else Registers.Mask.div)
+    | Lsh
+    | Rsh ->
+        fun _ _ i ->
+          assert (i <= 1);
+          Some (if i = 0 then Registers.Mask.general_w else Registers.Mask.cl)
+    | And
+    | Or ->
+        fun _ _ i ->
+          assert (i <= 1);
+          Some (if i = 0 then Registers.Mask.general_w else Registers.Mask.general_r)
+    | LshImm _
+    | RshImm _
+    | AndImm _
+    | OrImm _ ->
+        fun _ _ i ->
+          assert (i = 0);
+          Some Registers.Mask.general_w
     | Int _ -> no_regs
     | DProj _ -> no_regs
     | Cmp ->
@@ -183,6 +216,17 @@ and get_out_reg_mask (kind : machine_node_kind) =
         fun _ _ i ->
           assert (i = 0);
           Some Registers.Mask.rax
+    | Lsh
+    | Rsh
+    | And
+    | Or
+    | LshImm _
+    | RshImm _
+    | AndImm _
+    | OrImm _ ->
+        fun _ _ i ->
+          assert (i = 0);
+          Some Registers.Mask.general_w
     | Int _ ->
         fun _ _ i ->
           assert (i = 0);
@@ -460,6 +504,142 @@ let rec of_data_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.d
         Graph.add_dependencies machine_g node
           (Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node g machine_g)));
         node
+    | Lsh -> (
+        let deps = Graph.get_dependencies g n in
+        match List.nth_exn deps 2 with
+        | None -> assert false
+        | Some dep -> (
+            match dep.typ with
+            | Integer (Value v) ->
+                let kind = LshImm v in
+                let in_regs = get_in_reg_mask kind
+                and out_reg = get_out_reg_mask kind in
+                let node = { id = next_id (); kind; ir_node = n; in_regs; out_reg } in
+                Graph.add_dependencies machine_g node [];
+                let deps =
+                    List.filter deps ~f:(fun n ->
+                        match n with
+                        | None -> true
+                        | Some n -> not (Node.equal dep n))
+                in
+                Graph.add_dependencies machine_g node
+                  (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
+                node
+            | _ ->
+                let kind = Lsh in
+                let in_regs = get_in_reg_mask kind
+                and out_reg = get_out_reg_mask kind in
+                let node = { id = next_id (); kind; ir_node = n; in_regs; out_reg } in
+                Graph.add_dependencies machine_g node [];
+                Graph.add_dependencies machine_g node
+                  (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
+                node))
+    | Rsh -> (
+        let deps = Graph.get_dependencies g n in
+        match List.nth_exn deps 2 with
+        | None -> assert false
+        | Some dep -> (
+            match dep.typ with
+            | Integer (Value v) ->
+                let kind = RshImm v in
+                let in_regs = get_in_reg_mask kind
+                and out_reg = get_out_reg_mask kind in
+                let node = { id = next_id (); kind; ir_node = n; in_regs; out_reg } in
+                Graph.add_dependencies machine_g node [];
+                let deps =
+                    List.filter deps ~f:(fun n ->
+                        match n with
+                        | None -> true
+                        | Some n -> not (Node.equal dep n))
+                in
+                Graph.add_dependencies machine_g node
+                  (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
+                node
+            | _ ->
+                let kind = Rsh in
+                let in_regs = get_in_reg_mask kind
+                and out_reg = get_out_reg_mask kind in
+                let node = { id = next_id (); kind; ir_node = n; in_regs; out_reg } in
+                Graph.add_dependencies machine_g node [];
+                Graph.add_dependencies machine_g node
+                  (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
+                node))
+    | BAnd -> (
+        let deps = Graph.get_dependencies g n in
+        match
+          List.find_map deps ~f:(fun n ->
+              Option.bind n ~f:(fun n ->
+                  match n.typ with
+                  | Integer (Value _) -> Some n
+                  | _ -> None))
+        with
+        | None ->
+            let kind = And in
+            let in_regs = get_in_reg_mask kind
+            and out_reg = get_out_reg_mask kind in
+            let node = { id = next_id (); kind; ir_node = n; in_regs; out_reg } in
+            Graph.add_dependencies machine_g node [];
+            Graph.add_dependencies machine_g node
+              (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
+            node
+        | Some cn ->
+            let value =
+                match cn.typ with
+                | Integer (Value v) -> v
+                | _ -> assert false (* already checked in the List.find call above *)
+            in
+            let kind = AndImm value in
+            let in_regs = get_in_reg_mask kind
+            and out_reg = get_out_reg_mask kind in
+            let node = { id = next_id (); kind; ir_node = n; in_regs; out_reg } in
+            Graph.add_dependencies machine_g node [];
+            let deps =
+                List.filter deps ~f:(fun n ->
+                    match n with
+                    | None -> true
+                    | Some n -> not (Node.equal cn n))
+            in
+            Graph.add_dependencies machine_g node
+              (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
+            node)
+    | BOr -> (
+        let deps = Graph.get_dependencies g n in
+        match
+          List.find_map deps ~f:(fun n ->
+              Option.bind n ~f:(fun n ->
+                  match n.typ with
+                  | Integer (Value _) -> Some n
+                  | _ -> None))
+        with
+        | None ->
+            let kind = Or in
+            let in_regs = get_in_reg_mask kind
+            and out_reg = get_out_reg_mask kind in
+            let node = { id = next_id (); kind; ir_node = n; in_regs; out_reg } in
+            Graph.add_dependencies machine_g node [];
+            Graph.add_dependencies machine_g node
+              (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
+            node
+        | Some cn ->
+            let value =
+                match cn.typ with
+                | Integer (Value v) -> v
+                | _ -> assert false (* already checked in the List.find call above *)
+            in
+            let kind = OrImm value in
+            let in_regs = get_in_reg_mask kind
+            and out_reg = get_out_reg_mask kind in
+            let node = { id = next_id (); kind; ir_node = n; in_regs; out_reg } in
+            Graph.add_dependencies machine_g node [];
+            let deps =
+                List.filter deps ~f:(fun n ->
+                    match n with
+                    | None -> true
+                    | Some n -> not (Node.equal cn n))
+            in
+            Graph.add_dependencies machine_g node
+              (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
+            node)
 
 and of_ctrl_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.ctrl_kind) (n : Node.t) =
     match kind with

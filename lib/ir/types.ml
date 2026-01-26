@@ -49,6 +49,38 @@ let rec meet t t' =
     | _, TOP -> TOP
     | _, _ -> BOTTOM
 
+let rec join t t' =
+    let join_aux t t' =
+        match (t, t') with
+        | Bottom, _ -> t'
+        | _, Bottom -> t
+        | _, Top
+        | Top, _ ->
+            Top
+        | Value x, Value x' when x = x' -> Value x
+        | Value _, Value _ -> Top
+    and join_tuple t t' =
+        match (t, t') with
+        | Bottom, _ -> t'
+        | _, Bottom -> t
+        | _, Top 
+        | Top, _ -> Top
+        | Value x, Value x' -> (
+            match Core.List.map2 x x' ~f:join with
+            | Core.List.Or_unequal_lengths.Ok l -> Value l
+            | Core.List.Or_unequal_lengths.Unequal_lengths -> Bottom)
+    in
+    match (t, t') with
+    | Integer t, Integer t' -> Integer (join_aux t t')
+    | Tuple t, Tuple t' -> Tuple (join_tuple t t')
+    | Control, Control -> Control
+    | BOTTOM, _ -> t'
+    | _, BOTTOM -> t
+    | TOP, _
+    | _, TOP ->
+        TOP
+    | _, _ -> TOP
+
 let is_constant t =
     let is_constant_lattice = function
         | Top

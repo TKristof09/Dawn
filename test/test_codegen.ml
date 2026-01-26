@@ -282,3 +282,47 @@ let%expect_test "nested loop" =
       L_92:
       L_65:
       |}]
+
+let%expect_test "binops" =
+    let test_str =
+        {|
+    let i:int = 0;
+    i = i | (1 << 2);
+    if(((i>>1) & 1) == 1) {}
+    |}
+    in
+    test test_str;
+    [%expect {|
+      === Machine Graph (Linearized with registers) ===
+
+      Block #109 ((Ideal Start)): -> [T: #112,F: #121]
+        #RAX   (%120): (Int 1)                                             (Ideal IR: #101)
+        #RAX   (%119): (LshImm 2)           [ #RAX (%120) ]                (Ideal IR: #103)
+        #RAX   (%118): (OrImm 0)            [ #RAX (%119) ]                (Ideal IR: #104)
+        #RAX   (%117): (RshImm 1)           [ #RAX (%118) ]                (Ideal IR: #106)
+        #RAX   (%116): (AndImm 1)           [ #RAX (%117) ]                (Ideal IR: #108)
+        #Flags (%115): (CmpImm 1)           [ #RAX (%116) ]                (Ideal IR: #110)
+               (%113): (Jmp Eq)             [ #Flags (%115) ]              (Ideal IR: #111)
+
+      Block #112 ((Ideal (CProj 0))): -> [#111]
+
+      Block #121 ((Ideal (CProj 1))): -> [#111]
+
+      Block #111 ((Ideal Region)): -> [#110]
+
+      Block #110 ((Ideal Stop)): -> []
+
+
+
+      mov rax, 1
+      sal rax, 2
+      or rax, 0
+      sar rax, 1
+      and rax, 1
+      cmp rax, 1
+      jne L_111
+
+      L_112:
+      L_121:
+      L_111:
+      |}]

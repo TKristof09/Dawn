@@ -21,7 +21,9 @@ let rec assign g (n : Node.t) name node =
                 match tmp.kind with
                 | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> symbol
                 | _ ->
-                    let phi = Phi_node.create_half g (get_ctrl g symbol) (get g symbol name) in
+                    let phi =
+                        Phi_node.create_no_backedge g (get_ctrl g symbol) (get g symbol name)
+                    in
                     assign g symbol name phi;
                     phi)
             | _ -> symbol
@@ -49,7 +51,9 @@ and get g (n : Node.t) name =
                 match tmp.kind with
                 | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> symbol
                 | _ ->
-                    let phi = Phi_node.create_half g (get_ctrl g symbol) (get g symbol name) in
+                    let phi =
+                        Phi_node.create_no_backedge g (get_ctrl g symbol) (get g symbol name)
+                    in
                     assign g symbol name phi;
                     phi
             in
@@ -144,6 +148,7 @@ let merge g ~(this : Node.t) ~(other : Node.t) =
 let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
     match (this.kind, body.kind, exit.kind) with
     | Scope this_tbl, Scope body_tbl, Scope exit_tbl ->
+        let phis = ref [] in
         Symbol_table.iter body_tbl (fun ~name ~symbol ~depth:_ ->
             match symbol with
             | None -> ()
@@ -157,9 +162,12 @@ let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
                     Graph.replace_node_with g n_this value;
                     (* symbols get assigned from exit table to this table later *)
                     Symbol_table.reassign_symbol exit_tbl name value)
-                  else
-                    Phi_node.add_input g n_this n_body);
+                  else (
+                    phis := n_this :: !phis;
+                    Phi_node.add_backedge_input g n_this n_body));
 
+        (* need to compute type of phis **AFTER** they all have both their inputs *)
+        Core.List.iter !phis ~f:(Phi_node.compute_type g);
         Symbol_table.iter exit_tbl (fun ~name ~symbol ~depth:_ ->
             match symbol with
             | None -> ()

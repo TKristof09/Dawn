@@ -6,6 +6,10 @@ type data_kind =
     | Sub
     | Mul
     | Div
+    | Lsh
+    | Rsh
+    | BAnd
+    | BOr
     | Proj of int
     | Eq
     | NEq

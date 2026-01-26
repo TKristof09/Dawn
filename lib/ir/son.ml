@@ -30,8 +30,14 @@ let rec do_statement g (s : Ast.statement Ast.node) scope =
     | _ -> assert false
 
 and do_expr g (e : Ast.expr Ast.node) scope =
+    let binop lhs rhs f =
+        let lhs = do_expr g lhs scope |> Option.value_exn in
+        let rhs = do_expr g rhs scope |> Option.value_exn in
+        Some (f g lhs rhs)
+    in
     match e.node with
     | Ast.Int i -> Some (Const_node.create_int g i)
+    | Ast.Bool b -> Some (Const_node.create_int g (Bool.to_int b))
     | Ast.Variable (name, idx_expr) -> (
         match idx_expr with
         | None ->
@@ -42,46 +48,20 @@ and do_expr g (e : Ast.expr Ast.node) scope =
         let n = do_expr g expr scope |> Option.value_exn in
         Scope_node.assign g scope name n;
         Some n
-    | Ast.Add (lhs, rhs) ->
-        let lhs = do_expr g lhs scope |> Option.value_exn in
-        let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Arithmetic_nodes.create_add g lhs rhs)
-    | Ast.Sub (lhs, rhs) ->
-        let lhs = do_expr g lhs scope |> Option.value_exn in
-        let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Arithmetic_nodes.create_sub g lhs rhs)
-    | Ast.Mul (lhs, rhs) ->
-        let lhs = do_expr g lhs scope |> Option.value_exn in
-        let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Arithmetic_nodes.create_mul g lhs rhs)
-    | Ast.Div (lhs, rhs) ->
-        let lhs = do_expr g lhs scope |> Option.value_exn in
-        let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Arithmetic_nodes.create_div g lhs rhs)
-    | Ast.Eq (lhs, rhs) ->
-        let lhs = do_expr g lhs scope |> Option.value_exn in
-        let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Bool_nodes.create_eq g lhs rhs)
-    | Ast.NEq (lhs, rhs) ->
-        let lhs = do_expr g lhs scope |> Option.value_exn in
-        let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Bool_nodes.create_neq g lhs rhs)
-    | Ast.Lt (lhs, rhs) ->
-        let lhs = do_expr g lhs scope |> Option.value_exn in
-        let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Bool_nodes.create_lt g lhs rhs)
-    | Ast.LEq (lhs, rhs) ->
-        let lhs = do_expr g lhs scope |> Option.value_exn in
-        let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Bool_nodes.create_leq g lhs rhs)
-    | Ast.Gt (lhs, rhs) ->
-        let lhs = do_expr g lhs scope |> Option.value_exn in
-        let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Bool_nodes.create_gt g lhs rhs)
-    | Ast.GEq (lhs, rhs) ->
-        let lhs = do_expr g lhs scope |> Option.value_exn in
-        let rhs = do_expr g rhs scope |> Option.value_exn in
-        Some (Bool_nodes.create_geq g lhs rhs)
+    | Ast.Add (lhs, rhs) -> binop lhs rhs Arithmetic_nodes.create_add
+    | Ast.Sub (lhs, rhs) -> binop lhs rhs Arithmetic_nodes.create_sub
+    | Ast.Mul (lhs, rhs) -> binop lhs rhs Arithmetic_nodes.create_mul
+    | Ast.Div (lhs, rhs) -> binop lhs rhs Arithmetic_nodes.create_div
+    | Ast.Lsh (lhs, rhs) -> binop lhs rhs Bitop_nodes.create_lsh
+    | Ast.Rsh (lhs, rhs) -> binop lhs rhs Bitop_nodes.create_rsh
+    | Ast.BAnd (lhs, rhs) -> binop lhs rhs Bitop_nodes.create_band
+    | Ast.BOr (lhs, rhs) -> binop lhs rhs Bitop_nodes.create_bor
+    | Ast.Eq (lhs, rhs) -> binop lhs rhs Bool_nodes.create_eq
+    | Ast.NEq (lhs, rhs) -> binop lhs rhs Bool_nodes.create_neq
+    | Ast.Lt (lhs, rhs) -> binop lhs rhs Bool_nodes.create_lt
+    | Ast.LEq (lhs, rhs) -> binop lhs rhs Bool_nodes.create_leq
+    | Ast.Gt (lhs, rhs) -> binop lhs rhs Bool_nodes.create_gt
+    | Ast.GEq (lhs, rhs) -> binop lhs rhs Bool_nodes.create_geq
     | Ast.Block (statements, expr) ->
         Scope_node.push scope;
         List.iter statements ~f:(fun s -> do_statement g s scope |> ignore);

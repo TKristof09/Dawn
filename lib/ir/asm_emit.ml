@@ -15,6 +15,18 @@ let asm_of_op (kind : Machine_node.machine_node_kind) =
     | MulImm _ ->
         "imul"
     | Div -> "idiv"
+    | Lsh
+    | LshImm _ ->
+        "sal"
+    | Rsh
+    | RshImm _ ->
+        "sar"
+    | And
+    | AndImm _ ->
+        "and"
+    | Or
+    | OrImm _ ->
+        "or"
     | JmpAlways -> "jmp"
     | Jmp cond -> (
         (* TODO: signed vs unsigned have different names *)
@@ -79,7 +91,12 @@ let asm_of_node g reg_assoc (n : Machine_node.t) =
         Printf.sprintf "\t%s %s, %d" op_str (asm_of_loc reg) i
     | AddImm i
     | SubImm i
-    | CmpImm i ->
+    | MulImm i
+    | CmpImm i
+    | LshImm i
+    | RshImm i
+    | AndImm i
+    | OrImm i ->
         let deps = Graph.get_dependencies g n |> List.tl_exn in
         let regs = deps |> List.filter_opt |> List.map ~f:(Hashtbl.find_exn reg_assoc) in
         let op_str = asm_of_op n.kind in
@@ -126,7 +143,19 @@ let asm_of_node g reg_assoc (n : Machine_node.t) =
         let target = Graph.get_dependants g n |> List.hd_exn in
         let label_str = get_label target in
         Printf.sprintf "\t%s %s\n" op_str label_str
-    | _ ->
+    | Lsh
+    | Rsh ->
+        let deps = Graph.get_dependencies g n |> List.tl_exn in
+        let reg = deps |> List.hd_exn |> Option.value_exn |> Hashtbl.find_exn reg_assoc in
+        let op_str = asm_of_op n.kind in
+        Printf.sprintf "\t%s %s, cl" op_str (asm_of_loc reg)
+    | Add
+    | Sub
+    | Mul
+    | And
+    | Or
+    | Cmp
+    | Mov ->
         let deps = Graph.get_dependencies g n |> List.tl_exn in
         (* if not two address node, add the node itself to the start of the list to get the output reg too *)
         let nodes =
@@ -147,6 +176,9 @@ let asm_of_node g reg_assoc (n : Machine_node.t) =
         let op_str = asm_of_op n.kind in
         let reg_str = regs |> List.map ~f:asm_of_loc |> String.concat ~sep:", " in
         Printf.sprintf "\t%s %s" op_str reg_str
+    | Set _
+    | DProj _ ->
+        failwith "TODO"
 
 let add_jumps g (program : Machine_node.t list) =
     let rec insert_after l target node_to_insert =

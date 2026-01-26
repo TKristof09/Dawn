@@ -40,16 +40,16 @@ open Dawn
 (*         } *)
 (*     } *)
 (*     |} *)
-let test_str =
-    {|
-    let x:int = 0;
-    let y:int = 1;
-    while(0 <= x) { 
-        let tmp:int = x + y;
-        y = x;
-        x = tmp;
-    }
-    |}
+(* let test_str = *)
+(*     {| *)
+(*     let x:int = 0; *)
+(*     let y:int = 1; *)
+(*     while(0 <= x) {  *)
+(*         let tmp:int = x + y; *)
+(*         y = x; *)
+(*         x = tmp; *)
+(*     } *)
+(*     |} *)
 (* let test_str = *)
 (*     {| *)
 (*     let k:int = 69; *)
@@ -70,6 +70,12 @@ let test_str =
 (*     if(j==0){j=j+4;} *)
 (*     if(x==j){x=j+1;} *)
 (*     |} *)
+
+let test_str = {|
+    let i:int = 0;
+    i = i | (1 << 2);
+    if((i>>1) == 1) {}
+    |}
 
 let () =
     match Parser.parse_str test_str with
