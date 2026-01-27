@@ -32,15 +32,7 @@ let clone_node g (n : Machine_node.t) =
     n'
 
 let copy_node g (n : Machine_node.t) =
-    let n' : Machine_node.t =
-        {
-          id = Machine_node.next_id ();
-          kind = Mov;
-          ir_node = n.ir_node;
-          in_regs = Machine_node.get_in_reg_mask Mov;
-          out_reg = Machine_node.get_out_reg_mask Mov;
-        }
-    in
+    let n' : Machine_node.t = { id = Machine_node.next_id (); kind = Mov; ir_node = n.ir_node } in
     let cfg = Graph.get_dependency g n 0 in
     Graph.add_dependencies g n' [ cfg; Some n ];
     n'
@@ -378,7 +370,7 @@ let get_live_ranges (g : Machine_node.t Graph.t) (program : Machine_node.t list)
             let this_lrg = Hashtbl.find ranges n |> Option.value ~default:(NodeSet.singleton n) in
             let merged = Set.union input_lrg this_lrg in
             Set.iter merged ~f:(fun n -> Hashtbl.set ranges ~key:n ~data:merged)
-        | _ when Option.is_none (n.out_reg g n 0) -> ()
+        | _ when Option.is_none (Machine_node.get_out_reg_mask g n 0) -> ()
         | _ -> Hashtbl.add ranges ~key:n ~data:(NodeSet.singleton n) |> ignore);
     ranges
 
@@ -530,13 +522,13 @@ let process_range (g : Machine_node.t Graph.t) (program : Machine_node.t list)
                                | None -> false
                                | Some dep -> Machine_node.equal dep node)
                        in
-                       use.in_regs g use (dep_idx - 1) |> Option.value_exn)
+                       Machine_node.get_in_reg_mask g use (dep_idx - 1) |> Option.value_exn)
             in
             let mask = List.fold uses_in_regs ~init:mask ~f:Registers.Mask.common in
             if Poly.equal node.kind (Ideal Phi) then
               mask
             else
-              match node.out_reg g node 0 with
+              match Machine_node.get_out_reg_mask g node 0 with
               | None -> Registers.Mask.empty
               | Some reg -> Registers.Mask.common mask reg)
     in

@@ -163,7 +163,7 @@ let asm_of_node g reg_assoc (n : Machine_node.t) =
               (not (Machine_node.is_two_address n))
               &&
               (* TODO this is ugly just to get cmp node assembly to not be weird *)
-              match n.out_reg g n 0 with
+              match Machine_node.get_out_reg_mask g n 0 with
               | None -> false
               | Some m when Registers.Mask.equal m Registers.Mask.flags -> false
               | Some _ -> true
@@ -214,13 +214,7 @@ let add_jumps g (program : Machine_node.t list) =
                 let backedge = Loop_node.get_back_edge g h in
                 let end_of_backedge_bb = end_of_bb g l backedge in
                 let jmp_node : Machine_node.t =
-                    {
-                      id = Machine_node.next_id ();
-                      kind = JmpAlways;
-                      ir_node = h.ir_node;
-                      in_regs = Machine_node.get_in_reg_mask JmpAlways;
-                      out_reg = Machine_node.get_out_reg_mask JmpAlways;
-                    }
+                    { id = Machine_node.next_id (); kind = JmpAlways; ir_node = h.ir_node }
                 in
                 Graph.add_dependencies g jmp_node [ Some backedge ];
                 Graph.set_dependency g h (Some jmp_node) 1;
@@ -236,13 +230,7 @@ let add_jumps g (program : Machine_node.t list) =
                 else
                   let end_of_true_branch_bb = end_of_bb g program true_branch in
                   let jmp_node : Machine_node.t =
-                      {
-                        id = Machine_node.next_id ();
-                        kind = JmpAlways;
-                        ir_node = h.ir_node;
-                        in_regs = Machine_node.get_in_reg_mask JmpAlways;
-                        out_reg = Machine_node.get_out_reg_mask JmpAlways;
-                      }
+                      { id = Machine_node.next_id (); kind = JmpAlways; ir_node = h.ir_node }
                   in
                   Graph.add_dependencies g jmp_node [ Some true_branch ];
                   Graph.set_dependency g h (Some jmp_node) 1;
