@@ -15,8 +15,11 @@ module type GraphNode = sig
   val is_persistent : t -> bool
 end
 
+type readonly
+type readwrite
+
 (* TODO: aren't nodes and gvn basically the same thing? *)
-type 'n t = {
+type ('n, 'b) t = {
     dependencies : ('n, 'n option Dynarray.t) Hashtbl.t;
     dependants : ('n, 'n Dynarray.t) Hashtbl.t;
     nodes : 'n Hash_set.t;
@@ -26,6 +29,8 @@ type 'n t = {
     node_module : (module GraphNode with type t = 'n);
   }
 
+let readonly t = (t :> ('a, readonly) t)
+
 let remove_arr_elt arr elt ~eq =
     match Dynarray.find_index (eq elt) arr with
     | None -> assert false
@@ -33,7 +38,7 @@ let remove_arr_elt arr elt ~eq =
         let last = Dynarray.pop_last arr in
         if idx < Dynarray.length arr then Dynarray.set arr idx last
 
-let check (type n) (g : n t) =
+let check (type n) g =
     let module Node = (val g.node_module : GraphNode with type t = n) in
     let debug_check () =
         let dependencies_keys_match =
@@ -100,7 +105,7 @@ let check (type n) (g : n t) =
     | None -> ()
     | Some _ -> debug_check ()
 
-let add_node g n =
+let add_node (g : ('a, readwrite) t) n =
     if Hash_set.mem g.nodes n then
       ()
     else (
@@ -113,7 +118,7 @@ let add_node g n =
       check g)
 
 let create (type a) (module M : GraphNode with type t = a) (start : a) (stop : a) =
-    let g =
+    let g : (a, readwrite) t =
         {
           dependencies = Hashtbl.create (module M);
           dependants = Hashtbl.create (module M);
@@ -132,7 +137,7 @@ let create (type a) (module M : GraphNode with type t = a) (start : a) (stop : a
 let get_start g = g.start
 let get_stop g = g.stop
 
-let set_dependency (type a) (g : a t) node dep idx =
+let set_dependency (type a) g node dep idx =
     let module Node = (val g.node_module : GraphNode with type t = a) in
     (* assert (idx <> 0 || Option.value_map dep ~default:true ~f:Node.is_ctrl || Node.is_scope node); *)
     check g;
@@ -171,11 +176,11 @@ let add_dependencies g node dependencies =
         set_dependency g node d idx);
     check g
 
-let node_is_removable (type a) (g : a t) n =
+let node_is_removable (type a) g n =
     let module Node = (val g.node_module : GraphNode with type t = a) in
     not (Node.equal n g.start || Node.equal n g.stop || Node.is_persistent n)
 
-let rec remove_dependency : type a. a t -> node:a -> dep:a -> unit =
+let rec remove_dependency : type a. (a, readwrite) t -> node:a -> dep:a -> unit =
    fun g ~node ~dep ->
     let module Node = (val g.node_module : GraphNode with type t = a) in
     check g;
@@ -200,7 +205,7 @@ let rec remove_dependency : type a. a t -> node:a -> dep:a -> unit =
           remove_node g dep);
     check g
 
-and remove_node : type a. a t -> a -> unit =
+and remove_node : type a. (a, readwrite) t -> a -> unit =
    fun g n ->
     let module Node = (val g.node_module : GraphNode with type t = a) in
     check g;
@@ -225,7 +230,7 @@ and remove_node : type a. a t -> a -> unit =
           (Node.show n));
     check g
 
-let replace_node_with (type a) (g : a t) base new_node =
+let replace_node_with (type a) g base new_node =
     let module Node = (val g.node_module : GraphNode with type t = a) in
     check g;
     (match Hashtbl.find g.dependants base with
@@ -233,16 +238,14 @@ let replace_node_with (type a) (g : a t) base new_node =
     | Some s ->
         Dynarray.copy s
         |> Dynarray.iter (fun n ->
-               match Hashtbl.find g.dependencies n with
-               | None -> assert false
-               | Some arr ->
-                   let idx =
-                       Dynarray.find_index
-                         (Option.value_map ~default:false ~f:(Node.equal base))
-                         arr
-                       |> Option.value_exn
-                   in
-                   set_dependency g n (Some new_node) idx));
+            match Hashtbl.find g.dependencies n with
+            | None -> assert false
+            | Some arr ->
+                let idx =
+                    Dynarray.find_index (Option.value_map ~default:false ~f:(Node.equal base)) arr
+                    |> Option.value_exn
+                in
+                set_dependency g n (Some new_node) idx));
     remove_node g base;
     check g
 
@@ -271,7 +274,7 @@ let get_dependants g n =
     | None -> []
     | Some s -> Dynarray.to_list s
 
-let finalize_node (type a) (g : a t) n =
+let finalize_node (type a) g n =
     let module Node = (val g.node_module : GraphNode with type t = a) in
     let n_deps = get_dependencies g n in
     match
@@ -285,7 +288,7 @@ let finalize_node (type a) (g : a t) n =
           remove_node g n;
         old_n
 
-let cleanup (type a) (g : a t) =
+let cleanup (type a) g =
     let module Node = (val g.node_module : GraphNode with type t = a) in
     let dead_code = Hashtbl.filter g.dependants ~f:Dynarray.is_empty in
     Hashtbl.iter_keys dead_code ~f:(fun n -> if not (Node.equal n g.stop) then remove_node g n)

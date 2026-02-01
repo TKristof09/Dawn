@@ -40,7 +40,7 @@ module RangeSet = struct
   let pp fmt s = Format.fprintf fmt "%s" (show s)
 end
 
-let build_live_ranges (g : Machine_node.t Graph.t) (program : Machine_node.t list) =
+let build_live_ranges g (program : Machine_node.t list) =
     let ranges = Hashtbl.create (module Machine_node) in
     List.iter program ~f:(fun n ->
         match n.kind with
@@ -125,13 +125,13 @@ module InterferenceGraph : sig
   type t
 
   val build :
-    Machine_node.t Graph.t ->
+    (Machine_node.t, 'a) Graph.t ->
     Machine_node.t list ->
     (Machine_node.t, Range.t) Hashtbl.t ->
     (t, allocation_failure) result
 
   val print : t -> unit
-  val color : t -> Machine_node.t Graph.t -> (reg_assignment, allocation_failure) result
+  val color : t -> (Machine_node.t, 'a) Graph.t -> (reg_assignment, allocation_failure) result
 end = struct
   type t = (Range.t, RangeSet.t) Hashtbl.t
 
@@ -332,13 +332,12 @@ end = struct
       if Hash_set.is_empty need_splits && Hashtbl.is_empty self_conflicts then
         Ok ifg
       else (
-        print ifg;
-
-        Printf.printf "\nNeed Splits:\n";
-        Hash_set.iter need_splits ~f:(fun r -> Printf.printf "  %s\n" (Range.show r));
-        Printf.printf "\nSelf Conflicts:\n";
-        Hashtbl.iteri self_conflicts ~f:(fun ~key:r ~data:nodes ->
-            Printf.printf "  %s -> %s\n" (Range.show r) (NodeSet.show nodes));
+        (* print ifg; *)
+        (* Printf.printf "\nNeed Splits:\n"; *)
+        (* Hash_set.iter need_splits ~f:(fun r -> Printf.printf "  %s\n" (Range.show r)); *)
+        (* Printf.printf "\nSelf Conflicts:\n"; *)
+        (* Hashtbl.iteri self_conflicts ~f:(fun ~key:r ~data:nodes -> *)
+        (*     Printf.printf "  %s -> %s\n" (Range.show r) (NodeSet.show nodes)); *)
         Error { failed_ranges = Hash_set.to_list need_splits; self_conflicts })
 
   let degree ifg r =
@@ -466,14 +465,14 @@ end = struct
               | Some loc ->
                   assert (Poly.(loc <> Stack (-1)));
                   (* TODO: we could choose smarter here, see biasColor in Simple:IFG.java *)
-                  Printf.printf "ASSIGNING: %s -> %s\n" (Registers.show_loc loc) (Range.show r);
+                  (* Printf.printf "ASSIGNING: %s -> %s\n" (Registers.show_loc loc) (Range.show r); *)
                   Hashtbl.set reg_assoc ~key:r ~data:loc;
                   failed_ranges)
       in
       if List.is_empty failed_ranges then
         Ok reg_assoc
       else (
-        Printf.printf "Failed: %s\n" ([%derive.show: Range.t list] failed_ranges);
+        (* Printf.printf "Failed: %s\n" ([%derive.show: Range.t list] failed_ranges); *)
         Error { failed_ranges; self_conflicts = Hashtbl.create (module Range) })
 end
 
@@ -540,8 +539,8 @@ let rec insert_before g program ~(before_this : Machine_node.t) ~(node_to_spill 
     | [] -> []
     | h :: t when Machine_node.equal h target -> (
         let n' = spill_node g node_to_spill in
-        Printf.printf "INSERTING %s (%s) before %s\n" (Machine_node.show n')
-          (Machine_node.show node_to_spill) (Machine_node.show before_this);
+        (* Printf.printf "INSERTING %s (%s) before %s\n" (Machine_node.show n') *)
+          (* (Machine_node.show node_to_spill) (Machine_node.show before_this); *)
         Graph.set_dependency g n' (Some bb) 0;
         let dep_idx, _ =
             List.findi_exn (Graph.get_dependencies g before_this) ~f:(fun _ dep ->
@@ -569,7 +568,7 @@ let rec duplicate_after g program node =
     | h :: t when Machine_node.equal h node ->
         let dependants = Graph.get_dependants g node in
         let n' = spill_node g node in
-        Printf.printf "INSERTING %s after %s\n" (Machine_node.show n') (Machine_node.show node);
+        (* Printf.printf "INSERTING %s after %s\n" (Machine_node.show n') (Machine_node.show node); *)
         dependants
         |> List.iter ~f:(fun use ->
             let dep_idx, _ =
@@ -673,7 +672,7 @@ let split_empty_mask g program (lrg : Range.t) =
       && single_reg_use_count <= 1
       && single_reg_def_count + single_reg_use_count > 0
     then (
-      Printf.printf "Empty mask1\n";
+      (* Printf.printf "Empty mask1\n"; *)
       let program =
           if Set.length single_reg_defs = 1 then
             duplicate_after g program (Set.choose_exn single_reg_defs)
@@ -691,7 +690,7 @@ let split_empty_mask g program (lrg : Range.t) =
           let def = Set.choose_exn lrg.nodes in
           (* TODO: group uses into register classes instead of splitting before each use *)
           List.fold (Graph.get_dependants g def) ~init:program ~f:(fun program use ->
-              Printf.printf "Empty mask2\n";
+              (* Printf.printf "Empty mask2\n"; *)
               insert_before g program ~before_this:use ~node_to_spill:def)
       in
       program
@@ -727,7 +726,7 @@ let ldepth g (n : Machine_node.t) (cfg : Machine_node.t) =
 (*       d *)
 
 let split_by_loop g program (lrg : Range.t) =
-    Printf.printf "Split by loop\n";
+    (* Printf.printf "Split by loop\n"; *)
     let min_d, max_d =
         Set.fold lrg.nodes ~init:(Int.max_value, Int.min_value) ~f:(fun (min_d, max_d) def ->
             let d_def = ldepth g def (Graph.get_dependency g def 0 |> Option.value_exn) in
@@ -771,9 +770,9 @@ let split_by_loop g program (lrg : Range.t) =
         |> List.map ~f:(fun n -> NodeSet.of_list (n :: Graph.get_dependants g n))
         |> NodeSet.union_list
     in
-    Printf.printf "==========ALL========\n";
-    NodeSet.show all |> print_endline;
-    Printf.printf "=====================\n";
+    (* Printf.printf "==========ALL========\n"; *)
+    (* NodeSet.show all |> print_endline; *)
+    (* Printf.printf "=====================\n"; *)
 
     Set.fold all ~init:program ~f:(fun program n ->
         let program =
@@ -790,7 +789,7 @@ let split_by_loop g program (lrg : Range.t) =
                     && (not (Machine_node.is_cheap_to_clone n))
                     && not (false && single_user_split_adjacent)
                   then (
-                    Printf.printf "def/loop\n";
+                    (* Printf.printf "def/loop\n"; *)
                     duplicate_after g program n)
                   else
                     program
@@ -824,8 +823,7 @@ let split_by_loop g program (lrg : Range.t) =
                        && Poly.equal input.kind (Ideal Phi)
                        && Machine_node.equal cfg_in cfg)
                 then (
-                  Printf.printf "use/loop/phi\n";
-                  assert (Poly.(n.kind = Ideal Phi));
+                  (* Printf.printf "use/loop/phi\n"; *)
                   insert_before g program ~before_this:n ~node_to_spill:input)
                 else
                   program)
@@ -837,7 +835,7 @@ let split_by_loop g program (lrg : Range.t) =
                 let cfg = Graph.get_dependency g n 0 |> Option.value_exn in
                 if min_d = max_d || Machine_node.is_cheap_to_clone use || loop_depth g cfg <= min_d
                 then (
-                  Printf.printf "use/loop/use\n";
+                  (* Printf.printf "use/loop/use\n"; *)
                   insert_before g program ~before_this:n ~node_to_spill:use)
                 else
                   program))
@@ -851,16 +849,39 @@ let split g program (lrg : Range.t) =
     else
       split_by_loop g program lrg
 
+let cleanup_mov g n reg_assign =
+    let dep = Graph.get_dependency g n 1 |> Option.value_exn in
+    let dst_loc = Hashtbl.find_exn reg_assign n in
+    let src_loc = Hashtbl.find_exn reg_assign dep in
+    if Poly.equal src_loc dst_loc then (
+      Graph.replace_node_with g n dep;
+      true)
+    else
+      false
+
+let rec post_alloc_cleanup g (program : Machine_node.t list) reg_assign =
+    match program with
+    | [] -> []
+    | h :: t -> (
+        match h.kind with
+        | Mov ->
+            if cleanup_mov g h reg_assign then (
+              Hashtbl.remove reg_assign h;
+              post_alloc_cleanup g t reg_assign)
+            else
+              h :: post_alloc_cleanup g t reg_assign
+        | _ -> h :: post_alloc_cleanup g t reg_assign)
+
 let allocate g program =
     let ( let* ) = Stdlib.Result.bind in
     let rec loop program round =
-        Printf.printf "\n\n ================= ROUND %d ======================\n\n" round;
+        (* Printf.printf "\n\n ================= ROUND %d ======================\n\n" round; *)
         let attempt () =
-            Ir_printer.to_dot_machine g |> Printf.printf "\n\n%s\n";
+            (* Ir_printer.to_dot_machine g |> Printf.printf "\n\n%s\n"; *)
             let node_to_lrg = build_live_ranges g program in
-            print_lrgs node_to_lrg;
+            (* print_lrgs node_to_lrg; *)
             let* ifg = InterferenceGraph.build g program node_to_lrg in
-            InterferenceGraph.print ifg;
+            (* InterferenceGraph.print ifg; *)
             let* coloring = InterferenceGraph.color ifg g in
             Ok coloring
         in
@@ -871,7 +892,7 @@ let allocate g program =
             attempt ()
           with
           | Ok reg_assoc ->
-              Printf.printf "Register allocation done in %d rounds\n" round;
+              (* Printf.printf "Register allocation done in %d rounds\n" round; *)
               (program, reg_assoc)
           | Error { failed_ranges; self_conflicts } ->
               (* TODO: perhaps sort failed ranges to make sure we are deterministic *)
@@ -886,10 +907,11 @@ let allocate g program =
               in
               loop new_program (round + 1)
     in
-    let program, reg_assign = loop program 1 in
-    Hashtbl.iteri reg_assign ~f:(fun ~key ~data ->
-        Printf.printf "%s : %s\n\n" (Registers.show_loc data) (Range.show key));
-    let res = Hashtbl.create (module Machine_node) in
-    Hashtbl.iteri reg_assign ~f:(fun ~key:range ~data:reg ->
-        Set.iter range.nodes ~f:(fun n -> Hashtbl.set res ~key:n ~data:reg));
-    (program, res)
+    let program, lrg_to_reg = loop program 1 in
+    (* Hashtbl.iteri lrg_to_reg ~f:(fun ~key ~data -> *)
+        (* Printf.printf "%s : %s\n\n" (Registers.show_loc data) (Range.show key)); *)
+    let reg_assign = Hashtbl.create (module Machine_node) in
+    Hashtbl.iteri lrg_to_reg ~f:(fun ~key:range ~data:reg ->
+        Set.iter range.nodes ~f:(fun n -> Hashtbl.set reg_assign ~key:n ~data:reg));
+    let program = post_alloc_cleanup g program reg_assign in
+    (program, reg_assign)

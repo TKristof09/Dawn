@@ -27,7 +27,7 @@ let node_label node =
     in
     kind_str
 
-let to_dot (g : Node.t Graph.t) =
+let to_dot g =
     let buf = Buffer.create 1024 in
     Buffer.add_string buf "digraph G {\n";
     Buffer.add_string buf "ordering=\"in\";\n";
@@ -40,7 +40,7 @@ let to_dot (g : Node.t Graph.t) =
     Buffer.add_string buf "  style=invis;\n";
 
     (* First pass: Add normal nodes *)
-    Graph.iter g ~f:(fun node ->
+    Graph.iter g ~f:(fun (node : Node.t) ->
         match node.kind with
         | Scope _ -> () (* Skip scopes for now *)
         | Ctrl Start ->
@@ -116,7 +116,7 @@ let to_dot (g : Node.t Graph.t) =
     Buffer.add_string buf "}\n";
     Buffer.contents buf
 
-let to_dot_machine (g : Machine_node.t Graph.t) =
+let to_dot_machine g =
     let buf = Buffer.create 1024 in
     Buffer.add_string buf "digraph G {\n";
     Buffer.add_string buf "ordering=\"in\";\n";
@@ -129,7 +129,7 @@ let to_dot_machine (g : Machine_node.t Graph.t) =
     Buffer.add_string buf "  style=invis;\n";
 
     (* First pass: Add normal nodes *)
-    Graph.iter g ~f:(fun node ->
+    Graph.iter g ~f:(fun (node : Machine_node.t) ->
         match node.kind with
         | Ideal Start ->
             Buffer.add_string buf
@@ -191,14 +191,14 @@ let show_node_compact g (node : Node.t) =
         |> List.tl
         |> Option.value ~default:[]
         |> List.map ~f:(function
-             | None -> "_"
-             | Some n -> Printf.sprintf "%%%d" n.id)
+          | None -> "_"
+          | Some n -> Printf.sprintf "%%%d" n.id)
         |> String.concat ~sep:", "
     in
     let deps_str = if String.is_empty deps_str then "" else "[ " ^ deps_str ^ " ]" in
     Printf.sprintf "%%%-3d: %-20s %-20s : %s" node.id kind_str deps_str type_str
 
-let to_string_linear (g : Node.t Graph.t) =
+let to_string_linear g =
     let buf = Buffer.create 1024 in
     Buffer.add_string buf "=== Ideal Graph (Linearized) ===\n";
 
@@ -254,20 +254,20 @@ let show_machine_compact ?(reg_assoc : (Machine_node.t, Registers.loc) Base.Hash
         |> List.tl
         |> Option.value ~default:[]
         |> List.map ~f:(fun n ->
-               match reg_assoc with
-               | Some tbl -> (
-                   match Hashtbl.find tbl n with
-                   | Some (Reg reg) -> Printf.sprintf "#%s (%%%d)" (Registers.show_reg reg) n.id
-                   | Some (Stack offs) -> Printf.sprintf "$(%-3d) (%%%d)" offs n.id
-                   | None -> Printf.sprintf "%%%d" n.id)
-               | None -> Printf.sprintf "%%%d" n.id)
+            match reg_assoc with
+            | Some tbl -> (
+                match Hashtbl.find tbl n with
+                | Some (Reg reg) -> Printf.sprintf "#%s (%%%d)" (Registers.show_reg reg) n.id
+                | Some (Stack offs) -> Printf.sprintf "$(%-3d) (%%%d)" offs n.id
+                | None -> Printf.sprintf "%%%d" n.id)
+            | None -> Printf.sprintf "%%%d" n.id)
         |> String.concat ~sep:", "
     in
     let deps_str_formatted = if String.is_empty deps_str then "" else "[ " ^ deps_str ^ " ]" in
     Printf.sprintf "%s(%%%-3d): %-20s %-30s (Ideal IR: #%d)" output_loc_str node.id kind_str
       deps_str_formatted node.ir_node.id
 
-let to_string_machine_linear (g : Machine_node.t Graph.t) (program : Machine_node.t list) =
+let to_string_machine_linear g (program : Machine_node.t list) =
     let buf = Buffer.create 1024 in
     Buffer.add_string buf "=== Machine Graph (Linearized) ===\n";
 
@@ -276,19 +276,21 @@ let to_string_machine_linear (g : Machine_node.t Graph.t) (program : Machine_nod
           let successors =
               Graph.get_dependants g n
               |> List.filter_map ~f:(fun n ->
-                     if Machine_node.is_blockhead n then
-                       Some (Printf.sprintf "#%d" n.id)
-                     else
-                       match n.kind with
-                       | Jmp _ ->
-                           let t, f =
-                               match Graph.get_dependants g n with
-                               | [ t; f ] -> (t, f)
-                               | _ -> assert false
-                           in
+                  if Machine_node.is_blockhead n then
+                    Some (Printf.sprintf "#%d" n.id)
+                  else
+                    match
+                      n.kind
+                    with
+                    | Jmp _ ->
+                        let t, f =
+                            match Graph.get_dependants g n with
+                            | [ t; f ] -> (t, f)
+                            | _ -> assert false
+                        in
 
-                           Some (Printf.sprintf "T: #%d,F: #%d" t.id f.id)
-                       | _ -> None)
+                        Some (Printf.sprintf "T: #%d,F: #%d" t.id f.id)
+                    | _ -> None)
               |> String.concat ~sep:", "
           in
           Buffer.add_string buf
@@ -300,7 +302,7 @@ let to_string_machine_linear (g : Machine_node.t Graph.t) (program : Machine_nod
     Buffer.add_string buf "\n";
     Buffer.contents buf
 
-let to_string_machine_linear_regs (g : Machine_node.t Graph.t) (program : Machine_node.t list)
+let to_string_machine_linear_regs g (program : Machine_node.t list)
     (reg_assoc : (Machine_node.t, Registers.loc) Base.Hashtbl.t) =
     let buf = Buffer.create 1024 in
     Buffer.add_string buf "=== Machine Graph (Linearized with registers) ===\n";
@@ -310,19 +312,21 @@ let to_string_machine_linear_regs (g : Machine_node.t Graph.t) (program : Machin
           let successors =
               Graph.get_dependants g n
               |> List.filter_map ~f:(fun n ->
-                     if Machine_node.is_blockhead n then
-                       Some (Printf.sprintf "#%d" n.id)
-                     else
-                       match n.kind with
-                       | Jmp _ ->
-                           let t, f =
-                               match Graph.get_dependants g n with
-                               | [ t; f ] -> (t, f)
-                               | _ -> assert false
-                           in
+                  if Machine_node.is_blockhead n then
+                    Some (Printf.sprintf "#%d" n.id)
+                  else
+                    match
+                      n.kind
+                    with
+                    | Jmp _ ->
+                        let t, f =
+                            match Graph.get_dependants g n with
+                            | [ t; f ] -> (t, f)
+                            | _ -> assert false
+                        in
 
-                           Some (Printf.sprintf "T: #%d,F: #%d" t.id f.id)
-                       | _ -> None)
+                        Some (Printf.sprintf "T: #%d,F: #%d" t.id f.id)
+                    | _ -> None)
               |> String.concat ~sep:", "
           in
           Buffer.add_string buf

@@ -44,10 +44,10 @@ let fibo_str =
     {|
     let x:int = 0;
     let y:int = 1;
-    while(0 <= x) { 
+    while(0 <= x) {
         let tmp:int = x + y;
-        y = x;
-        x = tmp;
+        x = y;
+        y = tmp;
     }
     |}
 (* let test_str = *)
@@ -102,24 +102,16 @@ let () =
     match Parser.parse_str fibo_str with
     | Ok ast ->
         let son = Son.of_ast ast in
-        Ir_printer.to_dot son |> Printf.printf "\n\n%s\n";
-        let machine_graph, program = Scheduler.schedule son in
-        Ir_printer.to_dot_machine machine_graph |> print_endline
-    | _ -> ()
-
-let () =
-    match Parser.parse_str fibo_str with
-    | Ok ast ->
-        let son = Son.of_ast ast in
+        let son = Graph.readonly son in
         Ir_printer.to_dot son |> Printf.printf "\n\n%s\n";
         let machine_graph, program = Scheduler.schedule son in
         (* let program, reg_assoc = Basic_reg_allocator.allocate machine_graph program in *)
-        (* let code = Asm_emit.emit_program machine_graph reg_assoc program in *)
         (* Ir_printer.to_dot_machine machine_graph |> Printf.printf "\n\n%s\n"; *)
         let flat_program = List.concat program in
         Ir_printer.to_string_machine_linear machine_graph flat_program |> print_endline;
         let program, reg_assignment = Reg_allocator.allocate machine_graph flat_program in
         Ir_printer.to_string_machine_linear_regs machine_graph program reg_assignment
-        |> Printf.printf "\n\n%s\n"
-        (* Printf.printf "%s\n" code *)
+        |> Printf.printf "\n\n%s\n";
+        let code = Asm_emit.emit_program machine_graph reg_assignment program in
+        Printf.printf "%s\n" code
     | Error msg -> Printf.eprintf "%s\n" msg

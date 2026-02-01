@@ -137,7 +137,7 @@ let is_two_address n =
         true
     | _ -> false
 
-let get_in_reg_mask (_ : t Graph.t) (n : t) (i : int) =
+let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
     match n.kind with
     | Add
     | Sub
@@ -186,7 +186,7 @@ let get_in_reg_mask (_ : t Graph.t) (n : t) (i : int) =
         Some Registers.Mask.all_and_stack
     | Ideal _ -> None
 
-let rec get_out_reg_mask (g : t Graph.t) (n : t) (i : int) =
+let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     match n.kind with
     | Add
     | Sub
@@ -235,8 +235,7 @@ let get_register_kills (n : t) =
     | Div -> Some (Registers.Mask.of_list [ Reg RDX ])
     | _ -> None
 
-let rec of_data_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.data_kind)
-    (n : Node.t) =
+let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
     let binop_commutative kind kind_imm =
         let deps = Graph.get_dependencies g n in
         match
@@ -364,7 +363,9 @@ let rec of_data_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.d
                     if idx = 2 then
                       m_cmp
                     else
-                      match m_cmp with
+                      match
+                        m_cmp
+                      with
                       | Eq
                       | NEq ->
                           m_cmp
@@ -409,7 +410,7 @@ let rec of_data_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.d
     | BAnd -> binop_commutative And (fun i -> AndImm i)
     | BOr -> binop_commutative Or (fun i -> OrImm i)
 
-and of_ctrl_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.ctrl_kind) (n : Node.t) =
+and of_ctrl_node g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
     let simple kind =
         let node = { id = next_id (); kind; ir_node = n } in
         Graph.add_dependencies machine_g node [];
@@ -425,14 +426,14 @@ and of_ctrl_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.ctrl_
         let op =
             List.filter_opt deps
             |> List.find_map_exn ~f:(fun n ->
-                   match n.kind with
-                   | Data Eq -> Some Eq
-                   | Data NEq -> Some NEq
-                   | Data Lt -> Some Lt
-                   | Data LEq -> Some LEq
-                   | Data Gt -> Some Gt
-                   | Data GEq -> Some GEq
-                   | _ -> None)
+                match n.kind with
+                | Data Eq -> Some Eq
+                | Data NEq -> Some NEq
+                | Data Lt -> Some Lt
+                | Data LEq -> Some LEq
+                | Data Gt -> Some Gt
+                | Data GEq -> Some GEq
+                | _ -> None)
         in
         let kind = Jmp op in
         let node = { id = next_id (); kind; ir_node = n } in
@@ -454,7 +455,7 @@ and of_ctrl_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.ctrl_
     | Loop -> simple (Ideal Loop)
     | Region -> simple (Ideal Region)
 
-and convert_node (g : Node.t Graph.t) (machine_g : t Graph.t) (n : Node.t) =
+and convert_node g machine_g (n : Node.t) =
     match
       Graph.find machine_g ~f:(fun mn ->
           match n.kind with
@@ -473,12 +474,12 @@ and convert_node (g : Node.t Graph.t) (machine_g : t Graph.t) (n : Node.t) =
 let find_dep machine_g n ~f =
     Graph.get_dependencies machine_g n
     |> List.findi ~f:(fun _ dep ->
-           match dep with
-           | None -> false
-           | Some dep -> f dep)
+        match dep with
+        | None -> false
+        | Some dep -> f dep)
     |> Option.map ~f:(fun (i, n) -> (i, Option.value_exn n))
 
-let post_process (machine_g : t Graph.t) =
+let post_process (machine_g : (t, Graph.readwrite) Graph.t) =
     (* when changing a node's dependency we need to add a temp node that depends on the new_dep to make sure it doesn't get removed for not having any dependants. E.g. A jmp removes it's depedendancy on a set and set's it to the cmp directly. But the set might get removed if it has no dependants which in turn might remove the cmp for not having dependants *)
     let temp_node =
         { id = next_id (); kind = Int 0; ir_node = { typ = TOP; kind = Data Constant; id = 0 } }
@@ -514,10 +515,13 @@ let post_process (machine_g : t Graph.t) =
                 (n, set_n, set_idx, cmp_n) :: acc)
         | _ -> acc)
     |> List.iter ~f:(fun (node, old_dep, idx, new_dep) ->
-           Graph.add_dependencies machine_g temp_node [ Some new_dep ];
-           Graph.remove_dependency machine_g ~node ~dep:old_dep;
-           Graph.set_dependency machine_g node (Some new_dep) idx);
-    Graph.remove_node machine_g temp_node
+        Graph.add_dependencies machine_g temp_node [ Some new_dep ];
+        Graph.remove_dependency machine_g ~node ~dep:old_dep;
+        Graph.set_dependency machine_g node (Some new_dep) idx);
+    (* it might be the case that there were no nodes to post process, in that
+       case temp_node isn't added to the graph. This is fine *)
+    try Graph.remove_node machine_g temp_node with
+    | _ -> ()
 
 module MachineGraphNode : Graph.GraphNode with type t = t = struct
   type nonrec t = t
@@ -532,7 +536,7 @@ module MachineGraphNode : Graph.GraphNode with type t = t = struct
   let is_persistent = Fun.const false
 end
 
-let convert_graph (g : Node.t Graph.t) =
+let convert_graph g =
     let start = { id = next_id (); kind = Ideal Start; ir_node = Graph.get_start g } in
     let stop = { id = next_id (); kind = Ideal Stop; ir_node = Graph.get_stop g } in
 

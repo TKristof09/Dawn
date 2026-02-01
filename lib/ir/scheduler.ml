@@ -34,16 +34,16 @@ let rec idepth g (node : Machine_node.t) =
     | Ideal Region ->
         Graph.get_dependencies g node
         |> List.fold ~init:0 ~f:(fun acc n ->
-               match n with
-               | Some n -> max acc (idepth g n)
-               | None -> acc)
+            match n with
+            | Some n -> max acc (idepth g n)
+            | None -> acc)
     | Ideal Loop -> 1 + idepth g (Loop_node.get_entry_edge g node)
     | _ when Machine_node.is_control_node node ->
         1 + idepth g (Graph.get_dependency g node 0 |> Option.value_exn)
     | _ -> idepth g (Graph.get_dependency g node 0 |> Option.value_exn)
 
 (* consider caching this *)
-let rec loop_depth (g : Machine_node.t Graph.t) (n : Machine_node.t) =
+let rec loop_depth g (n : Machine_node.t) =
     match n.kind with
     | Ideal Loop ->
         let entry_depth = Loop_node.get_entry_edge g n |> loop_depth g in
@@ -52,7 +52,7 @@ let rec loop_depth (g : Machine_node.t Graph.t) (n : Machine_node.t) =
     | Ideal Region -> Graph.get_dependency g n 1 |> Option.value_exn |> loop_depth g
     | _ -> Graph.get_dependency g n 0 |> Option.value_exn |> loop_depth g
 
-let schedule_early (g : Machine_node.t Graph.t) =
+let schedule_early g =
     let already_scheduled = Hash_set.create ~size:(Graph.get_num_nodes g) (module Machine_node) in
     let rec schedule (node : Machine_node.t) =
         if
@@ -86,20 +86,20 @@ let schedule_early (g : Machine_node.t Graph.t) =
     in
     rev_post_order_bfs_ctrl g (Graph.get_start g)
     |> List.iter ~f:(fun n ->
-           let nodes =
-               match n.kind with
-               | Ideal Region
-               | Ideal Loop ->
-                   (* TODO consider filtering for phis? don't think it's needed for now though, only phis or ctrl nodes are dependants of regions *)
-                   Graph.get_dependants g n
-               | _ -> Graph.get_dependencies g n |> List.filter_opt
-           in
-           List.iter nodes ~f:(fun n ->
-               match n.kind with
-               | _ when Machine_node.is_control_node n -> ()
-               | _ -> schedule n))
+        let nodes =
+            match n.kind with
+            | Ideal Region
+            | Ideal Loop ->
+                (* TODO consider filtering for phis? don't think it's needed for now though, only phis or ctrl nodes are dependants of regions *)
+                Graph.get_dependants g n
+            | _ -> Graph.get_dependencies g n |> List.filter_opt
+        in
+        List.iter nodes ~f:(fun n ->
+            match n.kind with
+            | _ when Machine_node.is_control_node n -> ()
+            | _ -> schedule n))
 
-let schedule_late (g : Machine_node.t Graph.t) =
+let schedule_late g =
     let m = Hashtbl.create ~size:(Graph.get_num_nodes g) (module Machine_node) in
     let is_forward_edge (node : Machine_node.t) (dependant : Machine_node.t) =
         match dependant.kind with
@@ -190,7 +190,7 @@ let schedule_late (g : Machine_node.t Graph.t) =
         | _ when Machine_node.is_control_node key -> ()
         | _ -> Graph.set_dependency g key (Some data) 0)
 
-let score (g : Machine_node.t Graph.t) (n : Machine_node.t) =
+let score g (n : Machine_node.t) =
     match n.kind with
     | DProj _
     | Ideal (CProj 0) ->
@@ -245,10 +245,10 @@ let schedule_flat g =
     cfg
     |> List.filter ~f:Machine_node.is_blockhead
     |> List.map ~f:(fun bb ->
-           bb :: (Graph.get_dependants g bb |> List.filter ~f:(Fun.negate Machine_node.is_blockhead))
-           |> schedule_main)
+        bb :: (Graph.get_dependants g bb |> List.filter ~f:(Fun.negate Machine_node.is_blockhead))
+        |> schedule_main)
 
-let schedule (g : Node.t Graph.t) =
+let schedule g =
     let g = Machine_node.convert_graph g in
     (* FIXME schedule early pulls out nodes from branches of an if to before the if. They then get pulled back in to the branch in schedule_flat but it still feels wrong for schedule_early to be able to pull them out *)
     schedule_early g;
