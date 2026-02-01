@@ -183,7 +183,7 @@ let get_in_reg_mask (_ : t Graph.t) (n : t) (i : int) =
         Some Registers.Mask.flags
     | Mov ->
         assert (i = 0);
-        Some Registers.Mask.all
+        Some Registers.Mask.all_and_stack
     | Ideal _ -> None
 
 let rec get_out_reg_mask (g : t Graph.t) (n : t) (i : int) =
@@ -224,11 +224,16 @@ let rec get_out_reg_mask (g : t Graph.t) (n : t) (i : int) =
         Some Registers.Mask.general_w
     | Mov ->
         assert (i = 0);
-        Some Registers.Mask.all
+        Some Registers.Mask.all_and_stack
     | JmpAlways -> None
     | Jmp _ -> None
     | FunctionProlog -> None
     | Ideal _ -> None
+
+let get_register_kills (n : t) =
+    match n.kind with
+    | Div -> Some (Registers.Mask.of_list [ Reg RDX ])
+    | _ -> None
 
 let rec of_data_node (g : Node.t Graph.t) (machine_g : t Graph.t) (kind : Node.data_kind)
     (n : Node.t) =

@@ -51,7 +51,7 @@ let asm_of_op (kind : Machine_node.machine_node_kind) =
     | DProj _ -> failwith "TODO"
     | Ideal _ -> ""
 
-let asm_of_loc (loc : Reg_allocator_intf.loc) =
+let asm_of_loc (loc : Registers.loc) =
     match loc with
     | Reg Flags -> ""
     | Reg reg -> Registers.show_reg reg |> String.lowercase

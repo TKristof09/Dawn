@@ -19,6 +19,12 @@ type node_type =
     | BOTTOM
 [@@deriving show { with_path = false }, sexp_of]
 
+let of_ast_type (ast_type : Ast.var_type) : node_type =
+    (* FIXME actually implement *)
+    match ast_type with
+    | Type "int" -> Integer Top
+    | _ -> assert false
+
 let rec meet t t' =
     let meet_aux t t' =
         match (t, t') with
@@ -63,8 +69,9 @@ let rec join t t' =
         match (t, t') with
         | Bottom, _ -> t'
         | _, Bottom -> t
-        | _, Top 
-        | Top, _ -> Top
+        | _, Top
+        | Top, _ ->
+            Top
         | Value x, Value x' -> (
             match Core.List.map2 x x' ~f:join with
             | Core.List.Or_unequal_lengths.Ok l -> Value l

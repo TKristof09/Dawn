@@ -236,8 +236,7 @@ let to_string_linear (g : Node.t Graph.t) =
           Buffer.add_string buf (Printf.sprintf "%s\n" (show_node_compact g n)));
     Buffer.contents buf
 
-let show_machine_compact
-    ?(reg_assoc : (Machine_node.t, Reg_allocator_intf.loc) Base.Hashtbl.t option) g
+let show_machine_compact ?(reg_assoc : (Machine_node.t, Registers.loc) Base.Hashtbl.t option) g
     (node : Machine_node.t) =
     let kind_str = Machine_node.show_machine_node_kind node.kind in
     let output_loc_str =
@@ -302,7 +301,7 @@ let to_string_machine_linear (g : Machine_node.t Graph.t) (program : Machine_nod
     Buffer.contents buf
 
 let to_string_machine_linear_regs (g : Machine_node.t Graph.t) (program : Machine_node.t list)
-    (reg_assoc : (Machine_node.t, Reg_allocator_intf.loc) Base.Hashtbl.t) =
+    (reg_assoc : (Machine_node.t, Registers.loc) Base.Hashtbl.t) =
     let buf = Buffer.create 1024 in
     Buffer.add_string buf "=== Machine Graph (Linearized with registers) ===\n";
 

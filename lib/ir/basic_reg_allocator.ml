@@ -646,7 +646,7 @@ let find_splittable_by_cloning (program : Machine_node.t list) (pref : Machine_n
     List.max_elt possible_splits ~compare
 
 let find_swappable range free_regs active_ranges ranges
-    (register_assoc : (Range.t, Reg_allocator_intf.loc) Base.Hashtbl.t) =
+    (register_assoc : (Range.t, Registers.loc) Base.Hashtbl.t) =
     let does_overlap (start, stop) (start', stop') =
         let earlier_stop = min stop stop'
         and later_start = max start start' in
@@ -674,7 +674,7 @@ let find_swappable range free_regs active_ranges ranges
                             || does_overlap (cur_start, cur_stop) (first_def, last_use)))
                      |> List.fold ~init:Registers.Mask.empty ~f:(fun acc r ->
                             match Hashtbl.find_exn register_assoc r with
-                            | Reg reg -> Registers.Mask.add acc reg
+                            | Reg reg -> Registers.Mask.add acc (Reg reg)
                             | Stack _ -> acc)
                  in
 
@@ -691,14 +691,14 @@ let find_swappable range free_regs active_ranges ranges
     List.hd potentials
 
 let spill (g : Machine_node.t Graph.t) program range active_ranges
-    (register_assoc : (Range.t, Reg_allocator_intf.loc) Base.Hashtbl.t) =
+    (register_assoc : (Range.t, Registers.loc) Base.Hashtbl.t) =
     let _, reg_mask, first_def, _ = range in
     let spilled_node, next_use_idx, next_use, best_spill =
         Set.fold active_ranges ~init:(None, -1, None, range)
           ~f:(fun ((_, best_idx, _, _) as best) ((s, _, _, _) as cur) ->
             match Hashtbl.find_exn register_assoc cur with
             | Reg reg ->
-                if Registers.Mask.mem reg_mask reg then
+                if Registers.Mask.mem reg_mask (Reg reg) then
                   let def, next_use_dist, next_use =
                       Set.fold s ~init:(None, Int.max_value, None)
                         ~f:(fun ((_, closest_dist, _) as closest) n ->
@@ -787,7 +787,7 @@ let rec remove_first l ~pred =
 
 let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list)
     (ranges : Range.t list) =
-    let (register_assoc : (Range.t, Reg_allocator_intf.loc) Base.Hashtbl.t) =
+    let (register_assoc : (Range.t, Registers.loc) Base.Hashtbl.t) =
         Hashtbl.create (module Range)
     in
     let ranges_map = Hashtbl.create (module Machine_node) in
@@ -823,7 +823,7 @@ let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list
             let s, reg_mask, _, _ = range in
             let new_endpoints, new_program, new_active_ranges, reg_used =
                 match Registers.Mask.common free_regs reg_mask |> Registers.Mask.choose with
-                | Some r ->
+                | Some (Reg r) ->
                     let r =
                         (* Try to assign the source reg to a range only containing
                            a mov, this let's us easily eliminate it later *)
@@ -833,9 +833,9 @@ let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list
                             let src_n = Graph.get_dependency g n 1 |> Option.value_exn in
                             let src_range = Hashtbl.find_exn ranges_map src_n in
                             match Hashtbl.find register_assoc src_range with
-                            | Some (Reg src_reg) ->
+                            | Some (Registers.Reg src_reg) ->
                                 if
-                                  Registers.Mask.mem free_regs src_reg
+                                  Registers.Mask.mem free_regs (Reg src_reg)
                                   && List.length (Graph.get_dependants g src_n) = 1
                                 then
                                   src_reg
@@ -848,7 +848,7 @@ let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list
                           r
                     in
                     Hashtbl.set register_assoc ~key:range ~data:(Reg r);
-                    (t, program, Set.add active_ranges range, Some r)
+                    (t, program, Set.add active_ranges range, Some (Registers.Reg r))
                 | None -> (
                     let possible_swap =
                         if Registers.Mask.is_empty free_regs then
@@ -865,8 +865,7 @@ let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list
                             Registers.Mask.choose available_for_candidate |> Option.value_exn
                         in
                         Hashtbl.set register_assoc ~key:range ~data:candidate_old_reg;
-                        Hashtbl.set register_assoc ~key:candidate_range
-                          ~data:(Reg candidate_new_reg);
+                        Hashtbl.set register_assoc ~key:candidate_range ~data:candidate_new_reg;
                         (t, program, Set.add active_ranges range, Some candidate_new_reg)
                     | None -> (
                         let pref, suff = List.split_n program (idx - 1 + 1) in
@@ -890,7 +889,7 @@ let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list
                             (let _, mask, _, _ = spill in
                              match Registers.Mask.choose (Registers.Mask.common free_regs mask) with
                              | None -> Hashtbl.set register_assoc ~key:spill ~data:(Stack 111)
-                             | Some r -> Hashtbl.set register_assoc ~key:spill ~data:(Reg r));
+                             | Some r -> Hashtbl.set register_assoc ~key:spill ~data:r);
                             Hashtbl.set register_assoc ~key:range ~data:old_reg;
                             (* TODO: we don't really need to do a full sort, it would be much cheaper to just insert the new endpoints in the correct spot *)
                             let new_endpoints = get_sorted_endpoints new_ranges in
@@ -933,6 +932,7 @@ let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list
                             List.iter new_ranges ~f:(fun ((s, _, _, _) as r) ->
                                 Set.iter s ~f:(fun n -> Hashtbl.set ranges_map ~key:n ~data:r));
                             (new_endpoints, new_program, Set.add active_ranges range, None)))
+                | Some (Stack _) -> failwith "???"
             in
             let free_regs =
                 match reg_used with
@@ -943,7 +943,7 @@ let assign_registers (g : Machine_node.t Graph.t) (program : Machine_node.t list
         | (_, `End range) :: t ->
             let free_regs =
                 match Hashtbl.find_exn register_assoc range with
-                | Reg reg -> Registers.Mask.add free_regs reg
+                | Reg reg -> Registers.Mask.add free_regs (Reg reg)
                 | Stack _ -> free_regs
             in
             aux t (Set.remove active_ranges range) program free_regs

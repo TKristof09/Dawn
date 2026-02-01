@@ -205,7 +205,7 @@ and remove_node : type a. a t -> a -> unit =
     let module Node = (val g.node_module : GraphNode with type t = a) in
     check g;
     (match Hashtbl.find g.dependants n with
-    | None -> assert false
+    | None -> failwithf "Node %s is not part of the graph" (Node.show n) ()
     | Some s when Dynarray.is_empty s ->
         (match Hashtbl.find g.dependencies n with
         | None -> ()

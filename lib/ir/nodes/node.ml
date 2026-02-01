@@ -18,6 +18,7 @@ type data_kind =
     | Gt
     | GEq
     | Phi
+    | Param of int
 
 and ctrl_kind =
     | Start
@@ -26,6 +27,10 @@ and ctrl_kind =
     | If
     | Region
     | Loop
+    | Function of t
+    | Return
+    | FunctionCall
+    | FunctionCallEnd
 
 and kind =
     | Data of data_kind

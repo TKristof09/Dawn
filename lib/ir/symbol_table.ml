@@ -36,7 +36,7 @@ let rec find_symbol t s =
     | None -> (
         match t.parent with
         | Some p -> find_symbol p s
-        | None -> failwith "Symbol not found")
+        | None -> failwithf "Symbol not found %s" s ())
 
 let rec reassign_symbol t sym value =
     if Hashtbl.mem t.symbols sym then

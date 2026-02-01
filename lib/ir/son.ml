@@ -1,15 +1,17 @@
 open Core
 
-let rec do_statement g (s : Ast.statement Ast.node) scope =
+let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node =
     match s.node with
-    | Ast.ExprStatement e -> do_expr g e scope |> ignore
+    | Ast.ExprStatement e -> do_expr g e scope cur_ret_node |> ignore
     | Ast.Declaration_assign (name, _typ, e) ->
-        let n = do_expr g e scope |> Option.value_exn in
+        let n = do_expr g e scope cur_ret_node |> Option.value_exn in
         Scope_node.define g scope name n
     | Ast.Declaration (name, typ) -> (
         match typ with
         | Type "int" ->
-            let default_init = do_expr g { loc = s.loc; node = Int 0 } scope |> Option.value_exn in
+            let default_init =
+                do_expr g { loc = s.loc; node = Int 0 } scope cur_ret_node |> Option.value_exn
+            in
             Scope_node.define g scope name default_init
         | _ -> assert false)
     | Ast.While (cond, body) ->
@@ -17,22 +19,42 @@ let rec do_statement g (s : Ast.statement Ast.node) scope =
         let body_scope = Scope_node.dup_loop g scope in
         Scope_node.set_ctrl g body_scope loop_node;
         Scope_node.set_ctrl g scope loop_node;
-        let n_cond = do_expr g cond body_scope |> Option.value_exn in
+        let n_cond = do_expr g cond body_scope cur_ret_node |> Option.value_exn in
         let exit_scope = Scope_node.dup g body_scope in
         let n_if = If_node.create g ~ctrl:loop_node ~pred:n_cond in
         let n_true = Proj_node.create g n_if 0 in
         let n_false = Proj_node.create g n_if 1 in
         Scope_node.set_ctrl g body_scope n_true;
         Scope_node.set_ctrl g exit_scope n_false;
-        let _ = do_expr g body body_scope in
+        let _ = do_expr g body body_scope cur_ret_node in
         Loop_node.set_back_edge g loop_node (Scope_node.get_ctrl g body_scope);
         Scope_node.merge_loop g ~this:scope ~body:body_scope ~exit:exit_scope
-    | _ -> assert false
+    | Ast.FnDeclaration (name, typ, param_names, body) ->
+        let ret_type, param_types =
+            match typ with
+            | Ast.Fn (ret, params) -> (ret, params)
+            | _ -> assert false
+        in
+        let ret_type = Types.of_ast_type ret_type in
+        let fun_node, ret_node = Fun_node.create g ret_type in
+        Scope_node.define g scope name fun_node;
+        Scope_node.push scope;
+        let old_ctrl = Scope_node.get_ctrl g scope in
+        Scope_node.set_ctrl g scope fun_node;
+        List.zip_exn param_types param_names
+        |> List.iteri ~f:(fun i (typ, pname) ->
+               let param_type = Types.of_ast_type typ in
+               let param_node = Fun_node.create_param g fun_node param_type i in
+               Scope_node.define g scope pname param_node);
+        let body_n = do_expr g body scope (Some ret_node) |> Option.value_exn in
+        Fun_node.add_return g ret_node ~ctrl:(Scope_node.get_ctrl g scope) ~val_n:body_n;
+        Scope_node.pop g scope;
+        Scope_node.set_ctrl g scope old_ctrl
 
-and do_expr g (e : Ast.expr Ast.node) scope =
+and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node =
     let binop lhs rhs f =
-        let lhs = do_expr g lhs scope |> Option.value_exn in
-        let rhs = do_expr g rhs scope |> Option.value_exn in
+        let lhs = do_expr g lhs scope cur_ret_node |> Option.value_exn in
+        let rhs = do_expr g rhs scope cur_ret_node |> Option.value_exn in
         Some (f g lhs rhs)
     in
     match e.node with
@@ -45,7 +67,7 @@ and do_expr g (e : Ast.expr Ast.node) scope =
             Some node
         | Some _ -> assert false)
     | Ast.VarAssign (name, expr) ->
-        let n = do_expr g expr scope |> Option.value_exn in
+        let n = do_expr g expr scope cur_ret_node |> Option.value_exn in
         Scope_node.assign g scope name n;
         Some n
     | Ast.Add (lhs, rhs) -> binop lhs rhs Arithmetic_nodes.create_add
@@ -64,32 +86,43 @@ and do_expr g (e : Ast.expr Ast.node) scope =
     | Ast.GEq (lhs, rhs) -> binop lhs rhs Bool_nodes.create_geq
     | Ast.Block (statements, expr) ->
         Scope_node.push scope;
-        List.iter statements ~f:(fun s -> do_statement g s scope |> ignore);
-        let n = Option.value_map expr ~default:None ~f:(fun e -> do_expr g e scope) in
+        List.iter statements ~f:(fun s -> do_statement g s scope cur_ret_node |> ignore);
+        let n = Option.value_map expr ~default:None ~f:(fun e -> do_expr g e scope cur_ret_node) in
         Scope_node.pop g scope;
         n
     | Ast.IfElse (cond, body, else_body) -> (
-        let n_cond = do_expr g cond scope |> Option.value_exn in
+        let n_cond = do_expr g cond scope cur_ret_node |> Option.value_exn in
         let ctrl = Scope_node.get_ctrl g scope in
         let n_if = If_node.create g ~ctrl ~pred:n_cond in
         let n_true = Proj_node.create g n_if 0 in
         let n_false = Proj_node.create g n_if 1 in
         let false_scope = Scope_node.dup g scope in
         Scope_node.set_ctrl g scope n_true;
-        let body_true = do_expr g body scope in
+        let body_true = do_expr g body scope cur_ret_node in
         Scope_node.set_ctrl g false_scope n_false;
         match else_body with
         | None ->
             Scope_node.merge g ~this:scope ~other:false_scope;
             None
         | Some else_body -> (
-            let body_false = do_expr g else_body false_scope in
+            let body_false = do_expr g else_body false_scope cur_ret_node in
             Scope_node.merge g ~this:scope ~other:false_scope;
             match (body_true, body_false) with
             | None, None -> None
             | Some body_true, Some body_false ->
                 Some (Phi_node.create g (Scope_node.get_ctrl g scope) [ body_true; body_false ])
             | _, _ -> failwith "The two branches must have the same type"))
+    | Ast.FnCall (name, args) ->
+        let args =
+            List.map args ~f:(fun arg -> do_expr g arg scope cur_ret_node |> Option.value_exn)
+        in
+        let fun_node = Scope_node.get g scope name in
+        let call_end = Fun_node.add_call g (Scope_node.get_ctrl g scope) fun_node args in
+        let ctrl = Proj_node.create g call_end 0 in
+        Scope_node.set_ctrl g scope ctrl;
+        let return_val = Proj_node.create g call_end 1 in
+        Some return_val
+    (* | Ast.Return ->  *)
     | _ -> assert false
 
 let of_ast ast =
@@ -106,7 +139,7 @@ let of_ast ast =
     in
     let scope = Scope_node.create () in
     Scope_node.set_ctrl g scope (Graph.get_start g);
-    Core.List.iter ast ~f:(fun s -> do_statement g s scope);
+    Core.List.iter ast ~f:(fun s -> do_statement g s scope None);
     let ctrl = Scope_node.get_ctrl g scope in
     Graph.set_stop_ctrl g ctrl;
     Scope_node.set_ctrl g scope (Graph.get_stop g);

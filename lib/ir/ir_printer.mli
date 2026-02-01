@@ -9,5 +9,5 @@ val to_string_machine_linear : Machine_node.t Graph.t -> Machine_node.t list -> 
 val to_string_machine_linear_regs :
   Machine_node.t Graph.t ->
   Machine_node.t list ->
-  (Machine_node.t, Reg_allocator_intf.loc) Base.Hashtbl.t ->
+  (Machine_node.t, Registers.loc) Base.Hashtbl.t ->
   string
