@@ -74,6 +74,7 @@
 %left PLUS MINUS
 %left MUL DIV
 %nonassoc UMINUS NOT
+%nonassoc LPAREN
 
 %start <program> prog
 %%
@@ -116,7 +117,7 @@ let expr_without_block :=
     | id = IDENTIFIER; n = delimited(LBRACKET, expr, RBRACKET); ASSIGN; rhs = expr; {  ArrayVarAssign (id, n, rhs) |> make_node $sloc }
     | MINUS; e = expr; %prec UMINUS {  Sub (make_node $sloc (Int 0), e) |> make_node $sloc }
     | NOT; e = expr; %prec NOT { UNot e |> make_node $sloc } | bin_expr
-    | id = IDENTIFIER; LPAREN; args = arg_list; RPAREN; {  FnCall(id, args) |> make_node $sloc }
+    | e = expr; LPAREN; args = arg_list; RPAREN; {  FnCall(e, args) |> make_node $sloc }
     | literal
     | delimited(LPAREN, expr, RPAREN)
     | id = IDENTIFIER; n = option(delimited(LBRACKET, expr, RBRACKET)); { Variable (id, n) |> make_node $sloc }

@@ -228,7 +228,13 @@ and generate_expression ctx node =
         match e with
         | None -> instrs
         | Some e -> instrs @ generate_expression new_ctx e)
-    | Ast.FnCall (name, args) ->
+    | Ast.FnCall (expr, args) ->
+        let name =
+            (* HACK until i remove this codegen anyway *)
+            match expr.node with
+            | Variable (name, _) -> name
+            | _ -> assert false
+        in
         let _, arg_instrs, arg_loads =
             List.foldi args
               ~init:(ctx, empty (), empty ())

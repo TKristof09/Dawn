@@ -55,5 +55,5 @@ and expr =
     | ArrayVarAssign of name * expr node * expr node
     | IfElse of expr node * expr node * expr node option
     | Block of statement node list * expr node option
-    | FnCall of name * expr node list
+    | FnCall of expr node * expr node list
 [@@deriving show { with_path = false }, eq]

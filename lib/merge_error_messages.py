@@ -2,65 +2,43 @@
 import re
 import subprocess
 import sys
-from collections import defaultdict
 
 def run_menhir_compare(parser, new_messages, old_messages):
     cmd = ["menhir", parser, "--compare-errors", new_messages, "--compare-errors", old_messages]
     result = subprocess.run(cmd, capture_output=True, text=True)
     return result.stderr
 
-def parse_error_locations(stderr_output):
-    parse = re.compile(r'File "([^"]+)", line (\d+).*?\nError: this sentence.*?\nNo sentence that leads to this state exists in "([^"]+)".', re.DOTALL)
-    matches = parse.findall(stderr_output)
-    
-    # Group updates by source file
-    updates_by_file = defaultdict(list)
-    for new_file, line_no, _ in matches:
-        updates_by_file[new_file].append(int(line_no))
-    return updates_by_file
+def parse_missing_states(stderr_output):
+    """Extract state numbers that are missing from old_messages"""
+    pattern = re.compile(r'Error: this sentence leads to an error in state (\d+)\.')
+    matches = pattern.findall(stderr_output)
+    return set(int(state) for state in matches)
 
-def extract_new_messages(filename, line_numbers):
-    messages = {}
+def parse_all_messages(filename):
+    """Parse all error message entries, indexed by state number"""
+    messages_by_state = {}
     
     with open(filename) as f:
-        lines = f.readlines()
-        
-    for target_line_no in line_numbers:
-        current_message = []
-        found_message = False
-        
-        for i in range(target_line_no - 1, len(lines)):
-            if not found_message:
-                current_message.extend(["\n", lines[i]])
-                found_message = True
-            elif lines[i].startswith("##"):
-                current_message.append(lines[i])
-            else:
-                current_message.append("TODO: PARSER MESSAGE NEEDED HERE.\n")
-                messages[target_line_no] = current_message
-                break
-                
-        if target_line_no not in messages:
-            current_message.append("TODO: PARSER MESSAGE NEEDED HERE.\n")
-            messages[target_line_no] = current_message
+        content = f.read()
     
-    return messages
-
-def update_messages(target_file_lines, updates_by_file):
-    lines = target_file_lines.copy()
+    # Split into individual error entries
+    # Each entry starts with "prog:" and continues until the next "prog:" or end
+    entries = re.split(r'\n(?=prog: )', content)
     
-    for new_file, line_numbers in updates_by_file.items():
-        # Sort updates by line number in descending order
-        line_numbers.sort(reverse=True)
-        messages = extract_new_messages(new_file, line_numbers)
-        
-        # Insert messages at appropriate positions
-        for line_no in line_numbers:
-            if line_no in messages:
-                pos = line_no - 1
-                lines[pos:pos] = messages[line_no]
+    for entry in entries:
+        if not entry.strip():
+            continue
+            
+        # Extract state number from this entry
+        state_match = re.search(r'## Ends in an error in state: (\d+)\.', entry)
+        if state_match:
+            state_num = int(state_match.group(1))
+            # Ensure entry ends with newline
+            if not entry.endswith('\n'):
+                entry += '\n'
+            messages_by_state[state_num] = entry
     
-    return lines
+    return messages_by_state
 
 def main():
     if len(sys.argv) != 4:
@@ -69,21 +47,37 @@ def main():
         
     parser, new_messages, old_messages = sys.argv[1:4]
     
-    # Read target file
-    with open(old_messages) as f:
-        target_lines = f.readlines()
-    
-    # Run menhir comparison
+    # Run menhir comparison to find missing states
     stderr_output = run_menhir_compare(parser, new_messages, old_messages)
+    missing_states = parse_missing_states(stderr_output)
     
-    # Parse error locations
-    updates_by_file = parse_error_locations(stderr_output)
+    if not missing_states:
+        # No missing states, just output the old messages
+        with open(old_messages) as f:
+            sys.stdout.write(f.read())
+        return
     
-    # Generate updated content
-    updated_lines = update_messages(target_lines, updates_by_file)
+    # Parse all messages from both files
+    complete_messages = parse_all_messages(new_messages)
+    old_messages_dict = parse_all_messages(old_messages)
     
-    # Print to stdout without any additional output
-    sys.stdout.writelines(updated_lines)
+    # Merge: old messages + new messages for missing states
+    merged = {}
+    for state, msg in old_messages_dict.items():
+        merged[state] = msg
+    
+    for state in missing_states:
+        if state in complete_messages:
+            # Add the new message with TODO placeholder
+            entry = complete_messages[state]
+            # Replace any existing message with TODO
+            entry = re.sub(r'\n[^\n#][^\n]*$', 'TODO: PARSER MESSAGE NEEDED HERE.\n', entry)
+            merged[state] = entry
+    
+    # Output in sorted order by state number
+    for state in sorted(merged.keys()):
+        sys.stdout.write(merged[state])
+        sys.stdout.write('\n')  # Add blank line between entries
 
 if __name__ == "__main__":
     main()

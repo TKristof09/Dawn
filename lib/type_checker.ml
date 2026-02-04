@@ -159,7 +159,13 @@ let check ast =
             match e with
             | None -> Type "void"
             | Some e -> check_expr e new_env)
-        | FnCall (name, args) -> (
+        | FnCall (expr, args) -> (
+            let name =
+                (* HACK until i remove this type checker anyway *)
+                match expr.node with
+                | Variable (name, _) -> name
+                | _ -> assert false
+            in
             match find_type node.loc name env with
             | Fn (ret, params) ->
                 let rec aux args_list params_list num_args num_params =
