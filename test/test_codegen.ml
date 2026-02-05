@@ -4,13 +4,14 @@ let test str =
     match Parser.parse_str str with
     | Ok ast ->
         let son = Son.of_ast ast in
-        let machine_graph, program = Scheduler.schedule son in
-        let program = List.concat program in
-        let program, reg_assoc = Reg_allocator.allocate machine_graph program in
-        let code = Asm_emit.emit_program machine_graph reg_assoc program in
-        Ir_printer.to_string_machine_linear_regs machine_graph program reg_assoc
-        |> Printf.printf "%s\n";
-        Printf.printf "\n%s\n" code
+        let schedules = Scheduler.schedule son in
+        Core.List.iter schedules ~f:(fun (machine_graph, program) ->
+            let program = List.concat program in
+            let program, reg_assoc = Reg_allocator.allocate machine_graph program in
+            let code = Asm_emit.emit_program machine_graph reg_assoc program in
+            Ir_printer.to_string_machine_linear_regs machine_graph program reg_assoc
+            |> Printf.printf "%s\n";
+            Printf.printf "\n%s\n" code)
     | Error msg -> Printf.eprintf "%s\n" msg
 
 let%expect_test "" =
@@ -134,7 +135,8 @@ let%expect_test "fibonacci" =
     |}
     in
     test test_str;
-    [%expect {|
+    [%expect
+        {|
       === Machine Graph (Linearized with registers) ===
 
       Block #45 ((Ideal Start)): -> [#49]

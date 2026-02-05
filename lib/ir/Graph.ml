@@ -292,3 +292,57 @@ let cleanup (type a) g =
     let module Node = (val g.node_module : GraphNode with type t = a) in
     let dead_code = Hashtbl.filter g.dependants ~f:Dynarray.is_empty in
     Hashtbl.iter_keys dead_code ~f:(fun n -> if not (Node.equal n g.stop) then remove_node g n)
+
+let partition (type a) (g : (a, 'b) t) ~(f : a -> int) =
+    let module Node = (val g.node_module : GraphNode with type t = a) in
+    let partitions = Hashtbl.create (module Int) in
+    Hash_set.iter g.nodes ~f:(fun node ->
+        let key = f node in
+        let s =
+            Hashtbl.find_or_add partitions key ~default:(fun _ -> Hash_set.create (module Node))
+        in
+        Hash_set.add s node);
+
+    Hashtbl.to_alist partitions
+    |> List.sort ~compare:(fun (a, _) (b, _) -> Int.compare a b)
+    |> List.map ~f:(fun (_, partition_nodes) ->
+        (* these will be in all graphs *)
+        Hash_set.add partition_nodes g.start;
+        Hash_set.add partition_nodes g.stop;
+
+        let new_deps = Hashtbl.create (module Node) in
+        let new_dependants = Hashtbl.create (module Node) in
+
+        (* Copy edges that have both endpoints in this partition *)
+        Hash_set.iter partition_nodes ~f:(fun node ->
+            (* Handle dependencies *)
+            (match Hashtbl.find g.dependencies node with
+            | Some deps ->
+                let filtered_deps =
+                    Dynarray.map
+                      (function
+                        | None -> None
+                        | Some dep -> if Hash_set.mem partition_nodes dep then Some dep else None)
+                      deps
+                in
+                Hashtbl.set new_deps ~key:node ~data:filtered_deps
+            | None -> ());
+
+            (* Handle dependants *)
+            match Hashtbl.find g.dependants node with
+            | Some dependants ->
+                let filtered_dependants =
+                    Dynarray.filter (Hash_set.mem partition_nodes) dependants
+                in
+                Hashtbl.set new_dependants ~key:node ~data:filtered_dependants
+            | None -> ());
+
+        {
+          dependencies = new_deps;
+          dependants = new_dependants;
+          nodes = partition_nodes;
+          start = g.start;
+          stop = g.stop;
+          gvn = Hash_set.filter g.gvn ~f:(Hash_set.mem partition_nodes);
+          node_module = g.node_module;
+        })

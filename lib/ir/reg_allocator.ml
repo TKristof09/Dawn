@@ -40,7 +40,7 @@ module RangeSet = struct
   let pp fmt s = Format.fprintf fmt "%s" (show s)
 end
 
-let build_live_ranges g (program : Machine_node.t list) =
+let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node.t list) =
     let ranges = Hashtbl.create (module Machine_node) in
     List.iter program ~f:(fun n ->
         match n.kind with
@@ -170,7 +170,7 @@ end = struct
           | `Ok m -> m
           | `Duplicate_keys _ -> assert false
       in
-      let update_bb_outs ifg self_conflicts bb (actives : (Range.t, Machine_node.t) Hashtbl.t) =
+      let update_bb_outs  self_conflicts bb (actives : (Range.t, Machine_node.t) Hashtbl.t) =
           let rec get_blockhead n =
               if Machine_node.is_blockhead n then
                 n
@@ -314,7 +314,7 @@ end = struct
                                       Set.add s other)
                             | None -> ());
                             Hashtbl.set actives ~key:range' ~data:dep)));
-          update_bb_outs ifg self_conflicts bb actives
+          update_bb_outs self_conflicts bb actives
       in
       let ifg = Hashtbl.create (module Range) in
       let need_splits = Hash_set.create (module Range) in
@@ -357,7 +357,7 @@ end = struct
       else (* prefer large choice of registers *)
         Int.compare l l'
 
-  let compare_non_trivial_lrgs ifg g (r : Range.t) (r' : Range.t) =
+  let compare_non_trivial_lrgs  g (r : Range.t) (r' : Range.t) =
       let risky_score g (r : Range.t) =
           (* if the range has not many neighbours it has an easier chance of "accidentally" getting colored despite being non trivial *)
           let base_score =
@@ -421,9 +421,9 @@ end = struct
               visit_node r;
               process (r :: acc)
           | None -> (
-              let rec pop_first () =
+              let pop_first () =
                   match
-                    Hash_set.max_elt non_trivial_lrgs ~compare:(compare_non_trivial_lrgs ifg g)
+                    Hash_set.max_elt non_trivial_lrgs ~compare:(compare_non_trivial_lrgs  g)
                   with
                   | None -> None
                   | Some r ->
@@ -585,6 +585,7 @@ let rec loop_depth g (node : Machine_node.t) =
     match node.kind with
     | Ideal Start -> 0
     | Ideal Stop -> 0
+    | FunctionProlog _ -> 0
     | Ideal Loop ->
         let ld = 1 + loop_depth g (Loop_node.get_entry_edge g node) in
         ld
@@ -602,7 +603,7 @@ let rec loop_depth g (node : Machine_node.t) =
     | Ideal Region -> loop_depth g (Graph.get_dependency g node 1 |> Option.value_exn)
     | _ -> loop_depth g (Graph.get_dependency g node 0 |> Option.value_exn)
 
-let split_self_conflict g program lrg (self_conflicting_nodes : NodeSet.t) =
+let split_self_conflict g program (self_conflicting_nodes : NodeSet.t) =
     Set.fold self_conflicting_nodes ~init:program ~f:(fun program n ->
         let program =
             List.fold (Graph.get_dependants g n) ~init:program ~f:(fun program use ->
@@ -698,6 +699,7 @@ let split_empty_mask g program (lrg : Range.t) =
       program
 
 let ldepth g (n : Machine_node.t) (cfg : Machine_node.t) =
+    ignore n;
     let d = loop_depth g cfg in
     d
 (* let successor = Graph.get_dependants g cfg |> List.find ~f:Machine_node.is_control_node in *)
@@ -898,8 +900,8 @@ let allocate g program =
               (* TODO: perhaps sort failed ranges to make sure we are deterministic *)
               let new_program =
                   Hashtbl.fold self_conflicts ~init:program
-                    ~f:(fun ~key:lrg ~data:self_conflicting_nodes program ->
-                      split_self_conflict g program lrg self_conflicting_nodes)
+                    ~f:(fun ~key:_ ~data:self_conflicting_nodes program ->
+                      split_self_conflict g program self_conflicting_nodes)
               in
               let new_program =
                   List.fold failed_ranges ~init:new_program ~f:(fun program lrg ->

@@ -231,7 +231,7 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
         assert (i = 0);
         Some Registers.Mask.general_w
     | DProj proj_i ->
-        let in_node = Graph.get_dependants g n |> List.hd in
+        let in_node = Graph.get_dependencies g n |> List.hd_exn in
         Option.bind in_node ~f:(fun dep -> get_out_reg_mask g dep proj_i)
     | Cmp
     | CmpImm _ ->
@@ -247,7 +247,9 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     | Jmp _ -> None
     | FunctionProlog _ -> None
     | FunctionCall _ -> None
-    | FunctionCallEnd -> if i = 3 then Some Registers.Mask.rax else None
+    | FunctionCallEnd ->
+        assert (i = 1);
+        Some Registers.Mask.rax
     | Param idx ->
         assert (i = 0);
         Some (Registers.Mask.x64_systemv idx)
