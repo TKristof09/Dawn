@@ -1,1 +1,1 @@
-let create () = Node.create_ctrl BOTTOM Stop
+let create () = Node.create_ctrl ALL Stop

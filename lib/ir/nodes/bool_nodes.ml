@@ -4,7 +4,7 @@ let create_common g (lhs : Node.t) (rhs : Node.t) ~cmp:_ kind =
         (* | Integer (Value lhs_v), Integer (Value rhs_v) -> *)
         (*     Const_node.create_int g (Bool.to_int (cmp lhs_v rhs_v)) *)
         | _ ->
-            let n = Node.create_data (Integer Top) kind in
+            let n = Node.create_data (Integer Any) kind in
             Graph.add_dependencies g n [ None; Some lhs; Some rhs ];
             n
     in
@@ -22,4 +22,3 @@ let create_lt g (lhs : Node.t) (rhs : Node.t) = create_common g lhs rhs ~cmp:( <
 let create_leq g (lhs : Node.t) (rhs : Node.t) = create_common g lhs rhs ~cmp:( <= ) LEq
 let create_gt g (lhs : Node.t) (rhs : Node.t) = create_common g lhs rhs ~cmp:( > ) Gt
 let create_geq g (lhs : Node.t) (rhs : Node.t) = create_common g lhs rhs ~cmp:( >= ) GEq
-

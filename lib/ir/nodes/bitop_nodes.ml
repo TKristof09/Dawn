@@ -15,7 +15,7 @@ let common g (lhs : Node.t) (rhs : Node.t) (kind : Node.data_kind) =
         (*         Graph.remove_node g rhs; *)
         (*         n *)
         | _ ->
-            let n = Node.create_data (Integer Top) kind in
+            let n = Node.create_data (Integer Any) kind in
             Graph.add_dependencies g n [ None; Some lhs; Some rhs ];
             n
     in

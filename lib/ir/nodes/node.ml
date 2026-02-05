@@ -98,7 +98,7 @@ let semantic_equal n1 deps1 n2 deps2 =
 let hash n = Int.hash n.id
 let create_data typ kind = { typ; kind = Data kind; id = next_id () }
 let create_ctrl typ kind = { typ; kind = Ctrl kind; id = next_id () }
-let create_scope () = { typ = Types.BOTTOM; kind = Scope (Symbol_table.create ()); id = next_id () }
+let create_scope () = { typ = Types.ALL; kind = Scope (Symbol_table.create ()); id = next_id () }
 
 let is_ctrl n =
     match n.kind with
