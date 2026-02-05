@@ -38,6 +38,8 @@ module Mask : sig
   val cl : t
   val div : t
   val flags : t
+  val x64_systemv : int -> t
+  val caller_save : t
   val of_list : loc list -> t
   val common : t -> t -> t
   val choose : t -> loc option

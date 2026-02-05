@@ -48,6 +48,11 @@ type machine_node_kind =
     | Int of int
     | Mov
     | DProj of int
+    | FunctionProlog of int
+    | Return
+    | FunctionCall of int
+    | FunctionCallEnd
+    | Param of int
     (* nodes that have no machine equivalent *)
     | Ideal of ideal
 [@@deriving show { with_path = false }, sexp_of]
@@ -86,6 +91,10 @@ let is_control_node n =
     match n.kind with
     | Jmp _
     | JmpAlways
+    | FunctionProlog _
+    | FunctionCall _
+    | FunctionCallEnd
+    | Return
     | Ideal Start
     | Ideal Stop
     | Ideal Loop
@@ -113,7 +122,8 @@ let is_control_node n =
     | Set _
     | Int _
     | Mov
-    | DProj _ ->
+    | DProj _
+    | Param _ ->
         false
 
 let is_blockhead n =
@@ -122,7 +132,8 @@ let is_blockhead n =
     | Ideal (CProj _)
     | Ideal Region
     | Ideal Loop
-    | Ideal Stop ->
+    | Ideal Stop
+    | FunctionProlog _ ->
         true
     | _ -> false
 
@@ -184,6 +195,13 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
     | Mov ->
         assert (i = 0);
         Some Registers.Mask.all_and_stack
+    | FunctionProlog _ -> None
+    | Return ->
+        assert (i = 0);
+        Some Registers.Mask.rax
+    | FunctionCall _ -> Some (Registers.Mask.x64_systemv i)
+    | FunctionCallEnd -> None
+    | Param _ -> None
     | Ideal _ -> None
 
 let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
@@ -227,11 +245,20 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
         Some Registers.Mask.all_and_stack
     | JmpAlways -> None
     | Jmp _ -> None
-    | FunctionProlog -> None
+    | FunctionProlog _ -> None
+    | FunctionCall _ -> None
+    | FunctionCallEnd -> if i = 3 then Some Registers.Mask.rax else None
+    | Param idx ->
+        assert (i = 0);
+        Some (Registers.Mask.x64_systemv idx)
+    | Return ->
+        assert (i = 0);
+        if i = 0 then Some Registers.Mask.rax else None
     | Ideal _ -> None
 
 let get_register_kills (n : t) =
     match n.kind with
+    | FunctionCall _ -> Some Registers.Mask.caller_save
     | Div -> Some (Registers.Mask.of_list [ Reg RDX ])
     | _ -> None
 
@@ -300,12 +327,11 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
     | Add -> binop_commutative Add (fun i -> AddImm i)
     | Sub -> binop_non_commutative Sub (fun i -> SubImm i)
     | Constant ->
-        let i =
+        let kind =
             match n.typ with
-            | Integer (Value i) -> i
+            | Integer (Value i) -> Int i
             | _ -> assert false
         in
-        let kind = Int i in
         let node = { id = next_id (); kind; ir_node = n } in
         Graph.add_dependencies machine_g node [ Some (Graph.get_start machine_g) ];
         node
@@ -409,6 +435,13 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
     | Rsh -> binop_non_commutative Rsh (fun i -> RshImm i)
     | BAnd -> binop_commutative And (fun i -> AndImm i)
     | BOr -> binop_commutative Or (fun i -> OrImm i)
+    | Param i ->
+        let kind = Param i in
+        let node = { id = next_id (); kind; ir_node = n } in
+        Graph.add_dependencies machine_g node [];
+        Graph.add_dependencies machine_g node
+          (Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node g machine_g)));
+        node
 
 and of_ctrl_node g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
     let simple kind =
@@ -454,6 +487,25 @@ and of_ctrl_node g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
     | Proj i -> simple (Ideal (CProj i))
     | Loop -> simple (Ideal Loop)
     | Region -> simple (Ideal Region)
+    | Function { ret = _; signature = _; idx } -> simple (FunctionProlog idx)
+    | Return -> simple Return
+    | FunctionCall ->
+        let deps = Graph.get_dependencies g n in
+        let fun_ptr = Fun_node.get_call_fun_ptr g n in
+        let fun_idx = Types.get_fun_idx fun_ptr.typ in
+        let kind = FunctionCall fun_idx in
+        let node = { id = next_id (); kind; ir_node = n } in
+        Graph.add_dependencies machine_g node [];
+        let deps =
+            deps
+            |> List.filter_map ~f:(function
+              | None -> Some None
+              | Some n ->
+                  if Node.equal n fun_ptr then None else Some (Some (convert_node g machine_g n)))
+        in
+        Graph.add_dependencies machine_g node deps;
+        node
+    | FunctionCallEnd -> simple FunctionCallEnd
 
 and convert_node g machine_g (n : Node.t) =
     match
@@ -482,7 +534,7 @@ let find_dep machine_g n ~f =
 let post_process (machine_g : (t, Graph.readwrite) Graph.t) =
     (* when changing a node's dependency we need to add a temp node that depends on the new_dep to make sure it doesn't get removed for not having any dependants. E.g. A jmp removes it's depedendancy on a set and set's it to the cmp directly. But the set might get removed if it has no dependants which in turn might remove the cmp for not having dependants *)
     let temp_node =
-        { id = next_id (); kind = Int 0; ir_node = { typ = TOP; kind = Data Constant; id = 0 } }
+        { id = next_id (); kind = Int 0; ir_node = { typ = ANY; kind = Data Constant; id = 0 } }
     in
     Graph.fold machine_g ~init:[] ~f:(fun acc n ->
         match n.kind with

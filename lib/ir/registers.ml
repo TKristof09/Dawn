@@ -51,6 +51,8 @@ module Mask : sig
   val cl : t
   val div : t
   val flags : t
+  val x64_systemv : int -> t
+  val caller_save : t
   val of_list : loc list -> t
   val common : t -> t -> t
   val choose : t -> loc option
@@ -146,6 +148,19 @@ end = struct
   let div = Set.diff general_r (S.of_list [ Reg RAX; Reg RDX ])
   let flags = S.singleton (Reg Flags)
 
+  let x64_systemv i =
+      match i with
+      | 0 -> S.singleton (Reg RDI)
+      | 1 -> S.singleton (Reg RSI)
+      | 2 -> S.singleton (Reg RDX)
+      | 3 -> S.singleton (Reg RCX)
+      | 4 -> S.singleton (Reg R8)
+      | 5 -> S.singleton (Reg R9)
+      | _ -> failwith "TODO: systemv arguments on stack "
+
+  let caller_save =
+      S.of_list
+        [ Reg RAX; Reg RCX; Reg RDX; Reg RDI; Reg RSI; Reg R8; Reg R9; Reg R10; Reg R11; Reg Flags ]
 
   let of_list = S.of_list
   let common a b = Set.inter a b

@@ -25,7 +25,11 @@ and ctrl_kind =
     | If
     | Region
     | Loop
-    | Function of t
+    | Function of {
+        ret : t;
+        signature : Types.node_type;
+        idx : int;
+      }
     | Return
     | FunctionCall
     | FunctionCallEnd
