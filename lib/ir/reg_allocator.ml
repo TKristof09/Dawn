@@ -170,7 +170,7 @@ end = struct
           | `Ok m -> m
           | `Duplicate_keys _ -> assert false
       in
-      let update_bb_outs  self_conflicts bb (actives : (Range.t, Machine_node.t) Hashtbl.t) =
+      let update_bb_outs self_conflicts bb (actives : (Range.t, Machine_node.t) Hashtbl.t) =
           let rec get_blockhead n =
               if Machine_node.is_blockhead n then
                 n
@@ -331,14 +331,14 @@ end = struct
       done;
       if Hash_set.is_empty need_splits && Hashtbl.is_empty self_conflicts then
         Ok ifg
-      else (
+      else
         (* print ifg; *)
         (* Printf.printf "\nNeed Splits:\n"; *)
         (* Hash_set.iter need_splits ~f:(fun r -> Printf.printf "  %s\n" (Range.show r)); *)
         (* Printf.printf "\nSelf Conflicts:\n"; *)
         (* Hashtbl.iteri self_conflicts ~f:(fun ~key:r ~data:nodes -> *)
         (*     Printf.printf "  %s -> %s\n" (Range.show r) (NodeSet.show nodes)); *)
-        Error { failed_ranges = Hash_set.to_list need_splits; self_conflicts })
+        Error { failed_ranges = Hash_set.to_list need_splits; self_conflicts }
 
   let degree ifg r =
       match Hashtbl.find ifg r with
@@ -357,7 +357,7 @@ end = struct
       else (* prefer large choice of registers *)
         Int.compare l l'
 
-  let compare_non_trivial_lrgs  g (r : Range.t) (r' : Range.t) =
+  let compare_non_trivial_lrgs g (r : Range.t) (r' : Range.t) =
       let risky_score g (r : Range.t) =
           (* if the range has not many neighbours it has an easier chance of "accidentally" getting colored despite being non trivial *)
           let base_score =
@@ -422,9 +422,7 @@ end = struct
               process (r :: acc)
           | None -> (
               let pop_first () =
-                  match
-                    Hash_set.max_elt non_trivial_lrgs ~compare:(compare_non_trivial_lrgs  g)
-                  with
+                  match Hash_set.max_elt non_trivial_lrgs ~compare:(compare_non_trivial_lrgs g) with
                   | None -> None
                   | Some r ->
                       Hash_set.remove non_trivial_lrgs r;
@@ -471,9 +469,8 @@ end = struct
       in
       if List.is_empty failed_ranges then
         Ok reg_assoc
-      else (
-        (* Printf.printf "Failed: %s\n" ([%derive.show: Range.t list] failed_ranges); *)
-        Error { failed_ranges; self_conflicts = Hashtbl.create (module Range) })
+      else (* Printf.printf "Failed: %s\n" ([%derive.show: Range.t list] failed_ranges); *)
+        Error { failed_ranges; self_conflicts = Hashtbl.create (module Range) }
 end
 
 let spill_node g n =
@@ -540,7 +537,7 @@ let rec insert_before g program ~(before_this : Machine_node.t) ~(node_to_spill 
     | h :: t when Machine_node.equal h target -> (
         let n' = spill_node g node_to_spill in
         (* Printf.printf "INSERTING %s (%s) before %s\n" (Machine_node.show n') *)
-          (* (Machine_node.show node_to_spill) (Machine_node.show before_this); *)
+        (* (Machine_node.show node_to_spill) (Machine_node.show before_this); *)
         Graph.set_dependency g n' (Some bb) 0;
         let dep_idx, _ =
             List.findi_exn (Graph.get_dependencies g before_this) ~f:(fun _ dep ->
@@ -672,8 +669,7 @@ let split_empty_mask g program (lrg : Range.t) =
       single_reg_def_count <= 1
       && single_reg_use_count <= 1
       && single_reg_def_count + single_reg_use_count > 0
-    then (
-      (* Printf.printf "Empty mask1\n"; *)
+    then
       let program =
           if Set.length single_reg_defs = 1 then
             duplicate_after g program (Set.choose_exn single_reg_defs)
@@ -685,13 +681,12 @@ let split_empty_mask g program (lrg : Range.t) =
           | [ (def, use) ] -> insert_before g program ~before_this:use ~node_to_spill:def
           | _ -> program
       in
-      program)
+      program
     else if Set.length lrg.nodes = 1 && single_reg_def_count <= 1 && single_reg_use_count >= 2 then
       let program =
           let def = Set.choose_exn lrg.nodes in
           (* TODO: group uses into register classes instead of splitting before each use *)
           List.fold (Graph.get_dependants g def) ~init:program ~f:(fun program use ->
-              (* Printf.printf "Empty mask2\n"; *)
               insert_before g program ~before_this:use ~node_to_spill:def)
       in
       program
@@ -702,33 +697,8 @@ let ldepth g (n : Machine_node.t) (cfg : Machine_node.t) =
     ignore n;
     let d = loop_depth g cfg in
     d
-(* let successor = Graph.get_dependants g cfg |> List.find ~f:Machine_node.is_control_node in *)
-(* match successor with *)
-(* | None -> d *)
-(* | Some succ -> *)
-(*     if *)
-(*       Poly.equal succ.kind (Ideal Loop) *)
-(*       && Machine_node.equal (Loop_node.get_entry_edge g succ) cfg *)
-(*     then *)
-(*       let loop = succ in *)
-(*       let found = *)
-(*           Graph.get_dependants g cfg *)
-(*           |> List.rev *)
-(*           |> List.take_while ~f:(fun out -> *)
-(*               match out.kind with *)
-(*               | Mov -> false *)
-(*               | Ideal _ -> true *)
-(*               | _ -> Machine_node.is_cheap_to_clone out) *)
-(*           |> List.find ~f:(fun out -> Machine_node.equal n out) *)
-(*       in *)
-(*       match found with *)
-(*       | Some out -> idepth g loop *)
-(*       | None -> d *)
-(*     else *)
-(*       d *)
 
 let split_by_loop g program (lrg : Range.t) =
-    (* Printf.printf "Split by loop\n"; *)
     let min_d, max_d =
         Set.fold lrg.nodes ~init:(Int.max_value, Int.min_value) ~f:(fun (min_d, max_d) def ->
             let d_def = ldepth g def (Graph.get_dependency g def 0 |> Option.value_exn) in
@@ -758,7 +728,11 @@ let split_by_loop g program (lrg : Range.t) =
                   ~f:(fun (min_d, max_d) use ->
                     match use.kind with
                     | Ideal Phi ->
-                        (* Phi nodes are already accounted for outside this loop since if a phi node is connected to the lrg as a use then it is also in the lrg as a def since phi nodes merge lrgs of their inputs and themself. See build_live_ranges *)
+                        (* Phi nodes are already accounted for outside this
+                           loop since if a phi node is connected to the lrg as
+                           a use then it is also in the lrg as a def since phi
+                           nodes merge lrgs of their inputs and themself. See
+                           build_live_ranges *)
                         (min_d, max_d)
                     | _ ->
                         let d = ldepth g use (Graph.get_dependency g use 0 |> Option.value_exn) in
@@ -772,10 +746,6 @@ let split_by_loop g program (lrg : Range.t) =
         |> List.map ~f:(fun n -> NodeSet.of_list (n :: Graph.get_dependants g n))
         |> NodeSet.union_list
     in
-    (* Printf.printf "==========ALL========\n"; *)
-    (* NodeSet.show all |> print_endline; *)
-    (* Printf.printf "=====================\n"; *)
-
     Set.fold all ~init:program ~f:(fun program n ->
         let program =
             if Set.mem lrg.nodes n then
@@ -790,9 +760,8 @@ let split_by_loop g program (lrg : Range.t) =
                     (min_d = max_d || loop_depth g cfg <= min_d)
                     && (not (Machine_node.is_cheap_to_clone n))
                     && not (false && single_user_split_adjacent)
-                  then (
-                    (* Printf.printf "def/loop\n"; *)
-                    duplicate_after g program n)
+                  then
+                    duplicate_after g program n
                   else
                     program
               in
@@ -824,9 +793,8 @@ let split_by_loop g program (lrg : Range.t) =
                        && i = 1
                        && Poly.equal input.kind (Ideal Phi)
                        && Machine_node.equal cfg_in cfg)
-                then (
-                  (* Printf.printf "use/loop/phi\n"; *)
-                  insert_before g program ~before_this:n ~node_to_spill:input)
+                then
+                  insert_before g program ~before_this:n ~node_to_spill:input
                 else
                   program)
         | _ ->
@@ -836,9 +804,8 @@ let split_by_loop g program (lrg : Range.t) =
             |> List.fold ~init:program ~f:(fun program use ->
                 let cfg = Graph.get_dependency g n 0 |> Option.value_exn in
                 if min_d = max_d || Machine_node.is_cheap_to_clone use || loop_depth g cfg <= min_d
-                then (
-                  (* Printf.printf "use/loop/use\n"; *)
-                  insert_before g program ~before_this:n ~node_to_spill:use)
+                then
+                  insert_before g program ~before_this:n ~node_to_spill:use
                 else
                   program))
 
@@ -911,7 +878,7 @@ let allocate g program =
     in
     let program, lrg_to_reg = loop program 1 in
     (* Hashtbl.iteri lrg_to_reg ~f:(fun ~key ~data -> *)
-        (* Printf.printf "%s : %s\n\n" (Registers.show_loc data) (Range.show key)); *)
+    (* Printf.printf "%s : %s\n\n" (Registers.show_loc data) (Range.show key)); *)
     let reg_assign = Hashtbl.create (module Machine_node) in
     Hashtbl.iteri lrg_to_reg ~f:(fun ~key:range ~data:reg ->
         Set.iter range.nodes ~f:(fun n -> Hashtbl.set reg_assign ~key:n ~data:reg));
