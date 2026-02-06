@@ -3,15 +3,16 @@ open Dawn
 let test str =
     match Parser.parse_str str with
     | Ok ast ->
-        let son = Son.of_ast ast in
+        let linker = Linker.create () in
+        let son = Son.of_ast ast linker in
         let schedules = Scheduler.schedule son in
         Core.List.iter schedules ~f:(fun (machine_graph, program) ->
             let program = List.concat program in
             let program, reg_assoc = Reg_allocator.allocate machine_graph program in
-            let code = Asm_emit.emit_program machine_graph reg_assoc program in
+            let code = Asm_emit.emit_program machine_graph reg_assoc program linker in
             Ir_printer.to_string_machine_linear_regs machine_graph program reg_assoc
             |> Printf.printf "%s\n";
-            Printf.printf "\n%s\n" code)
+            Printf.printf "\n%s\n\n" code)
     | Error msg -> Printf.eprintf "%s\n" msg
 
 let%expect_test "" =
@@ -339,4 +340,98 @@ let%expect_test "binops" =
       L_118:
       L_127:
       L_117:
+      |}]
+
+let%expect_test "function call" =
+    let test_str =
+        {|
+    fun f(a: int, b: int, c: int, d: int, e: int, f: int) -> int {
+        69 - a + b + c + d + e + f
+    }
+
+    let i: int = f(1,2,3,4,5,6) + 69;
+    if(i==0) {}
+    |}
+    in
+    test test_str;
+    [%expect
+        {|
+      === Machine Graph (Linearized with registers) ===
+
+      Block #129 ((Ideal Start)): -> []
+        #RDX   (%139): (Int 3)                                             (Ideal IR: #139)
+        #R8    (%141): (Int 5)                                             (Ideal IR: #141)
+        #R9    (%142): (Int 6)                                             (Ideal IR: #142)
+        #RSI   (%138): (Int 2)                                             (Ideal IR: #138)
+        #RCX   (%140): (Int 4)                                             (Ideal IR: #140)
+        #RDI   (%137): (Int 1)                                             (Ideal IR: #137)
+               (%136): (FunctionCall 1)     [ #RDI (%137), #RSI (%138), #RDX (%139), #RCX (%140), #R8 (%141), #R9 (%142) ] (Ideal IR: #143)
+
+      Block #134 ((Ideal (CProj 0))): -> [T: #132,F: #164]
+        #RAX   (%162): (AddImm 69)          [ #RAX (%163) ]                (Ideal IR: #148)
+        #Flags (%161): (CmpImm 0)           [ #RAX (%162) ]                (Ideal IR: #150)
+               (%133): (Jmp Eq)             [ #Flags (%161) ]              (Ideal IR: #151)
+
+      Block #132 ((Ideal (CProj 0))): -> [#131]
+
+      Block #164 ((Ideal (CProj 1))): -> [#131]
+
+      Block #131 ((Ideal Region)): -> [#130]
+
+      Block #130 ((Ideal Stop)): -> []
+
+
+
+      mov rdx, 3
+      mov r8, 5
+      mov r9, 6
+      mov rsi, 2
+      mov rcx, 4
+      mov rdi, 1
+      call f
+      add rax, 69
+      cmp rax, 0
+      jne L_131
+
+      L_132:
+      L_164:
+      L_131:
+
+      === Machine Graph (Linearized with registers) ===
+
+      Block #129 ((Ideal Start)): -> [#145]
+
+      Block #145 ((FunctionProlog 1)): -> [#144]
+        #RDI   (%154): (Param 0)                                           (Ideal IR: #124)
+        #RSI   (%155): (Param 1)                                           (Ideal IR: #125)
+        #RAX   (%166): (Int 69)                                            (Ideal IR: #130)
+        #RAX   (%152): Sub                  [ #RAX (%166), #RDI (%154) ]   (Ideal IR: #131)
+        #RAX   (%151): Add                  [ #RAX (%152), #RSI (%155) ]   (Ideal IR: #132)
+        #RDX   (%156): (Param 2)                                           (Ideal IR: #126)
+        #RCX   (%157): (Param 3)                                           (Ideal IR: #127)
+        #R8    (%158): (Param 4)                                           (Ideal IR: #128)
+        #R9    (%159): (Param 5)                                           (Ideal IR: #129)
+        #RAX   (%150): Add                  [ #RAX (%151), #RDX (%156) ]   (Ideal IR: #133)
+        #RAX   (%149): Add                  [ #RAX (%150), #RCX (%157) ]   (Ideal IR: #134)
+        #RAX   (%148): Add                  [ #RAX (%149), #R8 (%158) ]    (Ideal IR: #135)
+        #RAX   (%147): Add                  [ #RAX (%148), #R9 (%159) ]    (Ideal IR: #136)
+
+      Block #144 ((Ideal Region)): -> []
+        #RAX   (%146): (Ideal Phi)          [ #RAX (%147) ]                (Ideal IR: #119)
+        #RAX   (%143): Return               [ #RAX (%146) ]                (Ideal IR: #121)
+
+      Block #130 ((Ideal Stop)): -> []
+
+
+
+      f:
+      mov rax, 69
+      sub rax, rdi
+      add rax, rsi
+      add rax, rdx
+      add rax, rcx
+      add rax, r8
+      add rax, r9
+      L_144:
+      ret
       |}]

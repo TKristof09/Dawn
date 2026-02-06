@@ -47,7 +47,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
                    }))
         in
         let fun_node, ret_node = Fun_node.create g fun_ptr_type in
-        let fun_idx = Linker.define linker fun_node in
+        let fun_idx = Linker.define linker ~name fun_node in
         (match fun_node.kind with
         | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx })
         | _ -> assert false);
@@ -146,7 +146,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
     (* | Ast.Return ->  *)
     | _ -> assert false
 
-let of_ast ast =
+let of_ast ast linker =
     let start = Start_node.create () in
     let stop = Stop_node.create () in
     let g =
@@ -158,7 +158,6 @@ let of_ast ast =
           end)
           start stop
     in
-    let linker = Linker.create () in
     let scope = Scope_node.create () in
     Scope_node.set_ctrl g scope (Graph.get_start g);
     Core.List.iter ast ~f:(fun s -> do_statement g s scope None linker);

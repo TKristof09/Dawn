@@ -50,9 +50,9 @@ let asm_of_op (kind : Machine_node.machine_node_kind) =
         | GEq -> "setge")
     | DProj _ -> failwith "TODO"
     | Ideal _ -> ""
-    | FunctionProlog i -> Printf.sprintf "TODO: label function %d" i
+    | FunctionProlog _ -> ""
     | Return -> "ret"
-    | FunctionCall i -> Printf.sprintf "TODO: label call %d" i
+    | FunctionCall _ -> "call"
     | FunctionCallEnd -> ""
     | Param _ -> ""
 
@@ -88,7 +88,7 @@ let get_first_blockhead g n =
     done;
     !n'
 
-let asm_of_node g reg_assoc (n : Machine_node.t) =
+let asm_of_node g reg_assoc linker (n : Machine_node.t) =
     match n.kind with
     | Int i ->
         let reg = Hashtbl.find_exn reg_assoc n in
@@ -184,12 +184,17 @@ let asm_of_node g reg_assoc (n : Machine_node.t) =
     | Set _
     | DProj _ ->
         failwith "TODO"
-    | FunctionProlog _ -> asm_of_op n.kind
+    | FunctionProlog i ->
+        let target = Linker.get_name linker i in
+        Printf.sprintf "%s:" target
     | Return ->
         (* TODO: restore rsp and regs *)
-        asm_of_op n.kind
+        "\t" ^ asm_of_op n.kind
     | Param _ -> ""
-    | FunctionCall _ -> asm_of_op n.kind
+    | FunctionCall i ->
+        let op = asm_of_op n.kind in
+        let target = Linker.get_name linker i in
+        Printf.sprintf "\t%s %s" op target
     | FunctionCallEnd -> ""
 
 let add_jumps g (program : Machine_node.t list) =
@@ -282,9 +287,9 @@ let add_jumps g (program : Machine_node.t list) =
 (*             | _ -> n) *)
 (*         | _ -> n) *)
 
-let emit_program g reg_assoc program =
+let emit_program g reg_assoc program linker =
     add_jumps g program
     (* |> invert_loop_conditions g *)
-    |> List.map ~f:(fun n -> asm_of_node g reg_assoc n)
+    |> List.map ~f:(fun n -> asm_of_node g reg_assoc linker n)
     |> List.filter ~f:(Fun.negate String.is_empty)
     |> String.concat ~sep:"\n"

@@ -102,7 +102,8 @@ let test_str =
 let () =
     match Parser.parse_str test_str with
     | Ok ast ->
-        let son = Son.of_ast ast in
+        let linker = Linker.create () in
+        let son = Son.of_ast ast linker in
         let son = Graph.readonly son in
         Ir_printer.to_dot son |> Printf.printf "\n\n%s\n";
         let schedules = Scheduler.schedule son in
@@ -115,6 +116,6 @@ let () =
             let program, reg_assignment = Reg_allocator.allocate g flat_program in
             Ir_printer.to_string_machine_linear_regs g program reg_assignment
             |> Printf.printf "\n\n%s\n";
-            let code = Asm_emit.emit_program g reg_assignment program in
+            let code = Asm_emit.emit_program g reg_assignment program linker in
             Printf.printf "%s\n" code)
     | Error msg -> Printf.eprintf "%s\n" msg
