@@ -1,6 +1,10 @@
 open Dawn
 
 let test str =
+    (* HACK: the output seems to be dependant on node ids. So this just resets it to get more stable output until i fix *)
+    Machine_node.id_counter := 0;
+    Node.reset_id ();
+
     match Parser.parse_str str with
     | Ok ast ->
         let linker = Linker.create () in
@@ -140,27 +144,27 @@ let%expect_test "fibonacci" =
         {|
       === Machine Graph (Linearized with registers) ===
 
-      Block #45 ((Ideal Start)): -> [#49]
-        #RAX   (%56 ): (Int 1)                                             (Ideal IR: #43)
-        #RAX   (%57 ): (Int 0)                                             (Ideal IR: #42)
-        #RAX   (%61 ): (Int 0)                                             (Ideal IR: #42)
-        #RBX   (%64 ): (Int 1)                                             (Ideal IR: #43)
+      Block #1 ((Ideal Start)): -> [#5]
+        #RAX   (%12 ): (Int 1)                                             (Ideal IR: #5)
+        #RAX   (%13 ): (Int 0)                                             (Ideal IR: #4)
+        #RAX   (%17 ): (Int 0)                                             (Ideal IR: #4)
+        #RBX   (%20 ): (Int 1)                                             (Ideal IR: #5)
 
-      Block #49 ((Ideal Loop)): -> [T: #50,F: #47]
-        #RBX   (%54 ): (Ideal Phi)          [ #RBX (%65), #RBX (%64) ]     (Ideal IR: #53)
-        #RAX   (%53 ): (Ideal Phi)          [ #RAX (%62), #RAX (%61) ]     (Ideal IR: #47)
-        #Flags (%52 ): (CmpImm 0)           [ #RAX (%53) ]                 (Ideal IR: #48)
-               (%48 ): (Jmp GEq)            [ #Flags (%52) ]               (Ideal IR: #50)
+      Block #5 ((Ideal Loop)): -> [T: #6,F: #3]
+        #RBX   (%10 ): (Ideal Phi)          [ #RBX (%21), #RBX (%20) ]     (Ideal IR: #15)
+        #RAX   (%9  ): (Ideal Phi)          [ #RAX (%18), #RAX (%17) ]     (Ideal IR: #9)
+        #Flags (%8  ): (CmpImm 0)           [ #RAX (%9) ]                  (Ideal IR: #10)
+               (%4  ): (Jmp GEq)            [ #Flags (%8) ]                (Ideal IR: #12)
 
-      Block #50 ((Ideal (CProj 0))): -> []
-        #RCX   (%66 ): Mov                  [ #RAX (%53) ]                 (Ideal IR: #47)
-        #RCX   (%55 ): Add                  [ #RCX (%66), #RBX (%54) ]     (Ideal IR: #54)
-        #RAX   (%62 ): Mov                  [ #RBX (%54) ]                 (Ideal IR: #53)
-        #RBX   (%65 ): Mov                  [ #RCX (%55) ]                 (Ideal IR: #54)
+      Block #6 ((Ideal (CProj 0))): -> []
+        #RCX   (%22 ): Mov                  [ #RAX (%9) ]                  (Ideal IR: #9)
+        #RCX   (%11 ): Add                  [ #RCX (%22), #RBX (%10) ]     (Ideal IR: #16)
+        #RAX   (%18 ): Mov                  [ #RBX (%10) ]                 (Ideal IR: #15)
+        #RBX   (%21 ): Mov                  [ #RCX (%11) ]                 (Ideal IR: #16)
 
-      Block #47 ((Ideal (CProj 1))): -> [#46]
+      Block #3 ((Ideal (CProj 1))): -> [#2]
 
-      Block #46 ((Ideal Stop)): -> []
+      Block #2 ((Ideal Stop)): -> []
 
 
 
@@ -168,18 +172,18 @@ let%expect_test "fibonacci" =
       mov rax, 0
       mov rax, 0
       mov rbx, 1
-      Loop_49:
+      Loop_5:
       cmp rax, 0
       jl Exit
 
-      L_50:
+      L_6:
       mov rcx, rax
       add rcx, rbx
       mov rax, rbx
       mov rbx, rcx
-      jmp Loop_49
+      jmp Loop_5
 
-      L_47:
+      L_3:
       Exit:
       |}]
 
@@ -205,96 +209,102 @@ let%expect_test "nested loop" =
         {|
       === Machine Graph (Linearized with registers) ===
 
-      Block #68 ((Ideal Start)): -> [#75]
-        #RCX   (%92 ): (Int 5)                                             (Ideal IR: #60)
-        #RCX   (%91 ): (SubImm 1)           [ #RCX (%92) ]                 (Ideal IR: #66)
-        #RAX   (%86 ): (Int 0)                                             (Ideal IR: #58)
-        #RAX   (%103): (Int 0)                                             (Ideal IR: #58)
-        #RBX   (%104): (Int 0)                                             (Ideal IR: #58)
-        #RBX   (%112): (Int 0)                                             (Ideal IR: #58)
+      Block #1 ((Ideal Start)): -> [#8]
+        #RSI   (%25 ): (Int 5)                                             (Ideal IR: #6)
+        #RSI   (%24 ): (SubImm 1)           [ #RSI (%25) ]                 (Ideal IR: #12)
+        #RAX   (%19 ): (Int 0)                                             (Ideal IR: #4)
+        #RCX   (%36 ): (Int 0)                                             (Ideal IR: #4)
+        #RAX   (%37 ): (Int 0)                                             (Ideal IR: #4)
+        #RBX   (%45 ): (Int 0)                                             (Ideal IR: #4)
 
-      Block #75 ((Ideal Loop)): -> [T: #80,F: #73]
-        #RAX   (%85 ): (Ideal Phi)          [ #RAX (%100), #RAX (%103) ]   (Ideal IR: #63)
-        #RBX   (%95 ): (Ideal Phi)          [ #RBX (%96), #RBX (%112) ]    (Ideal IR: #86)
-        #Flags (%90 ): Cmp                  [ #RAX (%85), #RCX (%91) ]     (Ideal IR: #67)
-               (%74 ): (Jmp Eq)             [ #Flags (%90) ]               (Ideal IR: #69)
+      Block #8 ((Ideal Loop)): -> [T: #13,F: #6]
+        #RBX   (%28 ): (Ideal Phi)          [ #RBX (%29), #RBX (%45) ]     (Ideal IR: #32)
+        #RCX   (%18 ): (Ideal Phi)          [ #RCX (%33), #RCX (%36) ]     (Ideal IR: #9)
+        #RAX   (%44 ): Mov                  [ #RBX (%28) ]                 (Ideal IR: #32)
+        #RBX   (%35 ): Mov                  [ #RCX (%18) ]                 (Ideal IR: #9)
+        #Flags (%23 ): Cmp                  [ #RBX (%35), #RSI (%24) ]     (Ideal IR: #13)
+               (%7  ): (Jmp Eq)             [ #Flags (%23) ]               (Ideal IR: #15)
 
-      Block #80 ((Ideal (CProj 0))): -> [#78]
-        #RSI   (%101): Mov                  [ #RAX (%85) ]                 (Ideal IR: #63)
-        #RSI   (%84 ): (AddImm 1)           [ #RSI (%101) ]                (Ideal IR: #73)
-        #RAX   (%105): (Int 0)                                             (Ideal IR: #58)
-        #RDX   (%109): (Int 0)                                             (Ideal IR: #58)
+      Block #13 ((Ideal (CProj 0))): -> [#11]
+        #RDX   (%34 ): Mov                  [ #RBX (%35) ]                 (Ideal IR: #9)
+        #RDX   (%17 ): (AddImm 1)           [ #RDX (%34) ]                 (Ideal IR: #19)
+        #RBX   (%38 ): (Int 0)                                             (Ideal IR: #4)
+        #RCX   (%42 ): (Int 0)                                             (Ideal IR: #4)
+        #RBX   (%43 ): Mov                  [ #RAX (%44) ]                 (Ideal IR: #32)
 
-      Block #78 ((Ideal Loop)): -> [T: #79,F: #76]
-        #RDX   (%87 ): (Ideal Phi)          [ #RDX (%88), #RDX (%109) ]    (Ideal IR: #78)
-        #RBX   (%96 ): (Ideal Phi)          [ #RBX (%107), #RBX (%95) ]    (Ideal IR: #87)
-        #RAX   (%108): Mov                  [ #RDX (%87) ]                 (Ideal IR: #78)
-        #RDX   (%99 ): Mov                  [ #RSI (%84) ]                 (Ideal IR: #73)
-        #RDX   (%83 ): Add                  [ #RDX (%99), #RAX (%108) ]    (Ideal IR: #79)
-        #Flags (%82 ): (CmpImm 11)          [ #RDX (%83) ]                 (Ideal IR: #81)
-               (%77 ): (Jmp Eq)             [ #Flags (%82) ]               (Ideal IR: #83)
+      Block #11 ((Ideal Loop)): -> [T: #12,F: #9]
+        #RCX   (%20 ): (Ideal Phi)          [ #RCX (%21), #RCX (%42) ]     (Ideal IR: #24)
+        #RBX   (%29 ): (Ideal Phi)          [ #RBX (%40), #RBX (%43) ]     (Ideal IR: #33)
+        #RAX   (%41 ): Mov                  [ #RCX (%20) ]                 (Ideal IR: #24)
+        #RCX   (%32 ): Mov                  [ #RDX (%17) ]                 (Ideal IR: #19)
+        #RCX   (%16 ): Add                  [ #RCX (%32), #RAX (%41) ]     (Ideal IR: #25)
+        #Flags (%15 ): (CmpImm 11)          [ #RCX (%16) ]                 (Ideal IR: #27)
+               (%10 ): (Jmp Eq)             [ #Flags (%15) ]               (Ideal IR: #29)
 
-      Block #79 ((Ideal (CProj 0))): -> []
-        #RDX   (%106): Mov                  [ #RAX (%108) ]                (Ideal IR: #78)
-        #RDX   (%88 ): (AddImm 2)           [ #RDX (%106) ]                (Ideal IR: #89)
-        #RBX   (%107): Mov                  [ #RAX (%108) ]                (Ideal IR: #78)
+      Block #12 ((Ideal (CProj 0))): -> []
+        #RCX   (%39 ): Mov                  [ #RAX (%41) ]                 (Ideal IR: #24)
+        #RCX   (%21 ): (AddImm 2)           [ #RCX (%39) ]                 (Ideal IR: #35)
+        #RBX   (%40 ): Mov                  [ #RAX (%41) ]                 (Ideal IR: #24)
 
-      Block #76 ((Ideal (CProj 1))): -> []
-        #RAX   (%100): Mov                  [ #RSI (%84) ]                 (Ideal IR: #73)
+      Block #9 ((Ideal (CProj 1))): -> []
+        #RCX   (%33 ): Mov                  [ #RDX (%17) ]                 (Ideal IR: #19)
 
-      Block #73 ((Ideal (CProj 1))): -> [T: #71,F: #97]
-        #Flags (%94 ): (CmpImm 0)           [ #RBX (%95) ]                 (Ideal IR: #91)
-               (%72 ): (Jmp Eq)             [ #Flags (%94) ]               (Ideal IR: #92)
+      Block #6 ((Ideal (CProj 1))): -> [T: #4,F: #30]
+        #Flags (%27 ): (CmpImm 0)           [ #RAX (%44) ]                 (Ideal IR: #37)
+               (%5  ): (Jmp Eq)             [ #Flags (%27) ]               (Ideal IR: #38)
 
-      Block #71 ((Ideal (CProj 0))): -> [#70]
+      Block #4 ((Ideal (CProj 0))): -> [#3]
 
-      Block #97 ((Ideal (CProj 1))): -> [#70]
+      Block #30 ((Ideal (CProj 1))): -> [#3]
 
-      Block #70 ((Ideal Region)): -> [#69]
+      Block #3 ((Ideal Region)): -> [#2]
 
-      Block #69 ((Ideal Stop)): -> []
+      Block #2 ((Ideal Stop)): -> []
 
 
 
-      mov rcx, 5
-      sub rcx, 1
+      mov rsi, 5
+      sub rsi, 1
       mov rax, 0
+      mov rcx, 0
       mov rax, 0
       mov rbx, 0
+      Loop_8:
+      mov rax, rbx
+      mov rbx, rcx
+      cmp rbx, rsi
+      jne L_6
+
+      L_13:
+      mov rdx, rbx
+      add rdx, 1
       mov rbx, 0
-      Loop_75:
-      cmp rax, rcx
-      jne L_73
-
-      L_80:
-      mov rsi, rax
-      add rsi, 1
-      mov rax, 0
-      mov rdx, 0
-      Loop_78:
-      mov rax, rdx
-      mov rdx, rsi
-      add rdx, rax
-      cmp rdx, 11
-      jne L_76
-
-      L_79:
-      mov rdx, rax
-      add rdx, 2
+      mov rcx, 0
       mov rbx, rax
-      jmp Loop_78
+      Loop_11:
+      mov rax, rcx
+      mov rcx, rdx
+      add rcx, rax
+      cmp rcx, 11
+      jne L_9
 
-      L_76:
-      mov rax, rsi
-      jmp Loop_75
+      L_12:
+      mov rcx, rax
+      add rcx, 2
+      mov rbx, rax
+      jmp Loop_11
 
-      L_73:
-      cmp rbx, 0
-      jne L_70
+      L_9:
+      mov rcx, rdx
+      jmp Loop_8
 
-      L_71:
-      L_97:
-      L_70:
+      L_6:
+      cmp rax, 0
+      jne L_3
+
+      L_4:
+      L_30:
+      L_3:
       |}]
 
 let%expect_test "binops" =
@@ -310,22 +320,22 @@ let%expect_test "binops" =
         {|
       === Machine Graph (Linearized with registers) ===
 
-      Block #115 ((Ideal Start)): -> [T: #118,F: #127]
-        #RAX   (%126): (Int 1)                                             (Ideal IR: #101)
-        #RAX   (%125): (LshImm 2)           [ #RAX (%126) ]                (Ideal IR: #103)
-        #RAX   (%124): (OrImm 0)            [ #RAX (%125) ]                (Ideal IR: #104)
-        #RAX   (%123): (RshImm 1)           [ #RAX (%124) ]                (Ideal IR: #106)
-        #RAX   (%122): (AndImm 1)           [ #RAX (%123) ]                (Ideal IR: #108)
-        #Flags (%121): (CmpImm 1)           [ #RAX (%122) ]                (Ideal IR: #110)
-               (%119): (Jmp Eq)             [ #Flags (%121) ]              (Ideal IR: #111)
+      Block #1 ((Ideal Start)): -> [T: #4,F: #13]
+        #RAX   (%12 ): (Int 1)                                             (Ideal IR: #5)
+        #RAX   (%11 ): (LshImm 2)           [ #RAX (%12) ]                 (Ideal IR: #7)
+        #RAX   (%10 ): (OrImm 0)            [ #RAX (%11) ]                 (Ideal IR: #8)
+        #RAX   (%9  ): (RshImm 1)           [ #RAX (%10) ]                 (Ideal IR: #10)
+        #RAX   (%8  ): (AndImm 1)           [ #RAX (%9) ]                  (Ideal IR: #12)
+        #Flags (%7  ): (CmpImm 1)           [ #RAX (%8) ]                  (Ideal IR: #14)
+               (%5  ): (Jmp Eq)             [ #Flags (%7) ]                (Ideal IR: #15)
 
-      Block #118 ((Ideal (CProj 0))): -> [#117]
+      Block #4 ((Ideal (CProj 0))): -> [#3]
 
-      Block #127 ((Ideal (CProj 1))): -> [#117]
+      Block #13 ((Ideal (CProj 1))): -> [#3]
 
-      Block #117 ((Ideal Region)): -> [#116]
+      Block #3 ((Ideal Region)): -> [#2]
 
-      Block #116 ((Ideal Stop)): -> []
+      Block #2 ((Ideal Stop)): -> []
 
 
 
@@ -335,11 +345,11 @@ let%expect_test "binops" =
       sar rax, 1
       and rax, 1
       cmp rax, 1
-      jne L_117
+      jne L_3
 
-      L_118:
-      L_127:
-      L_117:
+      L_4:
+      L_13:
+      L_3:
       |}]
 
 let%expect_test "function call" =
@@ -358,69 +368,69 @@ let%expect_test "function call" =
         {|
       === Machine Graph (Linearized with registers) ===
 
-      Block #129 ((Ideal Start)): -> []
-        #RDX   (%139): (Int 3)                                             (Ideal IR: #139)
-        #R8    (%141): (Int 5)                                             (Ideal IR: #141)
-        #R9    (%142): (Int 6)                                             (Ideal IR: #142)
-        #RSI   (%138): (Int 2)                                             (Ideal IR: #138)
-        #RCX   (%140): (Int 4)                                             (Ideal IR: #140)
-        #RDI   (%137): (Int 1)                                             (Ideal IR: #137)
-               (%136): (FunctionCall 1)     [ #RDI (%137), #RSI (%138), #RDX (%139), #RCX (%140), #R8 (%141), #R9 (%142) ] (Ideal IR: #143)
+      Block #1 ((Ideal Start)): -> []
+        #RCX   (%12 ): (Int 4)                                             (Ideal IR: #25)
+        #R8    (%13 ): (Int 5)                                             (Ideal IR: #26)
+        #R9    (%14 ): (Int 6)                                             (Ideal IR: #27)
+        #RDX   (%11 ): (Int 3)                                             (Ideal IR: #24)
+        #RSI   (%10 ): (Int 2)                                             (Ideal IR: #23)
+        #RDI   (%9  ): (Int 1)                                             (Ideal IR: #22)
+               (%8  ): (FunctionCall 1)     [ #RDI (%9), #RSI (%10), #RDX (%11), #RCX (%12), #R8 (%13), #R9 (%14) ] (Ideal IR: #28)
 
-      Block #134 ((Ideal (CProj 0))): -> [T: #132,F: #164]
-        #RAX   (%162): (AddImm 69)          [ #RAX (%163) ]                (Ideal IR: #148)
-        #Flags (%161): (CmpImm 0)           [ #RAX (%162) ]                (Ideal IR: #150)
-               (%133): (Jmp Eq)             [ #Flags (%161) ]              (Ideal IR: #151)
+      Block #6 ((Ideal (CProj 0))): -> [T: #4,F: #36]
+        #RAX   (%34 ): (AddImm 69)          [ #RAX (%35) ]                 (Ideal IR: #33)
+        #Flags (%33 ): (CmpImm 0)           [ #RAX (%34) ]                 (Ideal IR: #35)
+               (%5  ): (Jmp Eq)             [ #Flags (%33) ]               (Ideal IR: #36)
 
-      Block #132 ((Ideal (CProj 0))): -> [#131]
+      Block #4 ((Ideal (CProj 0))): -> [#3]
 
-      Block #164 ((Ideal (CProj 1))): -> [#131]
+      Block #36 ((Ideal (CProj 1))): -> [#3]
 
-      Block #131 ((Ideal Region)): -> [#130]
+      Block #3 ((Ideal Region)): -> [#2]
 
-      Block #130 ((Ideal Stop)): -> []
+      Block #2 ((Ideal Stop)): -> []
 
 
 
-      mov rdx, 3
+      mov rcx, 4
       mov r8, 5
       mov r9, 6
+      mov rdx, 3
       mov rsi, 2
-      mov rcx, 4
       mov rdi, 1
       call f
       add rax, 69
       cmp rax, 0
-      jne L_131
+      jne L_3
 
-      L_132:
-      L_164:
-      L_131:
+      L_4:
+      L_36:
+      L_3:
 
       === Machine Graph (Linearized with registers) ===
 
-      Block #129 ((Ideal Start)): -> [#145]
+      Block #1 ((Ideal Start)): -> [#17]
 
-      Block #145 ((FunctionProlog 1)): -> [#144]
-        #RDI   (%154): (Param 0)                                           (Ideal IR: #124)
-        #RSI   (%155): (Param 1)                                           (Ideal IR: #125)
-        #RAX   (%166): (Int 69)                                            (Ideal IR: #130)
-        #RAX   (%152): Sub                  [ #RAX (%166), #RDI (%154) ]   (Ideal IR: #131)
-        #RAX   (%151): Add                  [ #RAX (%152), #RSI (%155) ]   (Ideal IR: #132)
-        #RDX   (%156): (Param 2)                                           (Ideal IR: #126)
-        #RCX   (%157): (Param 3)                                           (Ideal IR: #127)
-        #R8    (%158): (Param 4)                                           (Ideal IR: #128)
-        #R9    (%159): (Param 5)                                           (Ideal IR: #129)
-        #RAX   (%150): Add                  [ #RAX (%151), #RDX (%156) ]   (Ideal IR: #133)
-        #RAX   (%149): Add                  [ #RAX (%150), #RCX (%157) ]   (Ideal IR: #134)
-        #RAX   (%148): Add                  [ #RAX (%149), #R8 (%158) ]    (Ideal IR: #135)
-        #RAX   (%147): Add                  [ #RAX (%148), #R9 (%159) ]    (Ideal IR: #136)
+      Block #17 ((FunctionProlog 1)): -> [#16]
+        #RCX   (%29 ): (Param 3)                                           (Ideal IR: #12)
+        #RSI   (%27 ): (Param 1)                                           (Ideal IR: #10)
+        #RDI   (%26 ): (Param 0)                                           (Ideal IR: #9)
+        #R9    (%31 ): (Param 5)                                           (Ideal IR: #14)
+        #R8    (%30 ): (Param 4)                                           (Ideal IR: #13)
+        #RDX   (%28 ): (Param 2)                                           (Ideal IR: #11)
+        #RAX   (%38 ): (Int 69)                                            (Ideal IR: #15)
+        #RAX   (%24 ): Sub                  [ #RAX (%38), #RDI (%26) ]     (Ideal IR: #16)
+        #RAX   (%23 ): Add                  [ #RAX (%24), #RSI (%27) ]     (Ideal IR: #17)
+        #RAX   (%22 ): Add                  [ #RAX (%23), #RDX (%28) ]     (Ideal IR: #18)
+        #RAX   (%21 ): Add                  [ #RAX (%22), #RCX (%29) ]     (Ideal IR: #19)
+        #RAX   (%20 ): Add                  [ #RAX (%21), #R8 (%30) ]      (Ideal IR: #20)
+        #RAX   (%19 ): Add                  [ #RAX (%20), #R9 (%31) ]      (Ideal IR: #21)
 
-      Block #144 ((Ideal Region)): -> []
-        #RAX   (%146): (Ideal Phi)          [ #RAX (%147) ]                (Ideal IR: #119)
-        #RAX   (%143): Return               [ #RAX (%146) ]                (Ideal IR: #121)
+      Block #16 ((Ideal Region)): -> []
+        #RAX   (%18 ): (Ideal Phi)          [ #RAX (%19) ]                 (Ideal IR: #4)
+        #RAX   (%15 ): Return               [ #RAX (%18) ]                 (Ideal IR: #6)
 
-      Block #130 ((Ideal Stop)): -> []
+      Block #2 ((Ideal Stop)): -> []
 
 
 
@@ -432,6 +442,6 @@ let%expect_test "function call" =
       add rax, rcx
       add rax, r8
       add rax, r9
-      L_144:
+      L_16:
       ret
       |}]

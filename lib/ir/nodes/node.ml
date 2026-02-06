@@ -49,6 +49,7 @@ and t = {
 [@@deriving sexp_of]
 
 let id_counter = ref 0
+let reset_id () = id_counter := 0
 
 let next_id () =
     incr id_counter;

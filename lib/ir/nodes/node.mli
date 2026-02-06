@@ -64,3 +64,4 @@ val is_ctrl : t -> bool
 val is_data : t -> bool
 val is_scope : t -> bool
 val is_blockhead : t -> bool
+val reset_id : unit -> unit
