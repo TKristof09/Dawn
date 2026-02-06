@@ -238,7 +238,11 @@ let to_string_linear g =
 
 let show_machine_compact ?(reg_assoc : (Machine_node.t, Registers.loc) Base.Hashtbl.t option) g
     (node : Machine_node.t) =
-    let kind_str = Machine_node.show_machine_node_kind node.kind in
+    let kind_str =
+        match node.kind with
+        | DProj _ -> "  |-" ^ Machine_node.show_machine_node_kind node.kind
+        | _ -> Machine_node.show_machine_node_kind node.kind
+    in
     let output_loc_str =
         match reg_assoc with
         | Some tbl -> (
@@ -264,7 +268,7 @@ let show_machine_compact ?(reg_assoc : (Machine_node.t, Registers.loc) Base.Hash
         |> String.concat ~sep:", "
     in
     let deps_str_formatted = if String.is_empty deps_str then "" else "[ " ^ deps_str ^ " ]" in
-    Printf.sprintf "%s(%%%-3d): %-20s %-30s (Ideal IR: #%d)" output_loc_str node.id kind_str
+    Printf.sprintf "%s(%%%-3d): %-15s %-45s (Ideal IR: #%d)" output_loc_str node.id kind_str
       deps_str_formatted node.ir_node.id
 
 let to_string_machine_linear g (program : Machine_node.t list) =
@@ -297,8 +301,16 @@ let to_string_machine_linear g (program : Machine_node.t list) =
             (Printf.sprintf "\nBlock #%d (%s): -> [%s]\n" n.id
                (Machine_node.show_machine_node_kind n.kind)
                successors)
-        else
-          Buffer.add_string buf (Printf.sprintf "  %s\n" (show_machine_compact g n)));
+        else (
+          Buffer.add_string buf (Printf.sprintf "  %s\n" (show_machine_compact g n));
+          if Poly.equal n.kind New then
+            Graph.get_dependants g n
+            |> List.filter ~f:(fun n' ->
+                match n'.kind with
+                | DProj _ -> true
+                | _ -> false)
+            |> List.iter ~f:(fun n' ->
+                Buffer.add_string buf (Printf.sprintf "  %s\n" (show_machine_compact g n')))));
     Buffer.add_string buf "\n";
     Buffer.contents buf
 
@@ -333,7 +345,16 @@ let to_string_machine_linear_regs g (program : Machine_node.t list)
             (Printf.sprintf "\nBlock #%d (%s): -> [%s]\n" n.id
                (Machine_node.show_machine_node_kind n.kind)
                successors)
-        else
-          Buffer.add_string buf (Printf.sprintf "  %s\n" (show_machine_compact ~reg_assoc g n)));
+        else (
+          Buffer.add_string buf (Printf.sprintf "  %s\n" (show_machine_compact ~reg_assoc g n));
+          if Poly.equal n.kind New then
+            Graph.get_dependants g n
+            |> List.filter ~f:(fun n' ->
+                match n'.kind with
+                | DProj _ -> true
+                | _ -> false)
+            |> List.iter ~f:(fun n' ->
+                Buffer.add_string buf
+                  (Printf.sprintf "  %s\n" (show_machine_compact ~reg_assoc g n')))));
     Buffer.add_string buf "\n";
     Buffer.contents buf
