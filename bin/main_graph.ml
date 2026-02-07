@@ -118,7 +118,7 @@ open Dawn
 (*     |} *)
 let test_str =
     {|
-    fun print_int(i: int) -> int = @extern("print_int_ext");
+    fun print_int(i: int) -> int = @extern("print_int");
     if(print_int(2) == 1) {}
     |}
 

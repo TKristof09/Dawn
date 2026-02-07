@@ -338,7 +338,64 @@ let emit_function g reg_assoc program linker =
     |> List.filter ~f:(Fun.negate String.is_empty)
     |> String.concat ~sep:"\n"
 
+let stdlib_functions =
+    let print_int =
+        {|
+print_int:
+    mov     rcx, rdi
+    sub     rsp, 40
+    mov     esi, 20
+    mov     r8d, 10
+    neg     rcx
+    cmovs   rcx, rdi
+.L2:
+    mov     rax, rcx
+    xor     edx, edx
+    div     r8
+    add     edx, 48
+    mov     [rsp+11+rsi], dl
+    mov     rdx, rcx
+    mov     rcx, rax
+    mov     rax, rsi
+    dec     rsi
+    cmp     rdx, 9
+    ja      .L2
+    test    rdi, rdi
+    jns     .L4
+    dec     eax
+    movsxd  rdx, eax
+    mov     BYTE [rsp+11+rdx], 45
+.L4:
+    cdqe
+    mov     edx, 21
+    mov     edi, 1
+    lea     rsi, [rsp+11+rax]
+    sub     rdx, rax
+    mov     rax, 1
+    syscall
+    add     rsp, 40
+    ret|}
+    in
+    let print =
+        {|
+print:
+    mov     rsi, rdi
+    add     rsi, 8
+    mov     rdx, [rdi]
+    mov     rax, 1
+    mov     rdi, 1
+    syscall
+    ret|}
+    in
+    print ^ print_int
+
 let emit_program functions linker =
-    List.map functions ~f:(fun (g, reg_assignment, prog) ->
-        emit_function g reg_assignment prog linker)
-    |> String.concat ~sep:"\n\n"
+    let header = "format ELF64 executable 3\nentry start\nsegment readable executable\n" in
+    let code =
+        List.map functions ~f:(fun (g, reg_assignment, prog) ->
+            emit_function g reg_assignment prog linker)
+        |> String.concat ~sep:"\n\n"
+    in
+
+    let asm_content = header ^ stdlib_functions ^ "\n\n" ^ "start:\n\tmov rbp, rsp\n" ^ code in
+    asm_content

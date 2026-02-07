@@ -97,6 +97,55 @@ let%expect_test "" =
       Block #2 ((Ideal Stop)): -> []
 
 
+      format ELF64 executable 3
+      entry start
+      segment readable executable
+
+      print:
+          mov     rsi, rdi
+          add     rsi, 8
+          mov     rdx, [rdi]
+          mov     rax, 1
+          mov     rdi, 1
+          syscall
+          ret
+      print_int:
+          mov     rcx, rdi
+          sub     rsp, 40
+          mov     esi, 20
+          mov     r8d, 10
+          neg     rcx
+          cmovs   rcx, rdi
+      .L2:
+          mov     rax, rcx
+          xor     edx, edx
+          div     r8
+          add     edx, 48
+          mov     [rsp+11+rsi], dl
+          mov     rdx, rcx
+          mov     rcx, rax
+          mov     rax, rsi
+          dec     rsi
+          cmp     rdx, 9
+          ja      .L2
+          test    rdi, rdi
+          jns     .L4
+          dec     eax
+          movsxd  rdx, eax
+          mov     BYTE [rsp+11+rdx], 45
+      .L4:
+          cdqe
+          mov     edx, 21
+          mov     edi, 1
+          lea     rsi, [rsp+11+rax]
+          sub     rdx, rax
+          mov     rax, 1
+          syscall
+          add     rsp, 40
+          ret
+
+      start:
+      mov rbp, rsp
       mov rcx, 1
       add rcx, 69
       mov rax, 69
@@ -183,6 +232,55 @@ let%expect_test "fibonacci" =
       Block #2 ((Ideal Stop)): -> []
 
 
+      format ELF64 executable 3
+      entry start
+      segment readable executable
+
+      print:
+          mov     rsi, rdi
+          add     rsi, 8
+          mov     rdx, [rdi]
+          mov     rax, 1
+          mov     rdi, 1
+          syscall
+          ret
+      print_int:
+          mov     rcx, rdi
+          sub     rsp, 40
+          mov     esi, 20
+          mov     r8d, 10
+          neg     rcx
+          cmovs   rcx, rdi
+      .L2:
+          mov     rax, rcx
+          xor     edx, edx
+          div     r8
+          add     edx, 48
+          mov     [rsp+11+rsi], dl
+          mov     rdx, rcx
+          mov     rcx, rax
+          mov     rax, rsi
+          dec     rsi
+          cmp     rdx, 9
+          ja      .L2
+          test    rdi, rdi
+          jns     .L4
+          dec     eax
+          movsxd  rdx, eax
+          mov     BYTE [rsp+11+rdx], 45
+      .L4:
+          cdqe
+          mov     edx, 21
+          mov     edi, 1
+          lea     rsi, [rsp+11+rax]
+          sub     rdx, rax
+          mov     rax, 1
+          syscall
+          add     rsp, 40
+          ret
+
+      start:
+      mov rbp, rsp
       mov rax, 1
       mov rax, 0
       mov rax, 0
@@ -282,6 +380,55 @@ let%expect_test "nested loop" =
       Block #2 ((Ideal Stop)): -> []
 
 
+      format ELF64 executable 3
+      entry start
+      segment readable executable
+
+      print:
+          mov     rsi, rdi
+          add     rsi, 8
+          mov     rdx, [rdi]
+          mov     rax, 1
+          mov     rdi, 1
+          syscall
+          ret
+      print_int:
+          mov     rcx, rdi
+          sub     rsp, 40
+          mov     esi, 20
+          mov     r8d, 10
+          neg     rcx
+          cmovs   rcx, rdi
+      .L2:
+          mov     rax, rcx
+          xor     edx, edx
+          div     r8
+          add     edx, 48
+          mov     [rsp+11+rsi], dl
+          mov     rdx, rcx
+          mov     rcx, rax
+          mov     rax, rsi
+          dec     rsi
+          cmp     rdx, 9
+          ja      .L2
+          test    rdi, rdi
+          jns     .L4
+          dec     eax
+          movsxd  rdx, eax
+          mov     BYTE [rsp+11+rdx], 45
+      .L4:
+          cdqe
+          mov     edx, 21
+          mov     edi, 1
+          lea     rsi, [rsp+11+rax]
+          sub     rdx, rax
+          mov     rax, 1
+          syscall
+          add     rsp, 40
+          ret
+
+      start:
+      mov rbp, rsp
       mov rax, 0
       mov rsi, 5
       sub rsi, 1
@@ -362,6 +509,55 @@ let%expect_test "binops" =
       Block #2 ((Ideal Stop)): -> []
 
 
+      format ELF64 executable 3
+      entry start
+      segment readable executable
+
+      print:
+          mov     rsi, rdi
+          add     rsi, 8
+          mov     rdx, [rdi]
+          mov     rax, 1
+          mov     rdi, 1
+          syscall
+          ret
+      print_int:
+          mov     rcx, rdi
+          sub     rsp, 40
+          mov     esi, 20
+          mov     r8d, 10
+          neg     rcx
+          cmovs   rcx, rdi
+      .L2:
+          mov     rax, rcx
+          xor     edx, edx
+          div     r8
+          add     edx, 48
+          mov     [rsp+11+rsi], dl
+          mov     rdx, rcx
+          mov     rcx, rax
+          mov     rax, rsi
+          dec     rsi
+          cmp     rdx, 9
+          ja      .L2
+          test    rdi, rdi
+          jns     .L4
+          dec     eax
+          movsxd  rdx, eax
+          mov     BYTE [rsp+11+rdx], 45
+      .L4:
+          cdqe
+          mov     edx, 21
+          mov     edi, 1
+          lea     rsi, [rsp+11+rax]
+          sub     rdx, rax
+          mov     rax, 1
+          syscall
+          add     rsp, 40
+          ret
+
+      start:
+      mov rbp, rsp
       mov rax, 1
       sal rax, 2
       or rax, 0
@@ -449,6 +645,55 @@ let%expect_test "function call" =
       Block #2 ((Ideal Stop)): -> []
 
 
+      format ELF64 executable 3
+      entry start
+      segment readable executable
+
+      print:
+          mov     rsi, rdi
+          add     rsi, 8
+          mov     rdx, [rdi]
+          mov     rax, 1
+          mov     rdi, 1
+          syscall
+          ret
+      print_int:
+          mov     rcx, rdi
+          sub     rsp, 40
+          mov     esi, 20
+          mov     r8d, 10
+          neg     rcx
+          cmovs   rcx, rdi
+      .L2:
+          mov     rax, rcx
+          xor     edx, edx
+          div     r8
+          add     edx, 48
+          mov     [rsp+11+rsi], dl
+          mov     rdx, rcx
+          mov     rcx, rax
+          mov     rax, rsi
+          dec     rsi
+          cmp     rdx, 9
+          ja      .L2
+          test    rdi, rdi
+          jns     .L4
+          dec     eax
+          movsxd  rdx, eax
+          mov     BYTE [rsp+11+rdx], 45
+      .L4:
+          cdqe
+          mov     edx, 21
+          mov     edi, 1
+          lea     rsi, [rsp+11+rax]
+          sub     rdx, rax
+          mov     rax, 1
+          syscall
+          add     rsp, 40
+          ret
+
+      start:
+      mov rbp, rsp
       mov rdx, 3
       mov rcx, 4
       mov r9, 6
