@@ -1426,17 +1426,70 @@ prog: FUN IDENTIFIER LPAREN RPAREN ARROW IDENTIFIER WHILE
 
 Expected block for function body after return type.
 
-prog: LBRACE RBRACE SEMICOLON
+prog: FUN IDENTIFIER LPAREN RPAREN ASSIGN WHILE
+##
+## Ends in an error in state: 110.
+##
+## statement -> FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN . EXTERN LPAREN STRING RPAREN [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+##
+## The known suffix of the stack is as follows:
+## FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN
+##
+
+Expected '@extern' keyword after '=' in external function declaration.
+
+
+prog: FUN IDENTIFIER LPAREN RPAREN ASSIGN EXTERN WHILE
+##
+## Ends in an error in state: 111.
+##
+## statement -> FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN . LPAREN STRING RPAREN [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+##
+## The known suffix of the stack is as follows:
+## FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN
+##
+
+Expected '(' after '@extern' keyword.
+
+
+prog: FUN IDENTIFIER LPAREN RPAREN ASSIGN EXTERN LPAREN WHILE
+##
+## Ends in an error in state: 112.
+##
+## statement -> FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN LPAREN . STRING RPAREN [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+##
+## The known suffix of the stack is as follows:
+## FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN LPAREN
+##
+
+Expected string literal with external library/function name in '@extern()' declaration.
+
+
+prog: FUN IDENTIFIER LPAREN RPAREN ASSIGN EXTERN LPAREN STRING WHILE
+##
+## Ends in an error in state: 113.
+##
+## statement -> FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN LPAREN STRING . RPAREN [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+##
+## The known suffix of the stack is as follows:
+## FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN LPAREN STRING
+##
+
+Expected ')' to close external function declaration after string literal.
+
+
+prog: FUN IDENTIFIER LPAREN RPAREN ASSIGN EXTERN LPAREN STRING RPAREN WHILE
 ##
 ## Ends in an error in state: 114.
 ##
-## list(statement) -> statement . list(statement) [ RBRACE EOF ]
+## statement -> FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN LPAREN STRING RPAREN . SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
 ##
 ## The known suffix of the stack is as follows:
-## statement
+## FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN LPAREN STRING RPAREN
 ##
 
-Unexpected `;`.
+Expected ';' after '@extern' declaration.
+
 
 prog: FALSE WHILE
 ##
@@ -1466,6 +1519,19 @@ prog: FALSE WHILE
 ##
 
 Expected `;` or binary operator after expression.
+
+prog: LBRACE RBRACE SEMICOLON
+##
+## Ends in an error in state: 120.
+##
+## list(statement) -> statement . list(statement) [ RBRACE EOF ]
+##
+## The known suffix of the stack is as follows:
+## statement
+##
+
+Unexpected ';'.
+
 
 prog: WHILE LPAREN IDENTIFIER RPAREN LBRACE LBRACE RBRACE EOF
 ##
@@ -1744,5 +1810,8 @@ prog: LBRACE RBRACE RBRACE
 ##
 
 Expected end of file.
+
+
+
 
 

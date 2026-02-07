@@ -17,6 +17,7 @@ type data_kind =
     | GEq
     | Phi
     | Param of int
+    | External of string
 
 and ctrl_kind =
     | Start

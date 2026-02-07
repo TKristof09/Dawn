@@ -22,6 +22,7 @@ type ideal =
     | Stop
     | Region
     | Phi
+    | External of string
 [@@deriving show { with_path = false }, sexp_of]
 
 type machine_node_kind =
@@ -129,7 +130,8 @@ let is_control_node n =
     | Param _
     | New
     | Store
-    | Load ->
+    | Load
+    | Ideal (External _) ->
         false
 
 let is_blockhead n =
@@ -473,6 +475,14 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
         Graph.add_dependencies machine_g node [];
         Graph.add_dependencies machine_g node
           (Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node g machine_g)));
+        node
+    | External name ->
+        let node = { id = next_id (); kind = Ideal (External name); ir_node = n } in
+        Graph.add_dependencies machine_g node [];
+        let deps =
+            Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node g machine_g))
+        in
+        Graph.add_dependencies machine_g node deps;
         node
 
 and of_ctrl_node g machine_g (kind : Node.ctrl_kind) (n : Node.t) =

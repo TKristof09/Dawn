@@ -100,6 +100,7 @@ let rec generate_statement node ctx =
         let epilogue = of_list [ Leave; Ret ] in
         (ctx, prologue @ param_loads @ generate_expression fn_ctx body @ epilogue)
     | FnDeclaration _ -> assert false
+    | ExternalFnDeclaration _ -> assert false
     | ExprStatement expr -> (ctx, generate_expression ctx expr)
     | While (cond, body) ->
         let cond_label = get_label ctx in

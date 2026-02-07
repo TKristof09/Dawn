@@ -55,6 +55,17 @@ let check ast =
                   else
                     raise (InvalidReturnType (node.loc, ret, body_type))
             | _ -> assert false)
+        | ExternalFnDeclaration (name, t, _, _) -> (
+            (* fn definition only in global scope for now *)
+            assert (Option.is_none env.parent);
+            match t with
+            | Fn (_, _) ->
+                if Hashtbl.mem env.symbols name then
+                  raise (FunctionRedefinition (node.loc, name))
+                else (
+                  add_symbol env name t;
+                  env)
+            | _ -> assert false)
         | ExprStatement expr ->
             check_expr expr env |> ignore;
             env

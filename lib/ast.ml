@@ -27,6 +27,7 @@ and statement =
     | Declaration of name * var_type
     | Declaration_assign of name * var_type * expr node
     | FnDeclaration of name * var_type * name list * expr node
+    | ExternalFnDeclaration of name * var_type * name list * string
     | ExprStatement of expr node
     | While of expr node * expr node
 

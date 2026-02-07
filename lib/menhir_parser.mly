@@ -61,6 +61,7 @@
 %token LET
 %token FUN
 %token ARROW
+%token EXTERN
 %token EOF
 
 %right ASSIGN
@@ -100,6 +101,19 @@ let statement :=
             let typ = Fn (ret_typ, param_types) in
             FnDeclaration (id, typ, param_names, body) |> make_node $sloc 
         }
+                    | FUN; id = IDENTIFIER; params = delimited(LPAREN, separated_list(COMMA, param), RPAREN); ret_t = option(preceded(ARROW, IDENTIFIER)); ASSIGN; EXTERN; LPAREN; external_name = STRING; RPAREN; SEMICOLON;
+        { 
+            let param_types = List.map (fun (_,p) -> Type p) params in
+            let param_names = List.map (fun (id, _) -> id) params in
+            let ret_typ = 
+                match ret_t with
+                    | None -> Type "void"
+                    | Some t -> Type t
+            in
+            let typ = Fn (ret_typ, param_types) in
+            ExternalFnDeclaration (id, typ, param_names, external_name) |> make_node $sloc 
+        }
+
 
 let param := id = IDENTIFIER; COLON; typ = IDENTIFIER; { (id, typ) }
 

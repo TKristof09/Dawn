@@ -108,13 +108,18 @@ open Dawn
 (*         y = tmp; *)
 (*     } *)
 (*     |} *)
+(* let test_str = *)
+(*     {| *)
+(*     let arr: int[20]; *)
+(*     arr[0] = 1; *)
+(*     arr[1] = 1; *)
+(*     arr[2] = arr[0] + arr[1]; *)
+(*     if(arr[1] == arr[2]){} *)
+(*     |} *)
 let test_str =
     {|
-    let arr: int[20];
-    arr[0] = 1;
-    arr[1] = 1;
-    arr[2] = arr[0] + arr[1];
-    if(arr[1] == arr[2]){}
+    fun print_int(i: int) -> int = @extern("print_int_ext");
+    if(print_int(2) == 1) {}
     |}
 
 let () =
@@ -125,10 +130,19 @@ let () =
         let son = Graph.readonly son in
         (* Ir_printer.to_dot son |> Printf.printf "\n\n%s\n"; *)
         let schedules = Scheduler.schedule son in
+
         (* let program, reg_assoc = Basic_reg_allocator.allocate machine_graph program in *)
         (* Ir_printer.to_dot_machine machine_graph |> Printf.printf "\n\n%s\n"; *)
-        Core.List.iter schedules ~f:(fun (g, program) ->
-            (* Ir_printer.to_dot_machine g |> Printf.printf "\n\n%s\n"; *)
+
+        (* only do code gen on non external functions *)
+        Core.List.filter schedules ~f:(fun (g, _) ->
+            Graph.find g ~f:(fun n ->
+                match n.kind with
+                | Ideal (External _) -> true
+                | _ -> false)
+            |> Option.is_none)
+        |> Core.List.iter ~f:(fun (g, program) ->
+            Ir_printer.to_dot_machine g |> Printf.printf "\n\n%s\n";
             let flat_program = List.concat program in
             (* Ir_printer.to_string_machine_linear g flat_program |> print_endline; *)
             let program, reg_assignment = Reg_allocator.allocate g flat_program in

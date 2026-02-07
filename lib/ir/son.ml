@@ -75,6 +75,36 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
         Fun_node.add_return g ret_node ~ctrl:(Scope_node.get_ctrl g scope) ~val_n:body_n;
         Scope_node.pop g scope;
         Scope_node.set_ctrl g scope old_ctrl
+    | Ast.ExternalFnDeclaration (name, typ, _, external_name) ->
+        let ret_type, param_types =
+            match typ with
+            | Ast.Fn (ret, params) -> (ret, params)
+            | _ -> assert false
+        in
+        let ret_type = Types.of_ast_type ret_type in
+        let fun_ptr_type =
+            Types.(
+              FunPtr
+                (Value
+                   {
+                     params = List.map param_types ~f:Types.of_ast_type;
+                     ret = ret_type;
+                     fun_indices = `Include Int.Set.empty;
+                   }))
+        in
+        let fun_node, ret_node = Fun_node.create g fun_ptr_type in
+        let fun_idx = Linker.define linker ~name:external_name fun_node in
+        (match fun_node.kind with
+        | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx })
+        | _ -> assert false);
+        let fun_ptr = Const_node.create_fun_ptr g fun_node fun_idx in
+        let ret_val = Extern_node.create g ret_type external_name in
+        List.mapi param_types ~f:(fun i typ ->
+            let param_type = Types.of_ast_type typ in
+            Some (Fun_node.create_param g fun_node param_type i))
+        |> Graph.add_dependencies g ret_val;
+        Fun_node.add_return g ret_node ~ctrl:fun_node ~val_n:ret_val;
+        Scope_node.define g scope name fun_ptr
 
 and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
     let binop lhs rhs f =
