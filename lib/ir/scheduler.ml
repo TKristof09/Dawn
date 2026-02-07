@@ -152,8 +152,7 @@ let schedule_early g =
                         else
                           (max_n, max_depth))
             in
-            if not (Poly.equal node.kind (Ideal Phi)) then
-              Graph.set_dependency g node (Some scheduled_n) 0)
+            Graph.set_dependency g node (Some scheduled_n) 0)
     in
     rev_post_order_cfg g start
     |> List.iter ~f:(fun n ->
@@ -237,14 +236,23 @@ let schedule_late g =
               else
                 Hashtbl.set m ~key:node ~data:(Graph.get_dependency g node 0 |> Option.value_exn)
           | _ -> ());
+
           List.iter (Graph.get_dependants g node) ~f:(fun n ->
               if is_forward_edge node n then schedule n);
+
           if not (Hashtbl.mem m node) then
             let lca =
                 List.map (Graph.get_dependants g node) ~f:(get_block node)
                 |> List.reduce_exn ~f:(common_dom g)
             in
             let early = Graph.get_dependency g node 0 |> Option.value_exn in
+            let early =
+                if Machine_node.is_control_node early then
+                  early
+                else
+                  Graph.get_dependency g early 0 |> Option.value_exn
+            in
+
             let best = find_best early lca in
             Hashtbl.set m ~key:node ~data:best)
     in
@@ -253,6 +261,7 @@ let schedule_late g =
         match key.kind with
         | Ideal Phi -> ()
         | _ when Machine_node.is_control_node key -> ()
+        | DProj _ -> ()
         | _ -> Graph.set_dependency g key (Some data) 0)
 
 let score g (n : Machine_node.t) =
@@ -261,7 +270,9 @@ let score g (n : Machine_node.t) =
     | Ideal (CProj 0) ->
         1001
     | Ideal (CProj 1) -> 1002
-    | Ideal Phi -> 1000
+    | Ideal Phi
+    | Param _ ->
+        1000
     | _ when Machine_node.is_control_node n -> 1
     | Ideal _ -> 500
     | _ ->

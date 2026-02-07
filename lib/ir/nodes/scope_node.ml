@@ -1,5 +1,6 @@
 let create () = Node.create_scope ()
 let ctrl_identifier = "$ctrl"
+let mem_identifier = "$mem"
 
 let define g (n : Node.t) name node =
     match n.kind with
@@ -67,6 +68,12 @@ and get_ctrl g n = get g n ctrl_identifier
 let set_ctrl g n ctrl =
     try assign g n ctrl_identifier ctrl with
     | _ -> define g n ctrl_identifier ctrl
+
+let get_mem g n = get g n mem_identifier
+
+let set_mem g n mem =
+    try assign g n mem_identifier mem with
+    | _ -> define g n mem_identifier mem
 
 let push (n : Node.t) =
     match n.kind with

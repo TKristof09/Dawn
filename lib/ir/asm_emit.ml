@@ -48,13 +48,16 @@ let asm_of_op (kind : Machine_node.machine_node_kind) =
         | LEq -> "setle"
         | Gt -> "setg"
         | GEq -> "setge")
-    | DProj _ -> failwith "TODO"
+    | DProj _ -> ""
     | Ideal _ -> ""
     | FunctionProlog _ -> ""
     | Return -> "ret"
     | FunctionCall _ -> "call"
     | FunctionCallEnd -> ""
     | Param _ -> ""
+    | New -> assert false
+    | Store -> "mov"
+    | Load -> "mov"
 
 let asm_of_loc (loc : Registers.loc) =
     match loc with
@@ -183,7 +186,7 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) =
         Printf.sprintf "\t%s %s" op_str reg_str
     | Set _
     | DProj _ ->
-        failwith "TODO"
+        ""
     | FunctionProlog i ->
         let target = Linker.get_name linker i in
         Printf.sprintf "%s:" target
@@ -196,6 +199,41 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) =
         let target = Linker.get_name linker i in
         Printf.sprintf "\t%s %s" op target
     | FunctionCallEnd -> ""
+    | New ->
+        let ptr_reg =
+            Hashtbl.find_exn reg_assoc
+              (Graph.get_dependants g n
+              |> List.find_exn ~f:(fun n ->
+                  match n.kind with
+                  | DProj 1 -> true
+                  | _ -> false))
+        in
+        let size_reg =
+            Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn)
+        in
+        assert (Poly.equal ptr_reg (Reg RAX));
+        assert (Poly.equal size_reg (Reg RDI));
+        (* HACK: this is only until i get heap memory alloc *)
+        Printf.sprintf "\tmov %s, rsp   // alloc\n\tsub rsp, %s" (asm_of_loc ptr_reg)
+          (asm_of_loc size_reg)
+    | Store ->
+        let reg = Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 4 |> Option.value_exn) in
+        let ptr_reg = Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn) in
+        let offset_reg =
+            Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 3 |> Option.value_exn)
+        in
+        let op_str = asm_of_op n.kind in
+        Printf.sprintf "\t%s [%s + %s], %s" op_str (asm_of_loc ptr_reg) (asm_of_loc offset_reg)
+          (asm_of_loc reg)
+    | Load ->
+        let reg = Hashtbl.find_exn reg_assoc n in
+        let ptr_reg = Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn) in
+        let offset_reg =
+            Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 3 |> Option.value_exn)
+        in
+        let op_str = asm_of_op n.kind in
+        Printf.sprintf "\t%s %s, [%s + %s]" op_str (asm_of_loc reg) (asm_of_loc ptr_reg)
+          (asm_of_loc offset_reg)
 
 let add_jumps g (program : Machine_node.t list) =
     let rec insert_after l target node_to_insert =

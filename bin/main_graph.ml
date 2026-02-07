@@ -77,15 +77,15 @@ open Dawn
 (*     if((i>>1) == 1) {} *)
 (*     |} *)
 
-let test_str =
-    {|
-    fun f(a: int, b: int, c: int, d: int, e: int, f: int) -> int {
-        69 - a + b + c + d + e + f
-    }
-
-    let i: int = f(1,2,3,4,5,6) + 69;
-    if(i==0) {}
-    |}
+(* let test_str = *)
+(*     {| *)
+(*     fun f(a: int, b: int, c: int, d: int, e: int, f: int) -> int { *)
+(*         69 - a + b + c + d + e + f *)
+(*     } *)
+(**)
+(*     let i: int = f(1,2,3,4,5,6) + 69; *)
+(*     if(i==0) {} *)
+(*     |} *)
 
 (* let test_str = *)
 (*     {| *)
@@ -98,6 +98,24 @@ let test_str =
 (*     if(j==0){j=j+4;} *)
 (*     if(x==j){x=j+1;} *)
 (*     |} *)
+(* let test_str = *)
+(*     {| *)
+(*     let x:int = 0; *)
+(*     let y:int = 1; *)
+(*     while(0 <= x) { *)
+(*         let tmp:int = x + y; *)
+(*         x = y; *)
+(*         y = tmp; *)
+(*     } *)
+(*     |} *)
+let test_str =
+    {|
+    let arr: int[20];
+    arr[0] = 1;
+    arr[1] = 1;
+    arr[2] = arr[0] + arr[1];
+    if(arr[1] == arr[2]){}
+    |}
 
 let () =
     match Parser.parse_str test_str with
@@ -105,7 +123,7 @@ let () =
         let linker = Linker.create () in
         let son = Son.of_ast ast linker in
         let son = Graph.readonly son in
-        Ir_printer.to_dot son |> Printf.printf "\n\n%s\n";
+        (* Ir_printer.to_dot son |> Printf.printf "\n\n%s\n"; *)
         let schedules = Scheduler.schedule son in
         (* let program, reg_assoc = Basic_reg_allocator.allocate machine_graph program in *)
         (* Ir_printer.to_dot_machine machine_graph |> Printf.printf "\n\n%s\n"; *)

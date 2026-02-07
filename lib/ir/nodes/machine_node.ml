@@ -53,6 +53,9 @@ type machine_node_kind =
     | FunctionCall of int
     | FunctionCallEnd
     | Param of int
+    | New
+    | Store
+    | Load
     (* nodes that have no machine equivalent *)
     | Ideal of ideal
 [@@deriving show { with_path = false }, sexp_of]
@@ -123,7 +126,10 @@ let is_control_node n =
     | Int _
     | Mov
     | DProj _
-    | Param _ ->
+    | Param _
+    | New
+    | Store
+    | Load ->
         false
 
 let is_blockhead n =
@@ -146,6 +152,11 @@ let is_two_address n =
     | Mul
     | MulImm _ ->
         true
+    | _ -> false
+
+let is_multi_output n =
+    match n.ir_node.typ with
+    | Tuple _ -> true
     | _ -> false
 
 let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
@@ -202,6 +213,18 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
     | FunctionCall _ -> Some (Registers.Mask.x64_systemv i)
     | FunctionCallEnd -> None
     | Param _ -> None
+    | New -> if i = 1 then Some (Registers.Mask.x64_systemv 0) else None
+    | Store -> (
+        match i with
+        | 1 -> Some Registers.Mask.general_r (* base*)
+        | 2 -> Some Registers.Mask.general_r (* index *)
+        | 3 -> Some Registers.Mask.general_r (* value *)
+        | _ -> failwithf "Invalid index %d for input reg mask of %s" i (show n) ())
+    | Load -> (
+        match i with
+        | 1 -> Some Registers.Mask.general_r (* base*)
+        | 2 -> Some Registers.Mask.general_r (* index *)
+        | _ -> failwithf "Invalid index %d for input reg mask of %s" i (show n) ())
     | Ideal _ -> None
 
 let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
@@ -256,12 +279,16 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     | Return ->
         assert (i = 0);
         if i = 0 then Some Registers.Mask.rax else None
+    | New -> if i = 1 then Some Registers.Mask.rax else None
+    | Store -> None
+    | Load -> Some Registers.Mask.general_w
     | Ideal _ -> None
 
 let get_register_kills (n : t) =
     match n.kind with
     | FunctionCall _ -> Some Registers.Mask.caller_save
     | Div -> Some (Registers.Mask.of_list [ Reg RDX ])
+    | New -> Some Registers.Mask.caller_save
     | _ -> None
 
 let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
@@ -509,6 +536,21 @@ and of_ctrl_node g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
         node
     | FunctionCallEnd -> simple FunctionCallEnd
 
+and of_mem_node g machine_g kind (n : Node.t) =
+    let simple kind =
+        let node = { id = next_id (); kind; ir_node = n } in
+        Graph.add_dependencies machine_g node [];
+        let deps =
+            Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node g machine_g))
+        in
+        Graph.add_dependencies machine_g node deps;
+        node
+    in
+    match kind with
+    | Node.New -> simple New
+    | Store -> (* TODO check for ops like add that can address memory directly *) simple Store
+    | Load -> (* TODO check for ops like add that can address memory directly *) simple Load
+
 and convert_node g machine_g (n : Node.t) =
     match
       Graph.find machine_g ~f:(fun mn ->
@@ -523,7 +565,8 @@ and convert_node g machine_g (n : Node.t) =
         match n.kind with
         | Data k -> of_data_node g machine_g k n
         | Ctrl k -> of_ctrl_node g machine_g k n
-        | _ -> assert false)
+        | Mem k -> of_mem_node g machine_g k n
+        | Scope _ -> assert false)
 
 let find_dep machine_g n ~f =
     Graph.get_dependencies machine_g n

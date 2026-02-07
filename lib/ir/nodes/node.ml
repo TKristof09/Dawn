@@ -36,9 +36,15 @@ and ctrl_kind =
     | FunctionCall
     | FunctionCallEnd
 
+and mem_kind =
+    | New
+    | Load
+    | Store
+
 and kind =
     | Data of data_kind
     | Ctrl of ctrl_kind
+    | Mem of mem_kind
     | Scope of t Symbol_table.t
 
 and t = {
@@ -67,6 +73,7 @@ let show_kind kind =
     | Ctrl (Proj i) -> Printf.sprintf "CProj %d" i
     | Data d -> show_sexp (sexp_of_data_kind d)
     | Ctrl c -> show_sexp (sexp_of_ctrl_kind c)
+    | Mem m -> show_sexp (sexp_of_mem_kind m)
     | Scope _ -> "Scope"
 
 let show node =
@@ -103,6 +110,7 @@ let semantic_equal n1 deps1 n2 deps2 =
 let hash n = Int.hash n.id
 let create_data typ kind = { typ; kind = Data kind; id = next_id () }
 let create_ctrl typ kind = { typ; kind = Ctrl kind; id = next_id () }
+let create_mem typ kind = { typ; kind = Mem kind; id = next_id () }
 let create_scope () = { typ = Types.ALL; kind = Scope (Symbol_table.create ()); id = next_id () }
 
 let is_ctrl n =

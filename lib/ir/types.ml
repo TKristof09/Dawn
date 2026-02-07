@@ -37,6 +37,7 @@ and node_type =
     | Integer of int sub_lattice
     | Tuple of node_type list sub_lattice
     | FunPtr of fun_ptr sub_lattice
+    | Memory
     | Control
     | ALL
 [@@deriving show { with_path = false }, sexp_of]
@@ -44,7 +45,7 @@ and node_type =
 let of_ast_type (ast_type : Ast.var_type) : node_type =
     (* FIXME actually implement *)
     match ast_type with
-    | Type "int" -> Integer Any
+    | Ast.Type "int" -> Integer Any
     | _ -> assert false
 
 let rec meet t t' =
@@ -84,6 +85,7 @@ let rec meet t t' =
         in
         FunPtr l
     | Control, Control -> Control
+    | Memory, Memory -> Memory
     | ALL, _
     | _, ALL ->
         ALL
@@ -92,7 +94,8 @@ let rec meet t t' =
     | Integer _, _
     | Tuple _, _
     | FunPtr _, _
-    | Control, _ ->
+    | Control, _
+    | Memory, _ ->
         ALL
 
 let rec join t t' =
@@ -134,6 +137,7 @@ let rec join t t' =
         in
         FunPtr l
     | Control, Control -> Control
+    | Memory, Memory -> Memory
     | ALL, _ -> t'
     | _, ALL -> t
     | ANY, _
@@ -142,7 +146,8 @@ let rec join t t' =
     | Integer _, _
     | Tuple _, _
     | FunPtr _, _
-    | Control, _ ->
+    | Control, _
+    | Memory, _ ->
         ANY
 
 let is_constant t =
@@ -155,7 +160,8 @@ let is_constant t =
     match t with
     | ANY
     | ALL
-    | Control ->
+    | Control
+    | Memory ->
         false
     | Integer x -> is_constant_lattice x
     | Tuple x -> is_constant_lattice x

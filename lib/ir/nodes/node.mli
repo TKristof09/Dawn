@@ -34,9 +34,15 @@ and ctrl_kind =
     | FunctionCall
     | FunctionCallEnd
 
+and mem_kind =
+    | New
+    | Load
+    | Store
+
 and kind =
     | Data of data_kind
     | Ctrl of ctrl_kind
+    | Mem of mem_kind
     | Scope of t Symbol_table.t
 
 and t = {
@@ -56,6 +62,7 @@ val compare : t -> t -> int
 val hash : t -> int
 val create_data : Types.node_type -> data_kind -> t
 val create_ctrl : Types.node_type -> ctrl_kind -> t
+val create_mem : Types.node_type -> mem_kind -> t
 val create_scope : unit -> t
 val show : t -> string
 val show_kind : kind -> string

@@ -43,7 +43,7 @@ end
 let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node.t list) =
     let ranges = Hashtbl.create (module Machine_node) in
     List.iter program ~f:(fun n ->
-        match n.kind with
+        (match n.kind with
         | Ideal Phi ->
             (* merge all depedencies into same live range except for the control depedency, we don't care about that *)
             let depedencies = Graph.get_dependencies g n |> List.tl_exn |> List.filter_opt in
@@ -70,6 +70,14 @@ let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node
             Set.iter merged ~f:(fun n -> Hashtbl.set ranges ~key:n ~data:merged)
         | _ when Option.is_none (Machine_node.get_out_reg_mask g n 0) -> ()
         | _ -> Hashtbl.add ranges ~key:n ~data:(NodeSet.singleton n) |> ignore);
+        if Machine_node.is_multi_output n then
+          Graph.get_dependants g n
+          |> List.filter ~f:(fun (n' : Machine_node.t) ->
+              match n'.kind with
+              | DProj _ -> Option.is_some (Machine_node.get_out_reg_mask g n' 0)
+              | _ -> false)
+          |> List.iter ~f:(fun proj ->
+              Hashtbl.add ranges ~key:proj ~data:(NodeSet.singleton proj) |> ignore));
     let node_to_lrg = Hashtbl.create (module Machine_node) in
     Hashtbl.iter ranges ~f:(fun r ->
         (* def side constraints *)
@@ -99,8 +107,9 @@ let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node
                             | None -> false
                             | Some n' -> Machine_node.equal n n')
                     in
-                    Registers.Mask.common acc
-                      (Machine_node.get_in_reg_mask g use (i - 1) |> Option.value_exn)))
+                    match Machine_node.get_in_reg_mask g use (i - 1) with
+                    | Some m -> Registers.Mask.common acc m
+                    | None -> acc))
         in
         let lrg : Range.t = { reg_mask; nodes = r } in
         Set.iter r ~f:(fun n -> Hashtbl.set node_to_lrg ~key:n ~data:lrg));
@@ -251,6 +260,62 @@ end = struct
                     else
                       mark_need_split need_splits r')
       in
+      let do_node ifg need_splits self_conflicts actives node =
+          match Hashtbl.find node_to_lrg node with
+          | None -> () (* not every node is in a range, e.g jmp nodes (if) *)
+          | Some range ->
+              Hashtbl.add ifg ~key:range ~data:RangeSet.empty |> ignore;
+              (* check def side conflict. eg. if there is already a def y for the lrg and node != y then conflict *)
+              (match check_self_conflict actives range node with
+              | Some other ->
+                  Hashtbl.update self_conflicts range ~f:(function
+                    | None -> NodeSet.of_list [ node; other ]
+                    | Some s ->
+                        let s = Set.add s node in
+                        Set.add s other)
+              | None -> ());
+              (* remove the def *)
+              Hashtbl.remove actives range;
+
+              (* process registers kills *)
+              check_kills need_splits actives node;
+
+              (* interfere with other live ranges *)
+              Hashtbl.iter_keys actives ~f:(fun r' ->
+                  if not (Registers.Mask.are_disjoint range.reg_mask r'.reg_mask) then
+                    match
+                      Machine_node.get_out_reg_mask g node 0
+                    with
+                    | Some mask when Registers.Mask.length mask = 1 ->
+                        let reg = Registers.Mask.choose mask |> Option.value_exn in
+                        let new_mask = Registers.Mask.remove r'.reg_mask reg in
+                        r'.reg_mask <- new_mask;
+                        if Registers.Mask.is_empty new_mask then
+                          mark_need_split need_splits r'
+                    | _ -> add_to_ifg ifg range r');
+
+              (* check ranges that can only use a single register, in this case the other range should make place for it *)
+
+              (* add the nodes it uses *)
+              Graph.get_dependencies g node
+              |> List.tl
+              |> Option.value ~default:[]
+              |> List.iter ~f:(function
+                | None -> ()
+                | Some dep -> (
+                    match Hashtbl.find node_to_lrg dep with
+                    | None -> ()
+                    | Some range' ->
+                        (match check_self_conflict actives range' dep with
+                        | Some other ->
+                            Hashtbl.update self_conflicts range' ~f:(function
+                              | None -> NodeSet.of_list [ dep; other ]
+                              | Some s ->
+                                  let s = Set.add s dep in
+                                  Set.add s other)
+                        | None -> ());
+                        Hashtbl.set actives ~key:range' ~data:dep))
+      in
       let do_block ifg need_splits self_conflicts (bb : basic_block) =
           (* lrg -> bb where the lrg is defined *)
           let actives = get_actives bb in
@@ -260,60 +325,14 @@ end = struct
               | Ideal _ -> false
               | _ -> true)
           |> List.iter ~f:(fun node ->
-              match Hashtbl.find node_to_lrg node with
-              | None -> () (* not every node is in a range, e.g jmp nodes (if) *)
-              | Some range ->
-                  Hashtbl.add ifg ~key:range ~data:RangeSet.empty |> ignore;
-                  (* check def side conflict. eg. if there is already a def y for the lrg and node != y then conflict *)
-                  (match check_self_conflict actives range node with
-                  | Some other ->
-                      Hashtbl.update self_conflicts range ~f:(function
-                        | None -> NodeSet.of_list [ node; other ]
-                        | Some s ->
-                            let s = Set.add s node in
-                            Set.add s other)
-                  | None -> ());
-                  (* remove the def *)
-                  Hashtbl.remove actives range;
-
-                  (* process registers kills *)
-                  check_kills need_splits actives node;
-
-                  (* interfere with other live ranges *)
-                  Hashtbl.iter_keys actives ~f:(fun r' ->
-                      if not (Registers.Mask.are_disjoint range.reg_mask r'.reg_mask) then
-                        match
-                          Machine_node.get_out_reg_mask g node 0
-                        with
-                        | Some mask when Registers.Mask.length mask = 1 ->
-                            let reg = Registers.Mask.choose mask |> Option.value_exn in
-                            let new_mask = Registers.Mask.remove r'.reg_mask reg in
-                            r'.reg_mask <- new_mask;
-                            if Registers.Mask.is_empty new_mask then
-                              mark_need_split need_splits r'
-                        | _ -> add_to_ifg ifg range r');
-
-                  (* check ranges that can only use a single register, in this case the other range should make place for it *)
-
-                  (* add the nodes it uses *)
-                  Graph.get_dependencies g node
-                  |> List.tl
-                  |> Option.value ~default:[]
-                  |> List.iter ~f:(function
-                    | None -> ()
-                    | Some dep -> (
-                        match Hashtbl.find node_to_lrg dep with
-                        | None -> ()
-                        | Some range' ->
-                            (match check_self_conflict actives range' dep with
-                            | Some other ->
-                                Hashtbl.update self_conflicts range' ~f:(function
-                                  | None -> NodeSet.of_list [ dep; other ]
-                                  | Some s ->
-                                      let s = Set.add s dep in
-                                      Set.add s other)
-                            | None -> ());
-                            Hashtbl.set actives ~key:range' ~data:dep)));
+              if Machine_node.is_multi_output node then
+                Graph.get_dependants g node
+                |> List.filter ~f:(fun n ->
+                    match n.kind with
+                    | DProj _ -> true
+                    | _ -> false)
+                |> List.iter ~f:(do_node ifg need_splits self_conflicts actives);
+              do_node ifg need_splits self_conflicts actives node);
           update_bb_outs self_conflicts bb actives
       in
       let ifg = Hashtbl.create (module Range) in
@@ -854,7 +873,7 @@ let allocate g program =
             let* coloring = InterferenceGraph.color ifg g in
             Ok coloring
         in
-        if round > 4 then
+        if round > 7 then
           failwith "This should've finished by now"
         else
           match

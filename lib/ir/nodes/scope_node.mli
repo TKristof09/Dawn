@@ -15,3 +15,5 @@ val merge_loop :
 
 val get_ctrl : (Node.t, Graph.readwrite) Graph.t -> Node.t -> Node.t
 val set_ctrl : (Node.t, Graph.readwrite) Graph.t -> Node.t -> Node.t -> unit
+val get_mem : (Node.t, Graph.readwrite) Graph.t -> Node.t -> Node.t
+val set_mem : (Node.t, Graph.readwrite) Graph.t -> Node.t -> Node.t -> unit

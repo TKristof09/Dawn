@@ -4,9 +4,10 @@ let node_to_dot_id id = Printf.sprintf "n%d" id
 
 let node_shape (node : Node.t) =
     match node.kind with
-    | Node.Data _ -> "circle"
-    | Node.Ctrl _ -> "box"
-    | Node.Scope _ -> "box"
+    | Data _ -> "circle"
+    | Ctrl _ -> "box"
+    | Scope _ -> "box"
+    | Mem _ -> "box"
 
 let node_label node =
     let kind_str =
@@ -23,6 +24,7 @@ let node_label node =
             Printf.sprintf "Proj %d" i
         | Data d -> show_sexp (Node.sexp_of_data_kind d)
         | Ctrl c -> show_sexp (Node.sexp_of_ctrl_kind c)
+        | Mem m -> show_sexp (Node.sexp_of_mem_kind m)
         | Scope _ -> Printf.sprintf "Scope %d" node.id
     in
     kind_str
@@ -76,8 +78,19 @@ let to_dot g =
                     let style =
                         match (dep.kind, node.kind) with
                         | Ctrl _, Data Constant -> ""
-                        | Ctrl _, Data _ -> "color=green,style=dashed,arrowhead=none"
-                        | Ctrl _, _ -> "color=red"
+                        | Data (Proj _), Mem _ -> (
+                            match dep.typ with
+                            | Memory -> "color=blue"
+                            | _ -> "")
+                        | Mem _, Data (Proj _) -> (
+                            match node.typ with
+                            | Memory -> "color=blue"
+                            | _ -> "")
+                        | Mem _, Mem _ -> "color=blue"
+                        | Ctrl _, Data _
+                        | Ctrl _, Mem _ ->
+                            "color=green,style=dashed,arrowhead=none"
+                        | Ctrl _, Ctrl _ -> "color=red"
                         | _ -> ""
                     in
 

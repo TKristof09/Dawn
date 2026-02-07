@@ -14,6 +14,16 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
                 |> Option.value_exn
             in
             Scope_node.define g scope name default_init
+        | Array (t, count) ->
+            let element_type = Types.of_ast_type t in
+            let ctrl = Scope_node.get_ctrl g scope in
+            let count = do_expr g count scope cur_ret_node linker |> Option.value_exn in
+            let mem = Scope_node.get_mem g scope in
+            let n = Mem_nodes.create_new g ~ctrl ~mem ~count element_type in
+            let mem = Proj_node.create g n 0 in
+            let ptr = Proj_node.create g n 1 in
+            Scope_node.define g scope name ptr;
+            Scope_node.set_mem g scope mem
         | _ -> assert false)
     | Ast.While (cond, body) ->
         let loop_node = Loop_node.create g (Scope_node.get_ctrl g scope) in
@@ -80,11 +90,24 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         | None ->
             let node = Scope_node.get g scope name in
             Some node
-        | Some _ -> assert false)
+        | Some idx_expr ->
+            let mem = Scope_node.get_mem g scope in
+            let ptr = Scope_node.get g scope name in
+            let index = do_expr g idx_expr scope cur_ret_node linker |> Option.value_exn in
+            let load = Mem_nodes.create_load g ~mem ~ptr ~offset:index in
+            Some load)
     | Ast.VarAssign (name, expr) ->
         let n = do_expr g expr scope cur_ret_node linker |> Option.value_exn in
         Scope_node.assign g scope name n;
         Some n
+    | Ast.ArrayVarAssign (name, index, value) ->
+        let index = do_expr g index scope cur_ret_node linker |> Option.value_exn in
+        let value = do_expr g value scope cur_ret_node linker |> Option.value_exn in
+        let ptr = Scope_node.get g scope name in
+        let mem = Scope_node.get_mem g scope in
+        let store_mem = Mem_nodes.create_store g ~mem ~ptr ~offset:index ~value in
+        Scope_node.set_mem g scope store_mem;
+        Some value
     | Ast.Add (lhs, rhs) -> binop lhs rhs Arithmetic_nodes.create_add
     | Ast.Sub (lhs, rhs) -> binop lhs rhs Arithmetic_nodes.create_sub
     | Ast.Mul (lhs, rhs) -> binop lhs rhs Arithmetic_nodes.create_mul
@@ -158,8 +181,11 @@ let of_ast ast linker =
           end)
           start stop
     in
+    let ctrl = Proj_node.create g start 0 in
+    let mem = Proj_node.create g start 1 in
     let scope = Scope_node.create () in
-    Scope_node.set_ctrl g scope (Graph.get_start g);
+    Scope_node.set_ctrl g scope ctrl;
+    Scope_node.set_mem g scope mem;
     Core.List.iter ast ~f:(fun s -> do_statement g s scope None linker);
     let ctrl = Scope_node.get_ctrl g scope in
     Graph.set_stop_ctrl g ctrl;
