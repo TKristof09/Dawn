@@ -12,10 +12,13 @@ let node_shape (node : Node.t) =
 let node_label node =
     let kind_str =
         let show_sexp s =
-            match s with
-            | Sexplib.Sexp.List (h :: _) -> Sexplib.Sexp.to_string h
-            | Sexplib.Sexp.Atom a -> a
-            | Sexplib.Sexp.List [] -> assert false
+            let s =
+                match s with
+                | Sexplib.Sexp.List (h :: _) -> Sexplib.Sexp.to_string h
+                | Sexplib.Sexp.Atom a -> a
+                | Sexplib.Sexp.List [] -> assert false
+            in
+            String.escaped s
         in
         match node.Node.kind with
         | Data Constant -> "Const"
@@ -162,7 +165,7 @@ let to_dot_machine g =
             Buffer.add_string buf
               (Printf.sprintf "  %s [label=\"%s\",tooltip=\"#%d (#%d)\"];\n"
                  (node_to_dot_id node.id)
-                 (Machine_node.show_machine_node_kind node.kind)
+                 (String.escaped (Machine_node.show_machine_node_kind node.kind))
                  node.id node.ir_node.id));
 
     (* Second pass: Add edges *)
@@ -316,7 +319,7 @@ let to_string_machine_linear g (program : Machine_node.t list) =
                successors)
         else (
           Buffer.add_string buf (Printf.sprintf "  %s\n" (show_machine_compact g n));
-          if Poly.equal n.kind New then
+          if Machine_node.is_multi_output n then
             Graph.get_dependants g n
             |> List.filter ~f:(fun n' ->
                 match n'.kind with
@@ -360,7 +363,7 @@ let to_string_machine_linear_regs g (program : Machine_node.t list)
                successors)
         else (
           Buffer.add_string buf (Printf.sprintf "  %s\n" (show_machine_compact ~reg_assoc g n));
-          if Poly.equal n.kind New then
+          if Machine_node.is_multi_output n then
             Graph.get_dependants g n
             |> List.filter ~f:(fun n' ->
                 match n'.kind with

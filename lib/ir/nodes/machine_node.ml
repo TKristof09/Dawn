@@ -139,7 +139,8 @@ let is_blockhead n =
     | Ideal Region
     | Ideal Loop
     | Ideal Stop
-    | FunctionProlog _ ->
+    | FunctionProlog _
+    | FunctionCallEnd ->
         true
     | _ -> false
 
@@ -271,8 +272,10 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     | FunctionProlog _ -> None
     | FunctionCall _ -> None
     | FunctionCallEnd ->
-        assert (i = 1);
-        Some Registers.Mask.rax
+        if i = 1 then
+          Some Registers.Mask.rax
+        else
+          None
     | Param idx ->
         assert (i = 0);
         Some (Registers.Mask.x64_systemv idx)
