@@ -10,13 +10,22 @@ let test str =
         let linker = Linker.create () in
         let son = Son.of_ast ast linker in
         let schedules = Scheduler.schedule son in
-        Core.List.iter schedules ~f:(fun (machine_graph, program) ->
-            let program = List.concat program in
-            let program, reg_assoc = Reg_allocator.allocate machine_graph program in
-            let code = Asm_emit.emit_program machine_graph reg_assoc program linker in
-            Ir_printer.to_string_machine_linear_regs machine_graph program reg_assoc
-            |> Printf.printf "%s\n";
-            Printf.printf "\n%s\n\n" code)
+
+        (* only do code gen on non external functions *)
+        let functions =
+            Core.List.filter schedules ~f:(fun (g, _) ->
+                Graph.find g ~f:(fun n ->
+                    match n.kind with
+                    | Ideal (External _) -> true
+                    | _ -> false)
+                |> Option.is_none)
+            |> Core.List.map ~f:(fun (g, program) ->
+                let program = List.concat program in
+                let program, reg_assoc = Reg_allocator.allocate g program in
+                Ir_printer.to_string_machine_linear_regs g program reg_assoc |> Printf.printf "%s\n";
+                (g, reg_assoc, program))
+        in
+        Asm_emit.emit_program functions linker |> print_endline
     | Error msg -> Printf.eprintf "%s\n" msg
 
 let%expect_test "" =
@@ -88,7 +97,6 @@ let%expect_test "" =
       Block #2 ((Ideal Stop)): -> []
 
 
-
       mov rcx, 1
       add rcx, 69
       mov rax, 69
@@ -127,6 +135,10 @@ let%expect_test "" =
       L_4:
       L_31:
       L_3:
+      //Exit program
+      mov rax, 60
+      xor rdi, rdi
+      syscall
       |}]
 
 let%expect_test "fibonacci" =
@@ -160,7 +172,7 @@ let%expect_test "fibonacci" =
         #Flags (%9  ): (CmpImm 0)      [ #RAX (%10) ]                                (Ideal IR: #12)
                (%4  ): (Jmp GEq)       [ #Flags (%9) ]                               (Ideal IR: #14)
 
-      Block #6 ((Ideal (CProj 0))): -> []
+      Block #6 ((Ideal (CProj 0))): -> [#5]
         #RCX   (%23 ): Mov             [ #RAX (%10) ]                                (Ideal IR: #11)
         #RCX   (%12 ): Add             [ #RCX (%23), #RBX (%11) ]                    (Ideal IR: #18)
         #RAX   (%19 ): Mov             [ #RBX (%11) ]                                (Ideal IR: #17)
@@ -169,7 +181,6 @@ let%expect_test "fibonacci" =
       Block #3 ((Ideal (CProj 1))): -> [#2]
 
       Block #2 ((Ideal Stop)): -> []
-
 
 
       mov rax, 1
@@ -189,6 +200,10 @@ let%expect_test "fibonacci" =
 
       L_3:
       Exit:
+      //Exit program
+      mov rax, 60
+      xor rdi, rdi
+      syscall
       |}]
 
 let%expect_test "nested loop" =
@@ -246,12 +261,12 @@ let%expect_test "nested loop" =
         #Flags (%15 ): (CmpImm 11)     [ #RBX (%16) ]                                (Ideal IR: #29)
                (%10 ): (Jmp Eq)        [ #Flags (%15) ]                              (Ideal IR: #31)
 
-      Block #12 ((Ideal (CProj 0))): -> []
+      Block #12 ((Ideal (CProj 0))): -> [#11]
         #RDX   (%40 ): Mov             [ #RAX (%42) ]                                (Ideal IR: #26)
         #RDX   (%21 ): (AddImm 2)      [ #RDX (%40) ]                                (Ideal IR: #37)
         #RDI   (%41 ): Mov             [ #RAX (%42) ]                                (Ideal IR: #26)
 
-      Block #9 ((Ideal (CProj 1))): -> []
+      Block #9 ((Ideal (CProj 1))): -> [#8]
         #RAX   (%34 ): Mov             [ #RCX (%17) ]                                (Ideal IR: #21)
 
       Block #6 ((Ideal (CProj 1))): -> [T: #4,F: #31]
@@ -265,7 +280,6 @@ let%expect_test "nested loop" =
       Block #3 ((Ideal Region)): -> [#2]
 
       Block #2 ((Ideal Stop)): -> []
-
 
 
       mov rax, 0
@@ -309,6 +323,10 @@ let%expect_test "nested loop" =
       L_4:
       L_31:
       L_3:
+      //Exit program
+      mov rax, 60
+      xor rdi, rdi
+      syscall
       |}]
 
 let%expect_test "binops" =
@@ -344,7 +362,6 @@ let%expect_test "binops" =
       Block #2 ((Ideal Stop)): -> []
 
 
-
       mov rax, 1
       sal rax, 2
       or rax, 0
@@ -356,6 +373,10 @@ let%expect_test "binops" =
       L_4:
       L_14:
       L_3:
+      //Exit program
+      mov rax, 60
+      xor rdi, rdi
+      syscall
       |}]
 
 let%expect_test "function call" =
@@ -402,22 +423,6 @@ let%expect_test "function call" =
       Block #2 ((Ideal Stop)): -> []
 
 
-
-      mov rdx, 3
-      mov rcx, 4
-      mov r9, 6
-      mov r8, 5
-      mov rsi, 2
-      mov rdi, 1
-      call f
-      add rax, 69
-      cmp rax, 0
-      jne L_3
-
-      L_4:
-      L_37:
-      L_3:
-
       === Machine Graph (Linearized with registers) ===
 
       Block #1 ((Ideal Start)): -> [#18]
@@ -444,6 +449,24 @@ let%expect_test "function call" =
       Block #2 ((Ideal Stop)): -> []
 
 
+      mov rdx, 3
+      mov rcx, 4
+      mov r9, 6
+      mov r8, 5
+      mov rsi, 2
+      mov rdi, 1
+      call f
+      add rax, 69
+      cmp rax, 0
+      jne L_3
+
+      L_4:
+      L_37:
+      L_3:
+      //Exit program
+      mov rax, 60
+      xor rdi, rdi
+      syscall
 
       f:
       mov rax, 69
@@ -455,4 +478,8 @@ let%expect_test "function call" =
       add rax, r9
       L_17:
       ret
+      //Exit program
+      mov rax, 60
+      xor rdi, rdi
+      syscall
       |}]

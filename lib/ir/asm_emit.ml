@@ -118,6 +118,12 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) =
         (* have to sign extend RAX into RDX for signed division *)
         (* TODO: use xor rdx, rdx  for unsigned division once we have that distinction *)
         Printf.sprintf "\tcqo\n\t%s %s \t\t// rax = rax / %s" op_str reg_str reg_str
+    | Ideal Stop ->
+        let epilogue = "\t//Exit program\n\tmov rax, 60\n\txor rdi, rdi\n\tsyscall" in
+        if is_jmp_target g n then
+          Printf.sprintf "%s:\n%s" (get_label n) epilogue
+        else
+          epilogue
     | Ideal _ ->
         if is_jmp_target g n then
           Printf.sprintf "%s:" (get_label n)
@@ -325,9 +331,14 @@ let add_jumps g (program : Machine_node.t list) =
 (*             | _ -> n) *)
 (*         | _ -> n) *)
 
-let emit_program g reg_assoc program linker =
+let emit_function g reg_assoc program linker =
     add_jumps g program
     (* |> invert_loop_conditions g *)
     |> List.map ~f:(fun n -> asm_of_node g reg_assoc linker n)
     |> List.filter ~f:(Fun.negate String.is_empty)
     |> String.concat ~sep:"\n"
+
+let emit_program functions linker =
+    List.map functions ~f:(fun (g, reg_assignment, prog) ->
+        emit_function g reg_assignment prog linker)
+    |> String.concat ~sep:"\n\n"
