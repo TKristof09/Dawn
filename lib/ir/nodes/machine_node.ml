@@ -408,9 +408,9 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
                 let set_node = { id = next_id (); kind = Set m_cmp; ir_node = n } in
                 let cmp_node = { id = next_id (); kind = Cmp; ir_node = n } in
 
-                Graph.add_dependencies machine_g set_node [ Some cmp_node ];
-                Graph.add_dependencies machine_g cmp_node
-                  (List.map cmp_deps ~f:(Option.map ~f:(convert_node g machine_g)));
+                let deps = List.map cmp_deps ~f:(Option.map ~f:(convert_node g machine_g)) in
+                Graph.add_dependencies machine_g cmp_node deps;
+                Graph.add_dependencies machine_g set_node [ List.hd_exn deps; Some cmp_node ];
                 set_node
             | Some (idx, cn) ->
                 let value =
@@ -436,15 +436,15 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
                 in
                 let set_node = { id = next_id (); kind = Set m_cmp; ir_node = n } in
                 let cmp_node = { id = next_id (); kind = CmpImm value; ir_node = n } in
-                Graph.add_dependencies machine_g set_node [ Some cmp_node ];
                 let deps =
                     List.filter cmp_deps ~f:(fun n ->
                         match n with
                         | None -> true
                         | Some n -> not (Node.equal cn n))
                 in
-                Graph.add_dependencies machine_g cmp_node
-                  (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
+                let deps = List.map deps ~f:(Option.map ~f:(convert_node g machine_g)) in
+                Graph.add_dependencies machine_g cmp_node deps;
+                Graph.add_dependencies machine_g set_node [ List.hd_exn deps; Some cmp_node ];
                 set_node
         in
         set_node
@@ -496,26 +496,42 @@ and of_ctrl_node g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
         node
     in
     match kind with
-    | If ->
-        let deps = Graph.get_dependencies g n in
+    | If -> (
+        let cond = Graph.get_dependency g n 1 |> Option.value_exn in
         let op =
-            List.filter_opt deps
-            |> List.find_map_exn ~f:(fun n ->
-                match n.kind with
-                | Data Eq -> Some Eq
-                | Data NEq -> Some NEq
-                | Data Lt -> Some Lt
-                | Data LEq -> Some LEq
-                | Data Gt -> Some Gt
-                | Data GEq -> Some GEq
-                | _ -> None)
+            match cond.kind with
+            | Data Eq -> Some Eq
+            | Data NEq -> Some NEq
+            | Data Lt -> Some Lt
+            | Data LEq -> Some LEq
+            | Data Gt -> Some Gt
+            | Data GEq -> Some GEq
+            | _ -> None
         in
-        let kind = Jmp op in
-        let node = { id = next_id (); kind; ir_node = n } in
-        Graph.add_dependencies machine_g node [];
-        let deps = deps |> List.map ~f:(Option.map ~f:(convert_node g machine_g)) in
-        Graph.add_dependencies machine_g node deps;
-        node
+        match op with
+        | Some op ->
+            let kind = Jmp op in
+            let node = { id = next_id (); kind; ir_node = n } in
+            Graph.add_dependencies machine_g node [];
+            let deps =
+                Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node g machine_g))
+            in
+            Graph.add_dependencies machine_g node deps;
+            node
+        | None ->
+            (* Predicate is not a compare. Add a compare node to compare the
+               predicate value to 0 and set that as the depedency of the Jmp
+               node *)
+            let comp_node = { id = next_id (); kind = CmpImm 0; ir_node = cond } in
+            let kind = Jmp NEq in
+            let node = { id = next_id (); kind; ir_node = n } in
+            Graph.add_dependencies machine_g node [];
+            let deps =
+                Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node g machine_g))
+            in
+            Graph.add_dependencies machine_g comp_node [ List.hd_exn deps; List.nth_exn deps 1 ];
+            Graph.add_dependencies machine_g node [ List.hd_exn deps; Some comp_node ];
+            node)
     | Stop ->
         let node = Graph.get_stop machine_g in
         let deps =

@@ -190,9 +190,11 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) =
         let op_str = asm_of_op n.kind in
         let reg_str = regs |> List.map ~f:asm_of_loc |> String.concat ~sep:", " in
         Printf.sprintf "\t%s %s" op_str reg_str
-    | Set _
-    | DProj _ ->
-        ""
+    | Set _ ->
+        let op_str = asm_of_op n.kind in
+        let reg = Hashtbl.find_exn reg_assoc n in
+        Printf.sprintf "\t%s %s" op_str (asm_of_loc reg)
+    | DProj _ -> ""
     | FunctionProlog i ->
         let target = Linker.get_name linker i in
         Printf.sprintf "%s:" target
