@@ -286,6 +286,13 @@ let schedule_flat g =
     let schedule_main nodes =
         let scheduled = Dynarray.create () in
         let not_ready = Hash_set.of_list (module Machine_node) nodes in
+        List.iter nodes ~f:(fun n ->
+            if Machine_node.is_multi_output n then
+              Graph.get_dependants g n
+              |> List.iter ~f:(fun n ->
+                  match n.kind with
+                  | DProj _ -> Hash_set.add not_ready n
+                  | _ -> ()));
         let ready =
             Hash_set.filter not_ready ~f:(fun n ->
                 let deps =

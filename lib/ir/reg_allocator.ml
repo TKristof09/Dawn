@@ -68,7 +68,7 @@ let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node
             let this_lrg = Hashtbl.find ranges n |> Option.value ~default:(NodeSet.singleton n) in
             let merged = Set.union input_lrg this_lrg in
             Set.iter merged ~f:(fun n -> Hashtbl.set ranges ~key:n ~data:merged)
-        | _ when Option.is_none (Machine_node.get_out_reg_mask g n 0) -> ()
+        | Ideal _ -> ()
         | _ -> Hashtbl.add ranges ~key:n ~data:(NodeSet.singleton n) |> ignore);
         if Machine_node.is_multi_output n then
           Graph.get_dependants g n
@@ -90,29 +90,29 @@ let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node
                       (Machine_node.get_out_reg_mask g n 0
                       |> Option.value ~default:Registers.Mask.empty))
         in
-        (* use side constraints *)
-        let reg_mask =
-            Set.fold r ~init:reg_mask ~f:(fun acc n ->
-                let uses =
-                    Graph.get_dependants g n
-                    |> List.filter ~f:(fun use ->
-                        match use.kind with
-                        | Ideal _ -> false
-                        | _ -> true)
-                in
-                List.fold uses ~init:acc ~f:(fun acc use ->
-                    let i, _ =
-                        List.findi_exn (Graph.get_dependencies g use) ~f:(fun _ n' ->
-                            match n' with
-                            | None -> false
-                            | Some n' -> Machine_node.equal n n')
-                    in
-                    match Machine_node.get_in_reg_mask g use (i - 1) with
-                    | Some m -> Registers.Mask.common acc m
-                    | None -> acc))
-        in
-        let lrg : Range.t = { reg_mask; nodes = r } in
-        Set.iter r ~f:(fun n -> Hashtbl.set node_to_lrg ~key:n ~data:lrg));
+        if not (Registers.Mask.is_empty reg_mask) then (* use side constraints *)
+          let reg_mask =
+              Set.fold r ~init:reg_mask ~f:(fun acc n ->
+                  let uses =
+                      Graph.get_dependants g n
+                      |> List.filter ~f:(fun use ->
+                          match use.kind with
+                          | Ideal _ -> false
+                          | _ -> Hashtbl.mem ranges use)
+                  in
+                  List.fold uses ~init:acc ~f:(fun acc use ->
+                      let i, _ =
+                          List.findi_exn (Graph.get_dependencies g use) ~f:(fun _ n' ->
+                              match n' with
+                              | None -> false
+                              | Some n' -> Machine_node.equal n n')
+                      in
+                      match Machine_node.get_in_reg_mask g use (i - 1) with
+                      | Some m -> Registers.Mask.common acc m
+                      | None -> acc))
+          in
+          let lrg : Range.t = { reg_mask; nodes = r } in
+          Set.iter r ~f:(fun n -> Hashtbl.set node_to_lrg ~key:n ~data:lrg));
     node_to_lrg
 
 let print_lrgs node_to_lrg =
@@ -261,9 +261,9 @@ end = struct
                       mark_need_split need_splits r')
       in
       let do_node ifg need_splits self_conflicts actives node =
-          match Hashtbl.find node_to_lrg node with
+          (match Hashtbl.find node_to_lrg node with
           | None -> () (* not every node is in a range, e.g jmp nodes (if) *)
-          | Some range ->
+          | Some (range : Range.t) ->
               Hashtbl.add ifg ~key:range ~data:RangeSet.empty |> ignore;
               (* check def side conflict. eg. if there is already a def y for the lrg and node != y then conflict *)
               (match check_self_conflict actives range node with
@@ -277,9 +277,6 @@ end = struct
               (* remove the def *)
               Hashtbl.remove actives range;
 
-              (* process registers kills *)
-              check_kills need_splits actives node;
-
               (* interfere with other live ranges *)
               Hashtbl.iter_keys actives ~f:(fun r' ->
                   if not (Registers.Mask.are_disjoint range.reg_mask r'.reg_mask) then
@@ -292,29 +289,30 @@ end = struct
                         r'.reg_mask <- new_mask;
                         if Registers.Mask.is_empty new_mask then
                           mark_need_split need_splits r'
-                    | _ -> add_to_ifg ifg range r');
+                    | _ -> add_to_ifg ifg range r')
+              (* check ranges that can only use a single register, in this case the other range should make place for it *));
+          (* process registers kills *)
+          check_kills need_splits actives node;
 
-              (* check ranges that can only use a single register, in this case the other range should make place for it *)
-
-              (* add the nodes it uses *)
-              Graph.get_dependencies g node
-              |> List.tl
-              |> Option.value ~default:[]
-              |> List.iter ~f:(function
+          (* add the nodes it uses *)
+          Graph.get_dependencies g node
+          |> List.tl
+          |> Option.value ~default:[]
+          |> List.iter ~f:(function
+            | None -> ()
+            | Some dep -> (
+                match Hashtbl.find node_to_lrg dep with
                 | None -> ()
-                | Some dep -> (
-                    match Hashtbl.find node_to_lrg dep with
-                    | None -> ()
-                    | Some range' ->
-                        (match check_self_conflict actives range' dep with
-                        | Some other ->
-                            Hashtbl.update self_conflicts range' ~f:(function
-                              | None -> NodeSet.of_list [ dep; other ]
-                              | Some s ->
-                                  let s = Set.add s dep in
-                                  Set.add s other)
-                        | None -> ());
-                        Hashtbl.set actives ~key:range' ~data:dep))
+                | Some range' ->
+                    (match check_self_conflict actives range' dep with
+                    | Some other ->
+                        Hashtbl.update self_conflicts range' ~f:(function
+                          | None -> NodeSet.of_list [ dep; other ]
+                          | Some s ->
+                              let s = Set.add s dep in
+                              Set.add s other)
+                    | None -> ());
+                    Hashtbl.set actives ~key:range' ~data:dep))
       in
       let do_block ifg need_splits self_conflicts (bb : basic_block) =
           (* lrg -> bb where the lrg is defined *)
