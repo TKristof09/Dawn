@@ -1,1 +1,1 @@
-val create : unit -> Node.t
+val create : Ast.loc -> Node.t

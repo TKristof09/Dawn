@@ -580,6 +580,7 @@ and of_ctrl_node g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
     | FunctionCall ->
         let deps = Graph.get_dependencies g n in
         let fun_ptr = Fun_node.get_call_fun_ptr g n in
+        Node.show fun_ptr |> print_endline;
         let fun_idx = Types.get_fun_idx fun_ptr.typ in
         let kind = FunctionCall fun_idx in
         let node = { id = next_id (); kind; ir_node = n } in
@@ -638,7 +639,12 @@ let find_dep machine_g n ~f =
 let post_process (machine_g : (t, Graph.readwrite) Graph.t) =
     (* when changing a node's dependency we need to add a temp node that depends on the new_dep to make sure it doesn't get removed for not having any dependants. E.g. A jmp removes it's depedendancy on a set and set's it to the cmp directly. But the set might get removed if it has no dependants which in turn might remove the cmp for not having dependants *)
     let temp_node =
-        { id = next_id (); kind = Int 0; ir_node = { typ = ANY; kind = Data Constant; id = 0 } }
+        {
+          id = next_id ();
+          kind = Int 0;
+          ir_node =
+            { typ = ANY; kind = Data Constant; id = 0; loc = { filename = ""; line = 0; col = 0 } };
+        }
     in
     Graph.fold machine_g ~init:[] ~f:(fun acc n ->
         match n.kind with

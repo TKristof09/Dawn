@@ -1,15 +1,15 @@
-let create_new g ~ctrl ~mem ~size typ =
+let create_new g loc ~ctrl ~mem ~size typ =
     let node_type = Types.Tuple (Value [ Memory; Ptr typ ]) in
-    let n = Node.create_mem node_type New in
+    let n = Node.create_mem loc node_type New in
     Graph.add_dependencies g n [ Some ctrl; Some mem; Some size ];
     Graph.finalize_node g n
 
-let create_store (g : (Node.t, Graph.readwrite) Graph.t) ~mem ~(ptr : Node.t) ~offset ~value =
-    let n = Node.create_mem Memory Store in
+let create_store (g : (Node.t, Graph.readwrite) Graph.t) loc ~mem ~(ptr : Node.t) ~offset ~value =
+    let n = Node.create_mem loc Memory Store in
     Graph.add_dependencies g n [ None; Some mem; Some ptr; Some offset; Some value ];
     Graph.finalize_node g n
 
-let create_load g ~mem ~(ptr : Node.t) ~offset =
-    let n = Node.create_mem ptr.typ Load in
+let create_load g loc ~mem ~(ptr : Node.t) ~offset =
+    let n = Node.create_mem loc ptr.typ Load in
     Graph.add_dependencies g n [ None; Some mem; Some ptr; Some offset ];
     Graph.finalize_node g n

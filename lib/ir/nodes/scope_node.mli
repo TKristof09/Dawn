@@ -6,7 +6,7 @@ val push : Node.t -> unit
 val pop : (Node.t, Graph.readwrite) Graph.t -> Node.t -> unit
 val dup : (Node.t, Graph.readwrite) Graph.t -> Node.t -> Node.t
 val dup_loop : (Node.t, Graph.readwrite) Graph.t -> Node.t -> Node.t
-val merge : (Node.t, Graph.readwrite) Graph.t -> this:Node.t -> other:Node.t -> unit
+val merge : (Node.t, Graph.readwrite) Graph.t -> Ast.loc -> this:Node.t -> other:Node.t -> unit
 
 (** Merge the symbols from other into this, creating phi nodes if necessary *)
 

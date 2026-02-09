@@ -1,1 +1,1 @@
-let create () = Node.create_ctrl (Types.Tuple (Value [ Control; Memory ])) Start
+let create loc = Node.create_ctrl loc (Types.Tuple (Value [ Control; Memory ])) Start

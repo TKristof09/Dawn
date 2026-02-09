@@ -9,7 +9,7 @@ let define g (n : Node.t) name node =
         Graph.add_dependencies g n [ Some node ]
     | _ -> assert false
 
-let rec assign g (n : Node.t) name node =
+let rec assign g (n : Node.t) name (node : Node.t) =
     match n.kind with
     | Scope tbl -> (
         let symbol = Symbol_table.find_symbol tbl name in
@@ -23,7 +23,8 @@ let rec assign g (n : Node.t) name node =
                 | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> symbol
                 | _ ->
                     let phi =
-                        Phi_node.create_no_backedge g (get_ctrl g symbol) (get g symbol name)
+                        Phi_node.create_no_backedge g node.loc (get_ctrl g symbol)
+                          (get g symbol name)
                     in
                     assign g symbol name phi;
                     phi)
@@ -52,9 +53,8 @@ and get g (n : Node.t) name =
                 match tmp.kind with
                 | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> tmp
                 | _ ->
-                    let phi =
-                        Phi_node.create_no_backedge g (get_ctrl g symbol) (get g symbol name)
-                    in
+                    let s = get g symbol name in
+                    let phi = Phi_node.create_no_backedge g s.loc (get_ctrl g symbol) s in
                     assign g symbol name phi;
                     phi
             in
@@ -115,7 +115,7 @@ let dup_loop g (n : Node.t) =
         n_dup
     | _ -> assert false
 
-let merge g ~(this : Node.t) ~(other : Node.t) =
+let merge g loc ~(this : Node.t) ~(other : Node.t) =
     (* Same as `get` but can't have it assign the name to the phi node in the current table as we can't mutate the tabl while iterating *)
     let get_no_insert g tbl name =
         let symbol : Node.t = Symbol_table.find_symbol tbl name in
@@ -133,12 +133,12 @@ let merge g ~(this : Node.t) ~(other : Node.t) =
     in
     match (this.kind, other.kind) with
     | Scope this_tbl, Scope other_tbl ->
-        let region = Region_node.create g (get_ctrl g this, get_ctrl g other) in
+        let region = Region_node.create g loc (get_ctrl g this, get_ctrl g other) in
         let old_ctrl = get_ctrl g this in
         let diff_fn ~name ~this:n_this ~other:_ =
             if n_this <> old_ctrl then (
               let phi =
-                  Phi_node.create g region
+                  Phi_node.create g loc region
                     [ get_no_insert g this_tbl name; get_no_insert g other_tbl name ]
               in
               Graph.add_dependencies g this [ Some phi ];

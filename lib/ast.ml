@@ -1,3 +1,5 @@
+open Sexplib0.Sexp_conv
+
 type loc = {
     filename : string;
     line : int;
@@ -57,4 +59,4 @@ and expr =
     | IfElse of expr node * expr node * expr node option
     | Block of statement node list * expr node option
     | FnCall of expr node * expr node list
-[@@deriving show { with_path = false }, eq]
+[@@deriving show { with_path = false }, eq, sexp_of]

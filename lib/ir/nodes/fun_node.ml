@@ -1,14 +1,14 @@
 open Core
 
-let create g fun_ptr_type =
+let create g loc fun_ptr_type =
     let ret_typ =
         match fun_ptr_type with
         | Types.FunPtr (Value { params = _; ret; fun_indices = _ }) -> ret
         | _ ->
             failwithf "Expected function pointer type got %s" (Types.show_node_type fun_ptr_type) ()
     in
-    let return_value = Node.create_data ret_typ Phi in
-    let return_region = Node.create_ctrl Control Region in
+    let return_value = Node.create_data loc ret_typ Phi in
+    let return_region = Node.create_ctrl loc Control Region in
     Graph.add_dependencies g return_region [ None ];
     Graph.add_dependencies g return_value [ Some return_region ];
     let ret_node_typ : Types.node_type =
@@ -16,30 +16,31 @@ let create g fun_ptr_type =
         | Tuple (Value t) -> Tuple (Value (Control :: t))
         | v -> Tuple (Value [ Control; v ])
     in
-    let ret_node = Node.create_ctrl ret_node_typ Return in
+    let ret_node = Node.create_ctrl loc ret_node_typ Return in
     Graph.add_dependencies g ret_node [ Some return_region; Some return_value ];
     let fun_node =
-        Node.create_ctrl Control (Function { ret = ret_node; signature = fun_ptr_type; idx = -1 })
+        Node.create_ctrl loc Control
+          (Function { ret = ret_node; signature = fun_ptr_type; idx = -1 })
     in
     let start = Graph.get_start g in
     Graph.add_dependencies g fun_node [ None; Some start ];
     (fun_node, ret_node)
 
-let create_param g fun_node param_type i =
-    let n = Node.create_data param_type (Param i) in
+let create_param g loc fun_node param_type i =
+    let n = Node.create_data loc param_type (Param i) in
     Graph.add_dependencies g n [ Some fun_node ];
     n
 
-let add_call g ~ctrl ~fun_ptr args =
+let add_call g loc ~ctrl ~fun_ptr args =
     let ret_typ =
         match fun_ptr.Node.typ with
         | FunPtr (Value { params = _; ret; fun_indices = _ }) -> ret
         | t -> failwithf "Expected function pointer got: %s" (Types.show_node_type t) ()
     in
 
-    let call = Node.create_ctrl Control FunctionCall in
+    let call = Node.create_ctrl loc Control FunctionCall in
     Graph.add_dependencies g call (Some ctrl :: Some fun_ptr :: List.map args ~f:Option.some);
-    let call_end = Node.create_ctrl (Tuple (Value [ Control; ret_typ ])) FunctionCallEnd in
+    let call_end = Node.create_ctrl loc (Tuple (Value [ Control; ret_typ ])) FunctionCallEnd in
     Graph.add_dependencies g call_end [ Some call ];
     (call, call_end)
 

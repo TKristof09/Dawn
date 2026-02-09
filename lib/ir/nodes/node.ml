@@ -52,6 +52,7 @@ and t = {
     mutable typ : Types.node_type;
     mutable kind : kind;
     id : int;
+    loc : Ast.loc;
   }
 [@@deriving sexp_of]
 
@@ -109,10 +110,17 @@ let semantic_equal n1 deps1 n2 deps2 =
          deps1 deps2
 
 let hash n = Int.hash n.id
-let create_data typ kind = { typ; kind = Data kind; id = next_id () }
-let create_ctrl typ kind = { typ; kind = Ctrl kind; id = next_id () }
-let create_mem typ kind = { typ; kind = Mem kind; id = next_id () }
-let create_scope () = { typ = Types.ALL; kind = Scope (Symbol_table.create ()); id = next_id () }
+let create_data loc typ kind = { typ; kind = Data kind; id = next_id (); loc }
+let create_ctrl loc typ kind = { typ; kind = Ctrl kind; id = next_id (); loc }
+let create_mem loc typ kind = { typ; kind = Mem kind; id = next_id (); loc }
+
+let create_scope () =
+    {
+      typ = Types.ALL;
+      kind = Scope (Symbol_table.create ());
+      id = next_id ();
+      loc = { filename = ""; line = 0; col = 0 };
+    }
 
 let is_ctrl n =
     match n.kind with

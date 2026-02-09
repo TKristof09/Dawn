@@ -1,8 +1,11 @@
-val create : (Node.t, Graph.readwrite) Graph.t -> Types.node_type -> Node.t * Node.t
-val create_param : (Node.t, Graph.readwrite) Graph.t -> Node.t -> Types.node_type -> int -> Node.t
+val create : (Node.t, Graph.readwrite) Graph.t -> Ast.loc -> Types.node_type -> Node.t * Node.t
+
+val create_param :
+  (Node.t, Graph.readwrite) Graph.t -> Ast.loc -> Node.t -> Types.node_type -> int -> Node.t
 
 val add_call :
   (Node.t, Graph.readwrite) Graph.t ->
+  Ast.loc ->
   ctrl:Node.t ->
   fun_ptr:Node.t ->
   Node.t list ->

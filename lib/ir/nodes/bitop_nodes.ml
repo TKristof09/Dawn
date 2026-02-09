@@ -1,4 +1,4 @@
-let common g (lhs : Node.t) (rhs : Node.t) (kind : Node.data_kind) =
+let common g loc (lhs : Node.t) (rhs : Node.t) (kind : Node.data_kind) =
     let _op, _commutes =
         match kind with
         | Lsh -> (Int.shift_left, false)
@@ -15,13 +15,13 @@ let common g (lhs : Node.t) (rhs : Node.t) (kind : Node.data_kind) =
         (*         Graph.remove_node g rhs; *)
         (*         n *)
         | _ ->
-            let n = Node.create_data (Integer Any) kind in
+            let n = Node.create_data loc (Integer Any) kind in
             Graph.add_dependencies g n [ None; Some lhs; Some rhs ];
             n
     in
     Graph.finalize_node g n
 
-let create_lsh g (lhs : Node.t) (rhs : Node.t) = common g lhs rhs Lsh
-let create_rsh g (lhs : Node.t) (rhs : Node.t) = common g lhs rhs Rsh
-let create_band g (lhs : Node.t) (rhs : Node.t) = common g lhs rhs BAnd
-let create_bor g (lhs : Node.t) (rhs : Node.t) = common g lhs rhs BOr
+let create_lsh g loc (lhs : Node.t) (rhs : Node.t) = common g loc lhs rhs Lsh
+let create_rsh g loc (lhs : Node.t) (rhs : Node.t) = common g loc lhs rhs Rsh
+let create_band g loc (lhs : Node.t) (rhs : Node.t) = common g loc lhs rhs BAnd
+let create_bor g loc (lhs : Node.t) (rhs : Node.t) = common g loc lhs rhs BOr

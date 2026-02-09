@@ -1,4 +1,4 @@
-let create g ctrl nodes =
+let create g loc ctrl nodes =
     match nodes with
     | [ _ ] -> assert false
     | _ ->
@@ -7,7 +7,7 @@ let create g ctrl nodes =
                 Core.List.map nodes ~f:(fun (n : Node.t) -> n.typ)
                 |> Core.List.reduce_exn ~f:Types.join
             in
-            let n = Node.create_data typ Phi in
+            let n = Node.create_data loc typ Phi in
             Graph.add_dependencies g n (List.map Option.some (ctrl :: nodes));
             n
         in
@@ -15,9 +15,9 @@ let create g ctrl nodes =
 
 let get_ctrl g n = Graph.get_dependencies g n |> Core.List.hd_exn |> Core.Option.value_exn
 
-let create_no_backedge g ctrl (dep : Node.t) =
+let create_no_backedge g loc ctrl (dep : Node.t) =
     let typ = dep.typ in
-    let n = Node.create_data typ Phi in
+    let n = Node.create_data loc typ Phi in
     Graph.add_dependencies g n [ Some ctrl; None; Some dep ];
     n
 

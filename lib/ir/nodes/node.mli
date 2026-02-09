@@ -50,6 +50,7 @@ and t = {
     mutable typ : Types.node_type;
     mutable kind : kind;
     id : int;
+    loc : Ast.loc;
   }
 [@@deriving sexp_of]
 
@@ -61,9 +62,9 @@ val equal : t -> t -> bool
 
 val compare : t -> t -> int
 val hash : t -> int
-val create_data : Types.node_type -> data_kind -> t
-val create_ctrl : Types.node_type -> ctrl_kind -> t
-val create_mem : Types.node_type -> mem_kind -> t
+val create_data : Ast.loc -> Types.node_type -> data_kind -> t
+val create_ctrl : Ast.loc -> Types.node_type -> ctrl_kind -> t
+val create_mem : Ast.loc -> Types.node_type -> mem_kind -> t
 val create_scope : unit -> t
 val show : t -> string
 val show_kind : kind -> string

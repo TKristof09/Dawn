@@ -277,6 +277,10 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) next_node =
             Printf.sprintf "\t%s %s, [%s + %s]" op_str (asm_of_loc reg) (asm_of_loc ptr_reg)
               (asm_of_loc offset_reg)
     in
+    let node_loc =
+        Printf.sprintf "%s:%d:%d" n.ir_node.loc.filename n.ir_node.loc.line n.ir_node.loc.col
+    in
+    let node_asm = Printf.sprintf "%s ; %s" node_asm node_loc in
     match next_node with
     | None -> node_asm
     | Some next_node ->

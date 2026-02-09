@@ -225,7 +225,6 @@ let schedule_late g =
             | Jmp _ -> true
             | _ -> false
         in
-        print_endline "";
         let best =
             List.reduce_exn (get_path late) ~f:(fun best n -> if is_better best n then n else best)
         in
