@@ -31,10 +31,10 @@ let test str =
 let%expect_test "" =
     let test_str =
         {|
-    let k:int = 69;
-    let i:int = k;
-    let j:int = i / 69;
-    let x:int = i / 420;
+    let k:i64 = 69;
+    let i:i64 = k;
+    let j:i64 = i / 69;
+    let x:i64 = i / 420;
     i = i + 1;
     if(i == j) {j = j+1;}
     if(j==0){j=j+4;}
@@ -51,7 +51,6 @@ let%expect_test "" =
       Block #12 ((Ideal (CProj 0))): -> [T: #10,F: #19]
         #RCX   (%16 ): (Int 1)                                                       (Ideal IR: #11)
         #RCX   (%15 ): (AddImm 69)     [ #RCX (%16) ]                                (Ideal IR: #12)
-        #RAX   (%18 ): (Int 69)                                                      (Ideal IR: #6)
         #RAX   (%43 ): (Int 69)                                                      (Ideal IR: #6)
         #RBX   (%44 ): (Int 69)                                                      (Ideal IR: #6)
         #RAX   (%17 ): Div             [ #RAX (%43), #RBX (%44) ]                    (Ideal IR: #8)
@@ -149,7 +148,6 @@ let%expect_test "" =
       mov rcx, 1
       add rcx, 69
       mov rax, 69
-      mov rax, 69
       mov rbx, 69
       cqo
       idiv rbx 		// rax = rax / rbx
@@ -184,7 +182,7 @@ let%expect_test "" =
       L_4:
       L_31:
       L_3:
-      //Exit program
+      ;Exit program
       mov rax, 60
       xor rdi, rdi
       syscall
@@ -193,10 +191,10 @@ let%expect_test "" =
 let%expect_test "fibonacci" =
     let test_str =
         {|
-    let x:int = 0;
-    let y:int = 1;
+    let x:i64 = 0;
+    let y:i64 = 1;
     while(0 <= x) {
-        let tmp:int = x + y;
+        let tmp:i64 = x + y;
         x = y;
         y = tmp;
     }
@@ -210,22 +208,20 @@ let%expect_test "fibonacci" =
       Block #1 ((Ideal Start)): -> [#7]
 
       Block #7 ((Ideal (CProj 0))): -> [#5]
-        #RAX   (%13 ): (Int 1)                                                       (Ideal IR: #7)
-        #RAX   (%14 ): (Int 0)                                                       (Ideal IR: #6)
-        #RAX   (%18 ): (Int 0)                                                       (Ideal IR: #6)
-        #RBX   (%21 ): (Int 1)                                                       (Ideal IR: #7)
+        #RBX   (%18 ): (Int 0)                                                       (Ideal IR: #6)
+        #RAX   (%21 ): (Int 1)                                                       (Ideal IR: #7)
 
       Block #5 ((Ideal Loop)): -> [T: #6,F: #3]
-        #RBX   (%11 ): (Ideal Phi)     [ #RBX (%22), #RBX (%21) ]                    (Ideal IR: #17)
-        #RAX   (%10 ): (Ideal Phi)     [ #RAX (%19), #RAX (%18) ]                    (Ideal IR: #11)
-        #Flags (%9  ): (CmpImm 0)      [ #RAX (%10) ]                                (Ideal IR: #12)
+        #RAX   (%11 ): (Ideal Phi)     [ #RAX (%12), #RAX (%21) ]                    (Ideal IR: #17)
+        #RBX   (%10 ): (Ideal Phi)     [ #RBX (%19), #RBX (%18) ]                    (Ideal IR: #11)
+        #RCX   (%20 ): Mov             [ #RAX (%11) ]                                (Ideal IR: #17)
+        #RAX   (%17 ): Mov             [ #RBX (%10) ]                                (Ideal IR: #11)
+        #Flags (%9  ): (CmpImm 0)      [ #RAX (%17) ]                                (Ideal IR: #12)
                (%4  ): (Jmp GEq)       [ #Flags (%9) ]                               (Ideal IR: #14)
 
       Block #6 ((Ideal (CProj 0))): -> [#5]
-        #RCX   (%23 ): Mov             [ #RAX (%10) ]                                (Ideal IR: #11)
-        #RCX   (%12 ): Add             [ #RCX (%23), #RBX (%11) ]                    (Ideal IR: #18)
-        #RAX   (%19 ): Mov             [ #RBX (%11) ]                                (Ideal IR: #17)
-        #RBX   (%22 ): Mov             [ #RCX (%12) ]                                (Ideal IR: #18)
+        #RAX   (%12 ): Add             [ #RAX (%17), #RCX (%20) ]                    (Ideal IR: #18)
+        #RBX   (%19 ): Mov             [ #RCX (%20) ]                                (Ideal IR: #17)
 
       Block #3 ((Ideal (CProj 1))): -> [#2]
 
@@ -281,24 +277,22 @@ let%expect_test "fibonacci" =
 
       start:
       mov rbp, rsp
+      mov rbx, 0
       mov rax, 1
-      mov rax, 0
-      mov rax, 0
-      mov rbx, 1
       Loop_5:
+      mov rcx, rax
+      mov rax, rbx
       cmp rax, 0
       jl Exit
 
       L_6:
-      mov rcx, rax
-      add rcx, rbx
-      mov rax, rbx
+      add rax, rcx
       mov rbx, rcx
       jmp Loop_5
 
       L_3:
       Exit:
-      //Exit program
+      ;Exit program
       mov rax, 60
       xor rdi, rdi
       syscall
@@ -307,12 +301,12 @@ let%expect_test "fibonacci" =
 let%expect_test "nested loop" =
     let test_str =
         {|
-    let i:int = 0;
-    let sum:int = 0;
-    let c: int = 5;
+    let i:i64 = 0;
+    let sum:i64 = 0;
+    let c:i64 = 5;
     while(i == c - 1) {
         i = i + 1;
-        let j:int = 0;
+        let j:i64 = 0;
         while(i+j == 11){
             sum = j;
             j = j + 2;
@@ -329,46 +323,41 @@ let%expect_test "nested loop" =
       Block #1 ((Ideal Start)): -> [#22]
 
       Block #22 ((Ideal (CProj 0))): -> [#8]
-        #RAX   (%19 ): (Int 0)                                                       (Ideal IR: #6)
-        #RSI   (%26 ): (Int 5)                                                       (Ideal IR: #8)
-        #RSI   (%25 ): (SubImm 1)      [ #RSI (%26) ]                                (Ideal IR: #14)
+        #RCX   (%26 ): (Int 5)                                                       (Ideal IR: #8)
+        #RCX   (%25 ): (SubImm 1)      [ #RCX (%26) ]                                (Ideal IR: #14)
         #RAX   (%37 ): (Int 0)                                                       (Ideal IR: #6)
-        #RBX   (%38 ): (Int 0)                                                       (Ideal IR: #6)
-        #RDI   (%46 ): (Int 0)                                                       (Ideal IR: #6)
+        #RSI   (%46 ): (Int 0)                                                       (Ideal IR: #6)
 
       Block #8 ((Ideal Loop)): -> [T: #13,F: #6]
-        #RDI   (%29 ): (Ideal Phi)     [ #RDI (%30), #RDI (%46) ]                    (Ideal IR: #34)
-        #RAX   (%18 ): (Ideal Phi)     [ #RAX (%34), #RAX (%37) ]                    (Ideal IR: #11)
-        #RBX   (%45 ): Mov             [ #RDI (%29) ]                                (Ideal IR: #34)
-        #Flags (%24 ): Cmp             [ #RAX (%18), #RSI (%25) ]                    (Ideal IR: #15)
+        #RSI   (%29 ): (Ideal Phi)     [ #RSI (%30), #RSI (%46) ]                    (Ideal IR: #34)
+        #RAX   (%18 ): (Ideal Phi)     [ #RAX (%17), #RAX (%37) ]                    (Ideal IR: #11)
+        #RDX   (%45 ): Mov             [ #RSI (%29) ]                                (Ideal IR: #34)
+        #Flags (%24 ): Cmp             [ #RAX (%18), #RCX (%25) ]                    (Ideal IR: #15)
                (%7  ): (Jmp Eq)        [ #Flags (%24) ]                              (Ideal IR: #17)
 
       Block #13 ((Ideal (CProj 0))): -> [#11]
-        #RCX   (%35 ): Mov             [ #RAX (%18) ]                                (Ideal IR: #11)
-        #RCX   (%17 ): (AddImm 1)      [ #RCX (%35) ]                                (Ideal IR: #21)
-        #RAX   (%39 ): (Int 0)                                                       (Ideal IR: #6)
-        #RDX   (%43 ): (Int 0)                                                       (Ideal IR: #6)
-        #RDI   (%44 ): Mov             [ #RBX (%45) ]                                (Ideal IR: #34)
+        #RAX   (%17 ): (AddImm 1)      [ #RAX (%18) ]                                (Ideal IR: #21)
+        #RBX   (%43 ): (Int 0)                                                       (Ideal IR: #6)
+        #RSI   (%44 ): Mov             [ #RDX (%45) ]                                (Ideal IR: #34)
 
       Block #11 ((Ideal Loop)): -> [T: #12,F: #9]
-        #RDX   (%20 ): (Ideal Phi)     [ #RDX (%21), #RDX (%43) ]                    (Ideal IR: #26)
-        #RDI   (%30 ): (Ideal Phi)     [ #RDI (%41), #RDI (%44) ]                    (Ideal IR: #35)
-        #RAX   (%42 ): Mov             [ #RDX (%20) ]                                (Ideal IR: #26)
-        #RBX   (%33 ): Mov             [ #RCX (%17) ]                                (Ideal IR: #21)
-        #RBX   (%16 ): Add             [ #RBX (%33), #RAX (%42) ]                    (Ideal IR: #27)
+        #RBX   (%20 ): (Ideal Phi)     [ #RBX (%21), #RBX (%43) ]                    (Ideal IR: #26)
+        #RSI   (%30 ): (Ideal Phi)     [ #RSI (%41), #RSI (%44) ]                    (Ideal IR: #35)
+        #RDX   (%42 ): Mov             [ #RBX (%20) ]                                (Ideal IR: #26)
+        #RBX   (%33 ): Mov             [ #RAX (%17) ]                                (Ideal IR: #21)
+        #RBX   (%16 ): Add             [ #RBX (%33), #RDX (%42) ]                    (Ideal IR: #27)
         #Flags (%15 ): (CmpImm 11)     [ #RBX (%16) ]                                (Ideal IR: #29)
                (%10 ): (Jmp Eq)        [ #Flags (%15) ]                              (Ideal IR: #31)
 
       Block #12 ((Ideal (CProj 0))): -> [#11]
-        #RDX   (%40 ): Mov             [ #RAX (%42) ]                                (Ideal IR: #26)
-        #RDX   (%21 ): (AddImm 2)      [ #RDX (%40) ]                                (Ideal IR: #37)
-        #RDI   (%41 ): Mov             [ #RAX (%42) ]                                (Ideal IR: #26)
+        #RBX   (%40 ): Mov             [ #RDX (%42) ]                                (Ideal IR: #26)
+        #RBX   (%21 ): (AddImm 2)      [ #RBX (%40) ]                                (Ideal IR: #37)
+        #RSI   (%41 ): Mov             [ #RDX (%42) ]                                (Ideal IR: #26)
 
       Block #9 ((Ideal (CProj 1))): -> [#8]
-        #RAX   (%34 ): Mov             [ #RCX (%17) ]                                (Ideal IR: #21)
 
       Block #6 ((Ideal (CProj 1))): -> [T: #4,F: #31]
-        #Flags (%28 ): (CmpImm 0)      [ #RBX (%45) ]                                (Ideal IR: #39)
+        #Flags (%28 ): (CmpImm 0)      [ #RDX (%45) ]                                (Ideal IR: #39)
                (%5  ): (Jmp Eq)        [ #Flags (%28) ]                              (Ideal IR: #40)
 
       Block #4 ((Ideal (CProj 0))): -> [#3]
@@ -429,48 +418,43 @@ let%expect_test "nested loop" =
 
       start:
       mov rbp, rsp
+      mov rcx, 5
+      sub rcx, 1
       mov rax, 0
-      mov rsi, 5
-      sub rsi, 1
-      mov rax, 0
-      mov rbx, 0
-      mov rdi, 0
+      mov rsi, 0
       Loop_8:
-      mov rbx, rdi
-      cmp rax, rsi
+      mov rdx, rsi
+      cmp rax, rcx
       jne L_6
 
       L_13:
-      mov rcx, rax
-      add rcx, 1
-      mov rax, 0
-      mov rdx, 0
-      mov rdi, rbx
+      add rax, 1
+      mov rbx, 0
+      mov rsi, rdx
       Loop_11:
-      mov rax, rdx
-      mov rbx, rcx
-      add rbx, rax
+      mov rdx, rbx
+      mov rbx, rax
+      add rbx, rdx
       cmp rbx, 11
-      jne L_9
+      jne Loop_8
 
       L_12:
-      mov rdx, rax
-      add rdx, 2
-      mov rdi, rax
+      mov rbx, rdx
+      add rbx, 2
+      mov rsi, rdx
       jmp Loop_11
 
       L_9:
-      mov rax, rcx
       jmp Loop_8
 
       L_6:
-      cmp rbx, 0
+      cmp rdx, 0
       jne L_3
 
       L_4:
       L_31:
       L_3:
-      //Exit program
+      ;Exit program
       mov rax, 60
       xor rdi, rdi
       syscall
@@ -479,7 +463,7 @@ let%expect_test "nested loop" =
 let%expect_test "binops" =
     let test_str =
         {|
-    let i:int = 0;
+    let i:i64 = 0;
     i = i | (1 << 2);
     if(((i>>1) & 1) == 1) {}
     |}
@@ -569,7 +553,7 @@ let%expect_test "binops" =
       L_4:
       L_14:
       L_3:
-      //Exit program
+      ;Exit program
       mov rax, 60
       xor rdi, rdi
       syscall
@@ -578,11 +562,11 @@ let%expect_test "binops" =
 let%expect_test "function call" =
     let test_str =
         {|
-    fun f(a: int, b: int, c: int, d: int, e: int, f: int) -> int {
+    fun f(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64) -> i64 {
         69 - a + b + c + d + e + f
     }
 
-    let i: int = f(1,2,3,4,5,6) + 69;
+    let i: i64 = f(1,2,3,4,5,6) + 69;
     if(i==0) {}
     |}
     in
@@ -708,7 +692,7 @@ let%expect_test "function call" =
       L_4:
       L_37:
       L_3:
-      //Exit program
+      ;Exit program
       mov rax, 60
       xor rdi, rdi
       syscall
@@ -723,7 +707,7 @@ let%expect_test "function call" =
       add rax, r9
       L_17:
       ret
-      //Exit program
+      ;Exit program
       mov rax, 60
       xor rdi, rdi
       syscall

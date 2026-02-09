@@ -409,7 +409,7 @@ end = struct
       Hashtbl.remove ifg r;
       neighbours
 
-  let simplify (ifg : t) g =
+  let simplify (ifg : t) (g : (Machine_node.t, 'a) Graph.t) =
       let trivial_lrgs = Pairing_heap.create ~cmp:compare_trival_lrgs () in
       let non_trivial_lrgs = Hash_set.create (module Range) in
       Hashtbl.iter_keys ifg ~f:(fun (r : Range.t) ->
@@ -507,66 +507,97 @@ let spill_node g n =
     in
     if Machine_node.is_cheap_to_clone n then clone_node g n else copy_node g n
 
-let rec insert_before g program ~(before_this : Machine_node.t) ~(node_to_spill : Machine_node.t) =
-    assert (
-      List.mem
-        (Graph.get_dependencies g before_this)
-        (Some node_to_spill) ~equal:(Option.equal Machine_node.equal));
+let insert_before g program ~(before_this : Machine_node.t) ~(node_to_spill : Machine_node.t) =
+    let rec insert_aux g program ~(before_this : Machine_node.t) ~(node_to_spill : Machine_node.t) =
+        assert (
+          List.mem
+            (Graph.get_dependencies g before_this)
+            (Some node_to_spill) ~equal:(Option.equal Machine_node.equal));
 
-    let end_of_bb bb =
-        List.fold_until program ~init:None
-          ~f:(fun acc n ->
-            let cfg = if Machine_node.is_blockhead n then Some n else Graph.get_dependency g n 0 in
-            match cfg with
-            | None -> Continue acc
-            | Some cfg -> (
-                match acc with
-                | None -> if Machine_node.equal bb cfg then Continue (Some n) else Continue None
-                | Some n' -> if Machine_node.equal bb cfg then Continue (Some n) else Stop (Some n')
-                ))
-          ~finish:(fun res ->
-            match res with
-            | Some n -> Some n
-            | None -> failwithf "Couldn't find end of bb %s" (Machine_node.show bb) ())
-        |> Option.value_exn
-    in
-    let bb =
-        match before_this.kind with
-        | Ideal Phi ->
-            let idx =
-                Graph.get_dependencies g before_this
-                |> List.find_mapi_exn ~f:(fun i n ->
-                    match n with
-                    | None -> None
-                    | Some n -> if Machine_node.equal n node_to_spill then Some i else None)
-            in
-            let region = Graph.get_dependency g before_this 0 |> Option.value_exn in
-            Graph.get_dependency g region idx |> Option.value_exn
-        | _ -> Graph.get_dependency g before_this 0 |> Option.value_exn
-    in
-    let target =
-        match before_this.kind with
-        | Ideal Phi -> end_of_bb bb
-        | _ -> before_this
-    in
-    match program with
-    | [] -> []
-    | h :: t when Machine_node.equal h target -> (
-        let n' = spill_node g node_to_spill in
-        (* Printf.printf "INSERTING %s (%s) before %s\n" (Machine_node.show n') *)
-        (* (Machine_node.show node_to_spill) (Machine_node.show before_this); *)
-        Graph.set_dependency g n' (Some bb) 0;
-        let dep_idx, _ =
-            List.findi_exn (Graph.get_dependencies g before_this) ~f:(fun _ dep ->
-                match dep with
-                | None -> false
-                | Some dep -> Machine_node.equal dep node_to_spill)
+        let end_of_bb bb =
+            List.fold_until program ~init:None
+              ~f:(fun acc n ->
+                let cfg =
+                    if Machine_node.is_blockhead n then Some n else Graph.get_dependency g n 0
+                in
+                match cfg with
+                | None -> Continue acc
+                | Some cfg -> (
+                    match acc with
+                    | None -> if Machine_node.equal bb cfg then Continue (Some n) else Continue None
+                    | Some n' ->
+                        if Machine_node.equal bb cfg then Continue (Some n) else Stop (Some n')))
+              ~finish:(fun res ->
+                match res with
+                | Some n -> Some n
+                | None -> failwithf "Couldn't find end of bb %s" (Machine_node.show bb) ())
+            |> Option.value_exn
         in
-        Graph.set_dependency g before_this (Some n') dep_idx;
-        match before_this.kind with
-        | Ideal Phi -> h :: n' :: t (* put it after the last node of the bb *)
-        | _ -> n' :: h :: t)
-    | h :: t -> h :: insert_before g t ~node_to_spill ~before_this
+        let bb =
+            match before_this.kind with
+            | Ideal Phi ->
+                let idx =
+                    Graph.get_dependencies g before_this
+                    |> List.find_mapi_exn ~f:(fun i n ->
+                        match n with
+                        | None -> None
+                        | Some n -> if Machine_node.equal n node_to_spill then Some i else None)
+                in
+                let region = Graph.get_dependency g before_this 0 |> Option.value_exn in
+                Graph.get_dependency g region idx |> Option.value_exn
+            | _ -> Graph.get_dependency g before_this 0 |> Option.value_exn
+        in
+        let target =
+            match before_this.kind with
+            | Ideal Phi -> end_of_bb bb
+            | _ -> before_this
+        in
+        match program with
+        | [] -> []
+        | h :: t when Machine_node.equal h target -> (
+            let n' = spill_node g node_to_spill in
+            (* Printf.printf "INSERTING %s (%s) before %s\n" (Machine_node.show n') *)
+            (* (Machine_node.show node_to_spill) (Machine_node.show before_this); *)
+            Graph.set_dependency g n' (Some bb) 0;
+            let dep_idx, _ =
+                List.findi_exn (Graph.get_dependencies g before_this) ~f:(fun _ dep ->
+                    match dep with
+                    | None -> false
+                    | Some dep -> Machine_node.equal dep node_to_spill)
+            in
+            Graph.set_dependency g before_this (Some n') dep_idx;
+            match before_this.kind with
+            | Ideal Phi -> h :: n' :: t (* put it after the last node of the bb *)
+            | _ -> n' :: h :: t)
+        | h :: t -> h :: insert_aux g t ~node_to_spill ~before_this
+    in
+    (* if there is an intermediary split or clone already inserted we don't do anything *)
+    if
+      not
+      @@ List.mem
+           (Graph.get_dependencies g before_this)
+           (Some node_to_spill) ~equal:(Option.equal Machine_node.equal)
+    then
+      match
+        Graph.get_dependencies g before_this
+        |> List.find ~f:(function
+          | None -> false
+          | Some n -> (
+              if Machine_node.is_cheap_to_clone node_to_spill then
+                Poly.equal n.kind node_to_spill.kind
+                && List.equal (Option.equal Machine_node.equal) (Graph.get_dependencies g n)
+                     (Graph.get_dependencies g node_to_spill)
+              else
+                match
+                  n.kind
+                with
+                | Mov -> List.mem (Graph.get_dependants g n) before_this ~equal:Machine_node.equal
+                | _ -> false))
+      with
+      | None -> assert false
+      | Some _ -> program
+    else
+      insert_aux g program ~before_this ~node_to_spill
 
 let rec duplicate_after g program node =
     let rec skip_phis (l : Machine_node.t list) n =
@@ -862,8 +893,9 @@ let allocate g program =
     let ( let* ) = Stdlib.Result.bind in
     let rec loop program round =
         (* Printf.printf "\n\n ================= ROUND %d ======================\n\n" round; *)
-        let attempt () =
+        let attempt g program =
             (* Ir_printer.to_dot_machine g |> Printf.printf "\n\n%s\n"; *)
+            (* Ir_printer.to_string_machine_linear g program |> print_endline; *)
             let node_to_lrg = build_live_ranges g program in
             (* print_lrgs node_to_lrg; *)
             let* ifg = InterferenceGraph.build g program node_to_lrg in
@@ -871,12 +903,12 @@ let allocate g program =
             let* coloring = InterferenceGraph.color ifg g in
             Ok coloring
         in
-        if round > 7 then
+        if round > 10 then
           failwith "This should've finished by now"
-        else
-          match
-            attempt ()
-          with
+        else (
+          Graph.cleanup g;
+          let program = List.filter program ~f:(Graph.mem g) in
+          match attempt g program with
           | Ok reg_assoc ->
               (* Printf.printf "Register allocation done in %d rounds\n" round; *)
               (program, reg_assoc)
@@ -891,7 +923,7 @@ let allocate g program =
                   List.fold failed_ranges ~init:new_program ~f:(fun program lrg ->
                       split g program lrg)
               in
-              loop new_program (round + 1)
+              loop new_program (round + 1))
     in
     let program, lrg_to_reg = loop program 1 in
     (* Hashtbl.iteri lrg_to_reg ~f:(fun ~key ~data -> *)

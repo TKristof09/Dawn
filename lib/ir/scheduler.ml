@@ -52,6 +52,15 @@ let rec loop_depth g (n : Machine_node.t) =
     | Ideal Start -> 1
     | FunctionProlog _ -> 1
     | Ideal Region -> Graph.get_dependency g n 1 |> Option.value_exn |> loop_depth g
+    | Ideal (CProj 1) -> (
+        let p = Graph.get_dependency g n 0 |> Option.value_exn in
+        match p.kind with
+        | Jmp _ -> (
+            let p = Graph.get_dependency g p 0 |> Option.value_exn in
+            match p.kind with
+            | Ideal Loop -> Loop_node.get_entry_edge g p |> loop_depth g
+            | _ -> Graph.get_dependency g n 0 |> Option.value_exn |> loop_depth g)
+        | _ -> Graph.get_dependency g n 0 |> Option.value_exn |> loop_depth g)
     | _ -> Graph.get_dependency g n 0 |> Option.value_exn |> loop_depth g
 
 let rec dom g (n : Machine_node.t) =
@@ -208,16 +217,20 @@ let schedule_late g =
             else
               cur :: get_path (dom g cur)
         in
-        let ( < ) a b =
-            loop_depth g a > loop_depth g b
-            || idepth g a < idepth g b
+        let is_better best cur =
+            loop_depth g cur < loop_depth g best
+            || idepth g cur > idepth g best
             ||
-            match a.kind with
+            match best.kind with
             | Jmp _ -> true
             | _ -> false
         in
-        List.max_elt (get_path late) ~compare:(fun a b -> if a < b then -1 else 1)
-        |> Option.value_exn
+        print_endline "";
+        let best =
+            List.reduce_exn (get_path late) ~f:(fun best n -> if is_better best n then n else best)
+        in
+        assert (Machine_node.is_blockhead best);
+        best
     in
     let rec schedule (node : Machine_node.t) =
         if not (Hashtbl.mem m node) then (
@@ -252,7 +265,9 @@ let schedule_late g =
                 else
                   Graph.get_dependency g early 0 |> Option.value_exn
             in
-
+            (* if node.id = 73 then ( *)
+            (*   Printf.printf "EARLY: %s LATE: %s\n" (Machine_node.show early) (Machine_node.show lca); *)
+            (*   assert false); *)
             let best = find_best early lca in
             Hashtbl.set m ~key:node ~data:best)
     in

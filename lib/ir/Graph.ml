@@ -255,6 +255,7 @@ let set_stop_ctrl g ctrl =
     check g
 
 let get_num_nodes g = Hash_set.length g.nodes
+let mem g n = Hash_set.mem g.nodes n
 let iter g = Hash_set.iter g.nodes
 let fold g = Hash_set.fold g.nodes
 let find g = Hash_set.find g.nodes

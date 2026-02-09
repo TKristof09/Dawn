@@ -30,23 +30,107 @@ type fun_ptr = {
        the ids in the Int.Set.t *)
     fun_indices : [ `Include of Int.Set.t | `Exclude of Int.Set.t ]; [@printer pp_fun_indices]
   }
-[@@deriving.show { with_paths = false }]
+
+and struct_type = {
+    name : string;
+    fields : (string * node_type) list;
+  }
+
+and const_array = node_type list
 
 and node_type =
     | ANY
     | Integer of int sub_lattice
     | Tuple of node_type list sub_lattice
     | FunPtr of fun_ptr sub_lattice
+    | Ptr of node_type
+    | Struct of struct_type sub_lattice
+    | ConstArray of const_array sub_lattice
     | Memory
     | Control
     | ALL
 [@@deriving show { with_path = false }, sexp_of]
 
+let make_fun_ptr ?idx params ret =
+    let is_valid_param_type t =
+        match t with
+        | Integer _
+        | Ptr _ ->
+            true
+        | _ -> false
+    in
+    let is_valid_ret_type =
+        match ret with
+        | Integer _
+        | Ptr _ ->
+            true
+        | _ -> false
+    in
+    assert (List.for_all params ~f:is_valid_param_type);
+    assert is_valid_ret_type;
+    let fun_indices =
+        match idx with
+        | Some idx -> `Include (Int.Set.singleton idx)
+        | None -> `Include Int.Set.empty
+    in
+    FunPtr (Value { params; ret; fun_indices })
+
+let make_struct name fields =
+    let is_valid_field_type (_, t) =
+        match t with
+        | Integer _
+        | Ptr _
+        | ConstArray _ ->
+            true
+        | _ -> false
+    in
+    assert (List.for_all fields ~f:is_valid_field_type);
+    Struct (Value { name; fields })
+
+let make_array element_type len_type =
+    let is_valid_element_type =
+        match element_type with
+        | Integer _
+        | Ptr _
+        | ConstArray _ ->
+            true
+        | _ -> false
+    in
+    let is_valid_len_type =
+        match len_type with
+        | Integer _ -> true
+        | _ -> false
+    in
+    assert is_valid_element_type;
+    assert is_valid_len_type;
+    let name =
+        match element_type with
+        | Integer _ -> "int_array"
+        | Ptr _ -> "ptr_array"
+        | ConstArray (Value (x :: _)) -> (
+            match x with
+            | Integer _ -> "int_array"
+            | _ -> failwith "TODO")
+        | _ -> assert false
+    in
+    make_struct name [ ("len", len_type); ("[]", element_type) ]
+
+let make_string s =
+    let len = String.length s in
+    let contents = s |> String.to_list |> List.map ~f:(fun c -> Integer (Value (Char.to_int c))) in
+    let el_type = ConstArray (Value contents) in
+    make_array el_type (Integer (Value len))
+
 let of_ast_type (ast_type : Ast.var_type) : node_type =
     (* FIXME actually implement *)
     match ast_type with
-    | Ast.Type "int" -> Integer Any
-    | _ -> assert false
+    | Ast.Type "i64" -> Integer Any
+    | Ast.Type "str" ->
+        Ptr
+          (Struct
+             (Value
+                { name = "int_array"; fields = [ ("len", Integer Any); ("[]", ConstArray Any) ] }))
+    | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type ast_type) ()
 
 let rec meet t t' =
     let meet_sub_lattice t t' ~f =
@@ -64,8 +148,8 @@ let rec meet t t' =
         let l =
             meet_sub_lattice t t' ~f:(fun x x' ->
                 match List.map2 x x' ~f:meet with
-                | List.Or_unequal_lengths.Ok l -> Value l
-                | List.Or_unequal_lengths.Unequal_lengths -> All)
+                | Ok l -> Value l
+                | Unequal_lengths -> All)
         in
         Tuple l
     | FunPtr t, FunPtr t' ->
@@ -80,10 +164,34 @@ let rec meet t t' =
                     | `Exclude s, `Exclude s' -> `Exclude (Set.inter s s')
                 in
                 match List.map2 fp.params fp'.params ~f:meet with
-                | List.Or_unequal_lengths.Ok params -> Value { params; ret; fun_indices }
-                | List.Or_unequal_lengths.Unequal_lengths -> All)
+                | Ok params -> Value { params; ret; fun_indices }
+                | Unequal_lengths -> All)
         in
         FunPtr l
+    | Struct s, Struct s' ->
+        let l =
+            meet_sub_lattice s s' ~f:(fun s s' ->
+                if not (String.equal s.name s'.name) then
+                  All
+                else
+                  match
+                    List.map2 s.fields s'.fields ~f:(fun (name, t) (name', t') ->
+                        assert (String.equal name name');
+                        (name, meet t t'))
+                  with
+                  | Ok fields -> Value { name = s.name; fields }
+                  | Unequal_lengths -> assert false)
+        in
+        Struct l
+    | Ptr p, Ptr p' -> meet p p'
+    | ConstArray a, ConstArray a' ->
+        let l =
+            meet_sub_lattice a a' ~f:(fun x x' ->
+                match List.map2 x x' ~f:meet with
+                | List.Or_unequal_lengths.Ok l -> Value l
+                | List.Or_unequal_lengths.Unequal_lengths -> All)
+        in
+        ConstArray l
     | Control, Control -> Control
     | Memory, Memory -> Memory
     | ALL, _
@@ -94,8 +202,11 @@ let rec meet t t' =
     | Integer _, _
     | Tuple _, _
     | FunPtr _, _
+    | Struct _, _
+    | Ptr _, _
     | Control, _
-    | Memory, _ ->
+    | Memory, _
+    | ConstArray _, _ ->
         ALL
 
 let rec join t t' =
@@ -115,9 +226,9 @@ let rec join t t' =
     | Tuple t, Tuple t' ->
         let l =
             join_sub_lattice t t' ~f:(fun x x' ->
-                match Core.List.map2 x x' ~f:join with
-                | Core.List.Or_unequal_lengths.Ok l -> Value l
-                | Core.List.Or_unequal_lengths.Unequal_lengths -> Any)
+                match List.map2 x x' ~f:join with
+                | Ok l -> Value l
+                | Unequal_lengths -> Any)
         in
         Tuple l
     | FunPtr t, FunPtr t' ->
@@ -132,10 +243,34 @@ let rec join t t' =
                     | `Exclude s, `Exclude s' -> `Exclude (Set.union s s')
                 in
                 match List.map2 fp.params fp'.params ~f:meet with
-                | List.Or_unequal_lengths.Ok params -> Value { params; ret; fun_indices }
-                | List.Or_unequal_lengths.Unequal_lengths -> All)
+                | Ok params -> Value { params; ret; fun_indices }
+                | Unequal_lengths -> All)
         in
         FunPtr l
+    | Struct s, Struct s' ->
+        let l =
+            join_sub_lattice s s' ~f:(fun s s' ->
+                if not (String.equal s.name s'.name) then
+                  Any
+                else
+                  match
+                    List.map2 s.fields s'.fields ~f:(fun (name, t) (name', t') ->
+                        assert (String.equal name name');
+                        (name, join t t'))
+                  with
+                  | Ok fields -> Value { name = s.name; fields }
+                  | Unequal_lengths -> assert false)
+        in
+        Struct l
+    | Ptr p, Ptr p' -> join p p'
+    | ConstArray a, ConstArray a' ->
+        let l =
+            join_sub_lattice a a' ~f:(fun x x' ->
+                match List.map2 x x' ~f:join with
+                | Ok l -> Value l
+                | Unequal_lengths -> Any)
+        in
+        ConstArray l
     | Control, Control -> Control
     | Memory, Memory -> Memory
     | ALL, _ -> t'
@@ -146,11 +281,14 @@ let rec join t t' =
     | Integer _, _
     | Tuple _, _
     | FunPtr _, _
+    | Struct _, _
+    | Ptr _, _
     | Control, _
-    | Memory, _ ->
+    | Memory, _
+    | ConstArray _, _ ->
         ANY
 
-let is_constant t =
+let rec is_constant t =
     let is_constant_lattice = function
         | Any
         | All ->
@@ -165,7 +303,20 @@ let is_constant t =
         false
     | Integer x -> is_constant_lattice x
     | Tuple x -> is_constant_lattice x
-    | FunPtr x -> is_constant_lattice x
+    | FunPtr x -> (
+        match x with
+        | Any
+        | All ->
+            false
+        | Value f -> is_constant f.ret && List.for_all f.params ~f:(fun t -> is_constant t))
+    | Struct x -> (
+        match x with
+        | Any
+        | All ->
+            false
+        | Value s -> List.for_all s.fields ~f:(fun (_, t) -> is_constant t))
+    | Ptr p -> is_constant p
+    | ConstArray x -> is_constant_lattice x
 
 let get_fun_idx t =
     match t with
@@ -175,4 +326,57 @@ let get_fun_idx t =
         | `Include _
         | `Exclude _ ->
             failwithf "Function idx couldn't be determined %s" (show_fun_ptr fun_ptr) ())
+    | _ -> assert false
+
+let is_const_array t =
+    match t with
+    | Struct (Value { name = _; fields }) ->
+        List.exists fields ~f:(fun (name, t) ->
+            if String.equal name "[]" then
+              match
+                t
+              with
+              | ConstArray (Value _) -> true
+              | _ -> false
+            else
+              false)
+    | _ -> false
+
+let get_string t =
+    match t with
+    | Ptr (Struct (Value { name = _; fields })) -> (
+        match
+          List.find_map fields ~f:(fun (name, t) ->
+              if String.equal name "[]" then
+                match
+                  t
+                with
+                | ConstArray (Value l) -> Some l
+                | _ -> None
+              else
+                None)
+        with
+        | None -> None
+        | Some l -> (
+            match List.hd_exn l with
+            | Integer _ ->
+                List.map l ~f:(function
+                  | Integer (Value i) -> Char.of_int_exn i
+                  | _ -> assert false)
+                |> String.of_char_list
+                |> Option.some
+            | _ -> None))
+    | _ -> None
+
+let get_offset t field =
+    match t with
+    | Struct (Value { name = _; fields }) ->
+        List.fold_until fields ~init:0
+          ~f:(fun acc (name, t) ->
+            ignore t;
+            if String.equal name field then
+              Stop acc
+            else
+              Continue (acc + 8))
+          ~finish:(fun _ -> assert false)
     | _ -> assert false

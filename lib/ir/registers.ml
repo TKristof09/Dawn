@@ -47,6 +47,7 @@ module Mask : sig
   val general_r : t
   val all : t
   val all_and_stack : t
+  val spill : t
   val rax : t
   val cl : t
   val div : t
@@ -88,7 +89,8 @@ end = struct
           Reg RDX;
           Reg RSI;
           Reg RDI;
-          Reg RBP;
+          (* TODO: maybe switch to "-fomit-frame-pointer" style codegen later *)
+          (* Reg RBP; *)
           Reg R8;
           Reg R9;
           Reg R10;
@@ -143,6 +145,7 @@ end = struct
         ]
 
   let all_and_stack = Set.add all (Stack (-1))
+  let spill = Set.add general_w (Stack (-1))
   let rax = S.of_list [ Reg RAX ]
   let cl = S.of_list [ Reg RCX ]
   let div = Set.diff general_r (S.of_list [ Reg RAX; Reg RDX ])

@@ -8,7 +8,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
         Scope_node.define g scope name n
     | Ast.Declaration (name, typ) -> (
         match typ with
-        | Type "int" ->
+        | Type "i64" ->
             let default_init =
                 do_expr g { loc = s.loc; node = Int 0 } scope cur_ret_node linker
                 |> Option.value_exn
@@ -18,13 +18,18 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
             let element_type = Types.of_ast_type t in
             let ctrl = Scope_node.get_ctrl g scope in
             let count = do_expr g count scope cur_ret_node linker |> Option.value_exn in
+            let el_size = Const_node.create_int g (Int.ceil_log2 8) in
+            let size = Bitop_nodes.create_lsh g count el_size in
             let mem = Scope_node.get_mem g scope in
-            let n = Mem_nodes.create_new g ~ctrl ~mem ~count element_type in
+            let arr_type = Types.make_array element_type count.typ in
+            let n = Mem_nodes.create_new g ~ctrl ~mem ~size arr_type in
             let mem = Proj_node.create g n 0 in
             let ptr = Proj_node.create g n 1 in
+            let offset = Types.get_offset arr_type "len" |> Const_node.create_int g in
+            let store = Mem_nodes.create_store g ~mem ~ptr ~offset ~value:count in
             Scope_node.define g scope name ptr;
-            Scope_node.set_mem g scope mem
-        | _ -> assert false)
+            Scope_node.set_mem g scope store
+        | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type typ) ())
     | Ast.While (cond, body) ->
         let loop_node = Loop_node.create g (Scope_node.get_ctrl g scope) in
         let body_scope = Scope_node.dup_loop g scope in
@@ -47,14 +52,9 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
             | _ -> assert false
         in
         let fun_ptr_type =
-            Types.(
-              FunPtr
-                (Value
-                   {
-                     params = List.map param_types ~f:Types.of_ast_type;
-                     ret = Types.of_ast_type ret_type;
-                     fun_indices = `Include Int.Set.empty;
-                   }))
+            Types.make_fun_ptr
+              (List.map param_types ~f:Types.of_ast_type)
+              (Types.of_ast_type ret_type)
         in
         let fun_node, ret_node = Fun_node.create g fun_ptr_type in
         let fun_idx = Linker.define linker ~name fun_node in
@@ -83,14 +83,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
         in
         let ret_type = Types.of_ast_type ret_type in
         let fun_ptr_type =
-            Types.(
-              FunPtr
-                (Value
-                   {
-                     params = List.map param_types ~f:Types.of_ast_type;
-                     ret = ret_type;
-                     fun_indices = `Include Int.Set.empty;
-                   }))
+            Types.make_fun_ptr (List.map param_types ~f:Types.of_ast_type) ret_type
         in
         let fun_node, ret_node = Fun_node.create g fun_ptr_type in
         let fun_idx = Linker.define linker ~name:external_name fun_node in
@@ -115,6 +108,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
     match e.node with
     | Ast.Int i -> Some (Const_node.create_int g i)
     | Ast.Bool b -> Some (Const_node.create_int g (Bool.to_int b))
+    | Ast.String s -> Some (Const_node.create_string g s)
     | Ast.Variable (name, idx_expr) -> (
         match idx_expr with
         | None ->
@@ -123,8 +117,20 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         | Some idx_expr ->
             let mem = Scope_node.get_mem g scope in
             let ptr = Scope_node.get g scope name in
+
             let index = do_expr g idx_expr scope cur_ret_node linker |> Option.value_exn in
-            let load = Mem_nodes.create_load g ~mem ~ptr ~offset:index in
+            (* TODO: for now we only do 64 bit values. This cause a problem with strings for now. *)
+            let el_size = Const_node.create_int g (Int.ceil_log2 8) in
+            let base =
+                match ptr.typ with
+                | Ptr (Struct _ as s) -> Types.get_offset s "[]"
+                | _ -> assert false
+            in
+            let offset =
+                Arithmetic_nodes.create_add g (Const_node.create_int g base)
+                  (Bitop_nodes.create_lsh g index el_size)
+            in
+            let load = Mem_nodes.create_load g ~mem ~ptr ~offset in
             Some load)
     | Ast.VarAssign (name, expr) ->
         let n = do_expr g expr scope cur_ret_node linker |> Option.value_exn in
@@ -135,7 +141,18 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         let value = do_expr g value scope cur_ret_node linker |> Option.value_exn in
         let ptr = Scope_node.get g scope name in
         let mem = Scope_node.get_mem g scope in
-        let store_mem = Mem_nodes.create_store g ~mem ~ptr ~offset:index ~value in
+        (* TODO: for now we only do 64 bit values. This cause a problem with strings for now. *)
+        let el_size = Const_node.create_int g (Int.ceil_log2 8) in
+        let base =
+            match ptr.typ with
+            | Ptr (Struct _ as s) -> Types.get_offset s "[]"
+            | _ -> failwithf "Invalid ptr type: %s for %s" (Node.show ptr) name ()
+        in
+        let offset =
+            Arithmetic_nodes.create_add g (Const_node.create_int g base)
+              (Bitop_nodes.create_lsh g index el_size)
+        in
+        let store_mem = Mem_nodes.create_store g ~mem ~ptr ~offset ~value in
         Scope_node.set_mem g scope store_mem;
         Some value
     | Ast.Add (lhs, rhs) -> binop lhs rhs Arithmetic_nodes.create_add
@@ -197,7 +214,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         let return_val = Proj_node.create g call_end 1 in
         Some return_val
     (* | Ast.Return ->  *)
-    | _ -> assert false
+    | _ -> failwithf "TODO: unimplemented %s" (Ast.show_expr e.node) ()
 
 let of_ast ast linker =
     let start = Start_node.create () in

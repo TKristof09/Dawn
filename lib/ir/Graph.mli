@@ -30,6 +30,7 @@ val add_dependencies : ('a, readwrite) t -> 'a -> 'a option list -> unit
 val set_dependency : ('a, readwrite) t -> 'a -> 'a option -> int -> unit
 val remove_dependency : ('a, readwrite) t -> node:'a -> dep:'a -> unit
 val replace_node_with : ('a, readwrite) t -> 'a -> 'a -> unit
+val mem : ('a, 'b) t -> 'a -> bool
 val iter : ('a, 'b) t -> f:('a -> unit) -> unit
 val fold : ('a, 'b) t -> init:'c -> f:('c -> 'a -> 'c) -> 'c
 val find : ('a, 'b) t -> f:('a -> bool) -> 'a option

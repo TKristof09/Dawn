@@ -33,8 +33,8 @@ let rec assign g (n : Node.t) name node =
         let idx =
             Graph.get_dependencies g n
             |> List.find_index (function
-                 | None -> false
-                 | Some x -> Node.equal x symbol)
+              | None -> false
+              | Some x -> Node.equal x symbol)
         in
         match idx with
         | None -> Graph.add_dependencies g n [ Some node ]
@@ -50,7 +50,7 @@ and get g (n : Node.t) name =
             let tmp = Symbol_table.find_symbol old_tbl name in
             let symbol =
                 match tmp.kind with
-                | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> symbol
+                | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> tmp
                 | _ ->
                     let phi =
                         Phi_node.create_no_backedge g (get_ctrl g symbol) (get g symbol name)

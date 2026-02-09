@@ -26,6 +26,8 @@ type ideal =
 [@@deriving show { with_path = false }, sexp_of]
 
 type machine_node_kind =
+    | Int of int
+    | Ptr
     | Add
     | AddImm of int
     | Sub
@@ -46,7 +48,6 @@ type machine_node_kind =
     | Set of cmp
     | JmpAlways
     | Jmp of cmp
-    | Int of int
     | Mov
     | DProj of int
     | FunctionProlog of int
@@ -88,7 +89,11 @@ let invert_jmp kind =
 
 let is_cheap_to_clone n =
     match n.kind with
-    | Int _ -> true
+    | Int _
+    | Ptr
+    | Cmp
+    | CmpImm _ ->
+        true
     | _ -> false
 
 let is_control_node n =
@@ -125,6 +130,7 @@ let is_control_node n =
     | CmpImm _
     | Set _
     | Int _
+    | Ptr
     | Mov
     | DProj _
     | Param _
@@ -153,9 +159,36 @@ let is_two_address n =
     | Sub
     | SubImm _
     | Mul
-    | MulImm _ ->
+    | MulImm _
+    | Lsh
+    | LshImm _
+    | Rsh
+    | RshImm _
+    | And
+    | AndImm _
+    | Or
+    | OrImm _ ->
         true
-    | _ -> false
+    | Int _
+    | Ptr
+    | Div
+    | Cmp
+    | CmpImm _
+    | Set _
+    | JmpAlways
+    | Jmp _
+    | Mov
+    | DProj _
+    | FunctionProlog _
+    | Return
+    | FunctionCall _
+    | FunctionCallEnd
+    | Param _
+    | New
+    | Store
+    | Load
+    | Ideal _ ->
+        false
 
 let is_multi_output n =
     match n.ir_node.typ with
@@ -192,6 +225,7 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
         assert (i = 0);
         Some Registers.Mask.general_w
     | Int _ -> None
+    | Ptr -> None
     | DProj _ -> None
     | Cmp ->
         assert (i <= 1);
@@ -219,12 +253,14 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
     | New -> if i = 1 then Some (Registers.Mask.x64_systemv 0) else None
     | Store -> (
         match i with
+        | 0 -> None
         | 1 -> Some Registers.Mask.general_r (* base*)
         | 2 -> Some Registers.Mask.general_r (* index *)
         | 3 -> Some Registers.Mask.general_r (* value *)
         | _ -> failwithf "Invalid index %d for input reg mask of %s" i (show n) ())
     | Load -> (
         match i with
+        | 0 -> None
         | 1 -> Some Registers.Mask.general_r (* base*)
         | 2 -> Some Registers.Mask.general_r (* index *)
         | _ -> failwithf "Invalid index %d for input reg mask of %s" i (show n) ())
@@ -256,6 +292,9 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     | Int _ ->
         assert (i = 0);
         Some Registers.Mask.general_w
+    | Ptr ->
+        assert (i = 0);
+        Some Registers.Mask.general_w
     | DProj proj_i ->
         let in_node = Graph.get_dependencies g n |> List.hd_exn in
         Option.bind in_node ~f:(fun dep -> get_out_reg_mask g dep proj_i)
@@ -268,7 +307,7 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
         Some Registers.Mask.general_w
     | Mov ->
         assert (i = 0);
-        Some Registers.Mask.all_and_stack
+        Some Registers.Mask.spill
     | JmpAlways -> None
     | Jmp _ -> None
     | FunctionProlog _ -> None
@@ -300,10 +339,10 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
     let binop_commutative kind kind_imm =
         let deps = Graph.get_dependencies g n in
         match
-          List.find_map deps ~f:(fun n ->
+          List.find_mapi deps ~f:(fun i n ->
               Option.bind n ~f:(fun n ->
                   match n.typ with
-                  | Integer (Value _) -> Some n
+                  | Integer (Value _) -> Some (i, n)
                   | _ -> None))
         with
         | None ->
@@ -312,7 +351,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
             Graph.add_dependencies machine_g node
               (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
             node
-        | Some cn ->
+        | Some (idx, cn) ->
             let value =
                 match cn.typ with
                 | Integer (Value v) -> v
@@ -321,12 +360,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
             let kind = kind_imm value in
             let node = { id = next_id (); kind; ir_node = n } in
             Graph.add_dependencies machine_g node [];
-            let deps =
-                List.filter deps ~f:(fun n ->
-                    match n with
-                    | None -> true
-                    | Some n -> not (Node.equal cn n))
-            in
+            let deps = List.filteri deps ~f:(fun i _ -> i <> idx) in
             Graph.add_dependencies machine_g node
               (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
             node
@@ -341,12 +375,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
                 let kind = kind_imm v in
                 let node = { id = next_id (); kind; ir_node = n } in
                 Graph.add_dependencies machine_g node [];
-                let deps =
-                    List.filter deps ~f:(fun n ->
-                        match n with
-                        | None -> true
-                        | Some n -> not (Node.equal dep n))
-                in
+                let deps = List.filteri deps ~f:(fun i _ -> i <> 2) in
                 Graph.add_dependencies machine_g node
                   (List.map deps ~f:(Option.map ~f:(convert_node g machine_g)));
                 node
@@ -364,6 +393,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
         let kind =
             match n.typ with
             | Integer (Value i) -> Int i
+            | Ptr _ -> Ptr
             | _ -> assert false
         in
         let node = { id = next_id (); kind; ir_node = n } in

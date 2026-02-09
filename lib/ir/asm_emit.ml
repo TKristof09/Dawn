@@ -38,6 +38,7 @@ let asm_of_op (kind : Machine_node.machine_node_kind) =
         | Gt -> "jg"
         | GEq -> "jge")
     | Int _ -> "mov"
+    | Ptr -> "lea"
     | Mov -> "mov"
     | Set cond -> (
         (* TODO: signed vs unsigned have different names *)
@@ -63,7 +64,10 @@ let asm_of_loc (loc : Registers.loc) =
     match loc with
     | Reg Flags -> ""
     | Reg reg -> Registers.show_reg reg |> String.lowercase
-    | Stack offs -> Printf.sprintf "[rsp %s %d]" (if offs > 0 then "+" else "-") (abs offs)
+    | Stack offs ->
+        (* HACK: for now we consider everything as 64 bit value but this needs to be dealt with better *)
+        let offs = offs * 8 in
+        Printf.sprintf "[rbp %s %d]" (if offs > 0 then "+" else "-") (abs offs)
 
 let get_label (n : Machine_node.t) =
     match n.kind with
@@ -97,6 +101,15 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) =
         let reg = Hashtbl.find_exn reg_assoc n in
         let op_str = asm_of_op n.kind in
         Printf.sprintf "\t%s %s, %d" op_str (asm_of_loc reg) i
+    | Ptr ->
+        let reg = Hashtbl.find_exn reg_assoc n in
+        let op_str = asm_of_op n.kind in
+        let ptr_addr =
+            match n.ir_node.typ with
+            | Ptr p when Types.is_const_array p -> Printf.sprintf "C_%d" n.ir_node.id
+            | _ -> failwith "idk"
+        in
+        Printf.sprintf "\t%s %s, [%s]" op_str (asm_of_loc reg) ptr_addr
     | AddImm i
     | SubImm i
     | MulImm i
@@ -119,7 +132,7 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) =
         (* TODO: use xor rdx, rdx  for unsigned division once we have that distinction *)
         Printf.sprintf "\tcqo\n\t%s %s \t\t// rax = rax / %s" op_str reg_str reg_str
     | Ideal Stop ->
-        let epilogue = "\t//Exit program\n\tmov rax, 60\n\txor rdi, rdi\n\tsyscall" in
+        let epilogue = "\t;Exit program\n\tmov rax, 60\n\txor rdi, rdi\n\tsyscall" in
         if is_jmp_target g n then
           Printf.sprintf "%s:\n%s" (get_label n) epilogue
         else
@@ -208,22 +221,22 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) =
         Printf.sprintf "\t%s %s" op target
     | FunctionCallEnd -> ""
     | New ->
-        let ptr_reg =
-            Hashtbl.find_exn reg_assoc
-              (Graph.get_dependants g n
-              |> List.find_exn ~f:(fun n ->
-                  match n.kind with
-                  | DProj 1 -> true
-                  | _ -> false))
+        let ptr =
+            Graph.get_dependants g n
+            |> List.find_exn ~f:(fun n ->
+                match n.kind with
+                | DProj 1 -> true
+                | _ -> false)
         in
+        let ptr_reg = Hashtbl.find_exn reg_assoc ptr in
         let size_reg =
             Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn)
         in
         assert (Poly.equal ptr_reg (Reg RAX));
         assert (Poly.equal size_reg (Reg RDI));
         (* HACK: this is only until i get heap memory alloc *)
-        Printf.sprintf "\tmov %s, rsp   // alloc\n\tsub rsp, %s" (asm_of_loc ptr_reg)
-          (asm_of_loc size_reg)
+        Printf.sprintf "\tsub rsp, %s   ; alloc\n\tmov %s, rsp" (asm_of_loc size_reg)
+          (asm_of_loc ptr_reg)
     | Store ->
         let reg = Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 4 |> Option.value_exn) in
         let ptr_reg = Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn) in
@@ -391,6 +404,27 @@ print:
     in
     print ^ print_int
 
+let gather_const_arrays functions =
+    let arr_map = Hashtbl.create (module Int) in
+    List.iter functions ~f:(fun (g, _, _) ->
+        Graph.iter g ~f:(fun (n : Machine_node.t) ->
+            match n.kind with
+            | Ptr -> (
+                match Types.get_string n.ir_node.typ with
+                | None -> ()
+                | Some s ->
+                    let with_len =
+                        Printf.sprintf "\n\tdq %d\n\tdb %s" (String.length s)
+                          (String.to_list s
+                          |> List.map ~f:(fun c -> c |> Char.to_int |> Int.to_string)
+                          |> String.concat ~sep:", ")
+                    in
+                    Hashtbl.add arr_map ~key:n.ir_node.id ~data:with_len |> ignore)
+            | _ -> ()));
+    Hashtbl.to_alist arr_map
+    |> List.map ~f:(fun (id, arr) -> Printf.sprintf "C_%d: %s" id arr)
+    |> String.concat ~sep:"\n"
+
 let emit_program functions linker =
     let header = "format ELF64 executable 3\nentry start\nsegment readable executable\n" in
     let code =
@@ -398,6 +432,14 @@ let emit_program functions linker =
             emit_function g reg_assignment prog linker)
         |> String.concat ~sep:"\n\n"
     in
-
-    let asm_content = header ^ stdlib_functions ^ "\n\n" ^ "start:\n\tmov rbp, rsp\n" ^ code in
+    let constants = gather_const_arrays functions in
+    let rodata =
+        if String.is_empty constants then
+          ""
+        else
+          Printf.sprintf "segment readable\nalign 8\n%s" constants
+    in
+    let asm_content =
+        header ^ stdlib_functions ^ "\n\n" ^ "start:\n\tmov rbp, rsp\n" ^ code ^ "\n" ^ rodata
+    in
     asm_content

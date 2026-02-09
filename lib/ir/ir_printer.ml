@@ -53,19 +53,22 @@ let to_dot g =
               (Printf.sprintf "  { rank = source; %s [shape=%s,label=\"%s\",tooltip=\"%s\"]};\n"
                  (node_to_dot_id node.id) (node_shape node) (node_label node)
                  (Types.show_node_type node.typ
-                 |> String.substr_replace_all ~pattern:"\n" ~with_:" "))
+                 |> String.substr_replace_all ~pattern:"\n" ~with_:" "
+                 |> String.escaped))
         | Ctrl Stop ->
             Buffer.add_string buf
               (Printf.sprintf "  { rank = sink; %s [shape=%s,label=\"%s\",tooltip=\"%s\"]};\n"
                  (node_to_dot_id node.id) (node_shape node) (node_label node)
                  (Types.show_node_type node.typ
-                 |> String.substr_replace_all ~pattern:"\n" ~with_:" "))
+                 |> String.substr_replace_all ~pattern:"\n" ~with_:" "
+                 |> String.escaped))
         | _ ->
             Buffer.add_string buf
               (Printf.sprintf "  %s [shape=%s,label=\"%s\",tooltip=\"#%d: %s\"];\n"
                  (node_to_dot_id node.id) (node_shape node) (node_label node) node.id
                  (Types.show_node_type node.typ
-                 |> String.substr_replace_all ~pattern:"\n" ~with_:" ")));
+                 |> String.substr_replace_all ~pattern:"\n" ~with_:" "
+                 |> String.escaped)));
 
     (* Second pass: Add edges *)
     Graph.iter g ~f:(fun node ->
@@ -302,14 +305,19 @@ let to_string_machine_linear g (program : Machine_node.t list) =
                     match
                       n.kind
                     with
-                    | Jmp _ ->
-                        let t, f =
-                            match Graph.get_dependants g n with
-                            | [ t; f ] -> (t, f)
-                            | _ -> assert false
-                        in
-
-                        Some (Printf.sprintf "T: #%d,F: #%d" t.id f.id)
+                    | Jmp _ -> (
+                        match Graph.get_dependants g n with
+                        | [ a; b ] ->
+                            let t, f =
+                                if Poly.equal a.kind (Ideal (CProj 0)) then (a, b) else (b, a)
+                            in
+                            Some (Printf.sprintf "T: #%d,F: #%d" t.id f.id)
+                        | [ b ] -> (
+                            match b.kind with
+                            | Ideal (CProj 0) -> Some (Printf.sprintf "T: #%d,F: ___" b.id)
+                            | Ideal (CProj 1) -> Some (Printf.sprintf "T: ___,F: #%d" b.id)
+                            | _ -> assert false)
+                        | _ -> assert false)
                     | _ -> None)
               |> String.concat ~sep:", "
           in
@@ -346,14 +354,19 @@ let to_string_machine_linear_regs g (program : Machine_node.t list)
                     match
                       n.kind
                     with
-                    | Jmp _ ->
-                        let t, f =
-                            match Graph.get_dependants g n with
-                            | [ t; f ] -> (t, f)
-                            | _ -> assert false
-                        in
-
-                        Some (Printf.sprintf "T: #%d,F: #%d" t.id f.id)
+                    | Jmp _ -> (
+                        match Graph.get_dependants g n with
+                        | [ a; b ] ->
+                            let t, f =
+                                if Poly.equal a.kind (Ideal (CProj 0)) then (a, b) else (b, a)
+                            in
+                            Some (Printf.sprintf "T: #%d,F: #%d" t.id f.id)
+                        | [ b ] -> (
+                            match b.kind with
+                            | Ideal (CProj 0) -> Some (Printf.sprintf "T: #%d,F: ___" b.id)
+                            | Ideal (CProj 1) -> Some (Printf.sprintf "T: ___,F: #%d" b.id)
+                            | _ -> assert false)
+                        | _ -> assert false)
                     | _ -> None)
               |> String.concat ~sep:", "
           in

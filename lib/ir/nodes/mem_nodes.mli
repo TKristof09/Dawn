@@ -2,7 +2,7 @@ val create_new :
   (Node.t, Graph.readwrite) Graph.t ->
   ctrl:Node.t ->
   mem:Node.t ->
-  count:Node.t ->
+  size:Node.t ->
   Types.node_type ->
   Node.t
 

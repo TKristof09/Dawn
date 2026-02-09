@@ -34,6 +34,7 @@ module Mask : sig
   val general_r : t
   val all : t
   val all_and_stack : t
+  val spill : t
   val rax : t
   val cl : t
   val div : t
