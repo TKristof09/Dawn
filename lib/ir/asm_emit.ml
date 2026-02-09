@@ -73,7 +73,7 @@ let get_label (n : Machine_node.t) =
     match n.kind with
     | Ideal Loop -> Printf.sprintf "Loop_%d" n.id
     | Ideal Stop -> "Exit"
-    | Ideal _ -> Printf.sprintf "L_%d" n.id
+    | _ when Machine_node.is_blockhead n -> Printf.sprintf "L_%d" n.id
     | _ -> failwithf "get_label invalid node: %s" (Machine_node.show n) ()
 
 let is_jmp_target g (n : Machine_node.t) =
@@ -95,166 +95,210 @@ let get_first_blockhead g n =
     done;
     !n'
 
-let asm_of_node g reg_assoc linker (n : Machine_node.t) =
-    match n.kind with
-    | Int i ->
-        let reg = Hashtbl.find_exn reg_assoc n in
-        let op_str = asm_of_op n.kind in
-        Printf.sprintf "\t%s %s, %d" op_str (asm_of_loc reg) i
-    | Ptr ->
-        let reg = Hashtbl.find_exn reg_assoc n in
-        let op_str = asm_of_op n.kind in
-        let ptr_addr =
-            match n.ir_node.typ with
-            | Ptr p when Types.is_const_array p -> Printf.sprintf "C_%d" n.ir_node.id
-            | _ -> failwith "idk"
-        in
-        Printf.sprintf "\t%s %s, [%s]" op_str (asm_of_loc reg) ptr_addr
-    | AddImm i
-    | SubImm i
-    | MulImm i
-    | CmpImm i
-    | LshImm i
-    | RshImm i
-    | AndImm i
-    | OrImm i ->
-        let deps = Graph.get_dependencies g n |> List.tl_exn in
-        let regs = deps |> List.filter_opt |> List.map ~f:(Hashtbl.find_exn reg_assoc) in
-        let op_str = asm_of_op n.kind in
-        let reg_str = regs |> List.map ~f:asm_of_loc |> String.concat ~sep:", " in
-        Printf.sprintf "\t%s %s, %d" op_str reg_str i
-    | Div ->
-        let deps = Graph.get_dependencies g n |> List.tl_exn in
-        let reg_divisor = List.nth_exn deps 1 |> Option.value_exn |> Hashtbl.find_exn reg_assoc in
-        let reg_str = asm_of_loc reg_divisor in
-        let op_str = asm_of_op n.kind in
-        (* have to sign extend RAX into RDX for signed division *)
-        (* TODO: use xor rdx, rdx  for unsigned division once we have that distinction *)
-        Printf.sprintf "\tcqo\n\t%s %s \t\t// rax = rax / %s" op_str reg_str reg_str
-    | Ideal Stop ->
-        let epilogue = "\t;Exit program\n\tmov rax, 60\n\txor rdi, rdi\n\tsyscall" in
-        if is_jmp_target g n then
-          Printf.sprintf "%s:\n%s" (get_label n) epilogue
-        else
-          epilogue
-    | Ideal _ ->
-        if is_jmp_target g n then
-          Printf.sprintf "%s:" (get_label n)
-        else
-          ""
-    | Jmp _ ->
-        let _true_branch =
-            Graph.get_dependants g n
-            |> List.find_exn ~f:(fun n ->
-                match n.kind with
-                | Ideal (CProj 0) -> true
-                | _ -> false)
-        in
-        let false_branch =
-            Graph.get_dependants g n
-            |> List.find_exn ~f:(fun n ->
-                match n.kind with
-                | Ideal (CProj 1) -> true
-                | _ -> false)
-        in
-        let op_str, label_str =
-            if List.length (Graph.get_dependants g false_branch) = 1 then
-              let next_false_bb = get_first_blockhead g false_branch in
-              (asm_of_op (Machine_node.invert_jmp n.kind), get_label next_false_bb)
+let asm_of_node g reg_assoc linker (n : Machine_node.t) next_node =
+    let node_asm =
+        match n.kind with
+        | Int i ->
+            let reg = Hashtbl.find_exn reg_assoc n in
+            let op_str = asm_of_op n.kind in
+            Printf.sprintf "\t%s %s, %d" op_str (asm_of_loc reg) i
+        | Ptr ->
+            let reg = Hashtbl.find_exn reg_assoc n in
+            let op_str = asm_of_op n.kind in
+            let ptr_addr =
+                match n.ir_node.typ with
+                | Ptr p when Types.is_const_array p -> Printf.sprintf "C_%d" n.ir_node.id
+                | _ -> failwith "idk"
+            in
+            Printf.sprintf "\t%s %s, [%s]" op_str (asm_of_loc reg) ptr_addr
+        | AddImm i
+        | SubImm i
+        | MulImm i
+        | CmpImm i
+        | LshImm i
+        | RshImm i
+        | AndImm i
+        | OrImm i ->
+            let deps = Graph.get_dependencies g n |> List.tl_exn in
+            let regs = deps |> List.filter_opt |> List.map ~f:(Hashtbl.find_exn reg_assoc) in
+            let op_str = asm_of_op n.kind in
+            let reg_str = regs |> List.map ~f:asm_of_loc |> String.concat ~sep:", " in
+            Printf.sprintf "\t%s %s, %d" op_str reg_str i
+        | Div ->
+            let deps = Graph.get_dependencies g n |> List.tl_exn in
+            let reg_divisor =
+                List.nth_exn deps 1 |> Option.value_exn |> Hashtbl.find_exn reg_assoc
+            in
+            let reg_str = asm_of_loc reg_divisor in
+            let op_str = asm_of_op n.kind in
+            (* have to sign extend RAX into RDX for signed division *)
+            (* TODO: use xor rdx, rdx  for unsigned division once we have that distinction *)
+            Printf.sprintf "\tcqo\n\t%s %s \t\t// rax = rax / %s" op_str reg_str reg_str
+        | Ideal Stop ->
+            let epilogue = "\t;Exit program\n\tmov rax, 60\n\txor rdi, rdi\n\tsyscall" in
+            if is_jmp_target g n then
+              Printf.sprintf "%s:\n%s" (get_label n) epilogue
             else
-              (asm_of_op (Machine_node.invert_jmp n.kind), get_label false_branch)
-        in
-        Printf.sprintf "\t%s %s\n" op_str label_str
-    | JmpAlways ->
-        let op_str = asm_of_op n.kind in
-        let target = Graph.get_dependants g n |> List.hd_exn in
-        let label_str = get_label target in
-        Printf.sprintf "\t%s %s\n" op_str label_str
-    | Lsh
-    | Rsh ->
-        let deps = Graph.get_dependencies g n |> List.tl_exn in
-        let reg = deps |> List.hd_exn |> Option.value_exn |> Hashtbl.find_exn reg_assoc in
-        let op_str = asm_of_op n.kind in
-        Printf.sprintf "\t%s %s, cl" op_str (asm_of_loc reg)
-    | Add
-    | Sub
-    | Mul
-    | And
-    | Or
-    | Cmp
-    | Mov ->
-        let deps = Graph.get_dependencies g n |> List.tl_exn in
-        (* if not two address node, add the node itself to the start of the list to get the output reg too *)
-        let nodes =
-            if
-              (not (Machine_node.is_two_address n))
-              &&
-              (* TODO this is ugly just to get cmp node assembly to not be weird *)
-              match Machine_node.get_out_reg_mask g n 0 with
-              | None -> false
-              | Some m when Registers.Mask.equal m Registers.Mask.flags -> false
-              | Some _ -> true
-            then
-              Some n :: deps
+              epilogue
+        | Ideal _ ->
+            if is_jmp_target g n then
+              Printf.sprintf "%s:" (get_label n)
             else
-              deps
-        in
-        let regs = nodes |> List.filter_opt |> List.map ~f:(Hashtbl.find_exn reg_assoc) in
-        let op_str = asm_of_op n.kind in
-        let reg_str = regs |> List.map ~f:asm_of_loc |> String.concat ~sep:", " in
-        Printf.sprintf "\t%s %s" op_str reg_str
-    | Set _ ->
-        let op_str = asm_of_op n.kind in
-        let reg = Hashtbl.find_exn reg_assoc n in
-        Printf.sprintf "\t%s %s" op_str (asm_of_loc reg)
-    | DProj _ -> ""
-    | FunctionProlog i ->
-        let target = Linker.get_name linker i in
-        Printf.sprintf "%s:" target
-    | Return ->
-        (* TODO: restore rsp and regs *)
-        "\t" ^ asm_of_op n.kind
-    | Param _ -> ""
-    | FunctionCall i ->
-        let op = asm_of_op n.kind in
-        let target = Linker.get_name linker i in
-        Printf.sprintf "\t%s %s" op target
-    | FunctionCallEnd -> ""
-    | New ->
-        let ptr =
-            Graph.get_dependants g n
-            |> List.find_exn ~f:(fun n ->
-                match n.kind with
-                | DProj 1 -> true
-                | _ -> false)
-        in
-        let ptr_reg = Hashtbl.find_exn reg_assoc ptr in
-        let size_reg =
-            Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn)
-        in
-        assert (Poly.equal ptr_reg (Reg RAX));
-        assert (Poly.equal size_reg (Reg RDI));
-        (* HACK: this is only until i get heap memory alloc *)
-        Printf.sprintf "\tsub rsp, %s   ; alloc\n\tmov %s, rsp" (asm_of_loc size_reg)
-          (asm_of_loc ptr_reg)
-    | Store ->
-        let reg = Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 4 |> Option.value_exn) in
-        let ptr_reg = Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn) in
-        let offset_reg =
-            Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 3 |> Option.value_exn)
-        in
-        let op_str = asm_of_op n.kind in
-        Printf.sprintf "\t%s [%s + %s], %s" op_str (asm_of_loc ptr_reg) (asm_of_loc offset_reg)
-          (asm_of_loc reg)
-    | Load ->
-        let reg = Hashtbl.find_exn reg_assoc n in
-        let ptr_reg = Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn) in
-        let offset_reg =
-            Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 3 |> Option.value_exn)
-        in
-        let op_str = asm_of_op n.kind in
-        Printf.sprintf "\t%s %s, [%s + %s]" op_str (asm_of_loc reg) (asm_of_loc ptr_reg)
-          (asm_of_loc offset_reg)
+              ""
+        | Jmp _ ->
+            let true_branch =
+                Graph.get_dependants g n
+                |> List.find_exn ~f:(fun n ->
+                    match n.kind with
+                    | Ideal (CProj 0) -> true
+                    | _ -> false)
+            in
+            let false_branch =
+                Graph.get_dependants g n
+                |> List.find_exn ~f:(fun n ->
+                    match n.kind with
+                    | Ideal (CProj 1) -> true
+                    | _ -> false)
+            in
+            let next_node = Option.value_exn next_node in
+            let target_branch =
+                if Machine_node.equal next_node true_branch then false_branch else true_branch
+            in
+            let op =
+                if Machine_node.equal next_node true_branch then
+                  Machine_node.invert_jmp n.kind
+                else
+                  n.kind
+            in
+            let op_str, label_str =
+                if List.length (Graph.get_dependants g target_branch) = 1 then
+                  let next_target_bb = get_first_blockhead g target_branch in
+                  (asm_of_op op, get_label next_target_bb)
+                else
+                  (asm_of_op op, get_label target_branch)
+            in
+            Printf.sprintf "\t%s %s\n" op_str label_str
+        | JmpAlways ->
+            let op_str = asm_of_op n.kind in
+            let target = Graph.get_dependants g n |> List.hd_exn in
+            let label_str = get_label target in
+            Printf.sprintf "\t%s %s\n" op_str label_str
+        | Lsh
+        | Rsh ->
+            let deps = Graph.get_dependencies g n |> List.tl_exn in
+            let reg = deps |> List.hd_exn |> Option.value_exn |> Hashtbl.find_exn reg_assoc in
+            let op_str = asm_of_op n.kind in
+            Printf.sprintf "\t%s %s, cl" op_str (asm_of_loc reg)
+        | Add
+        | Sub
+        | Mul
+        | And
+        | Or
+        | Cmp
+        | Mov ->
+            let deps = Graph.get_dependencies g n |> List.tl_exn in
+            (* if not two address node, add the node itself to the start of the list to get the output reg too *)
+            let nodes =
+                if
+                  (not (Machine_node.is_two_address n))
+                  &&
+                  (* TODO this is ugly just to get cmp node assembly to not be weird *)
+                  match Machine_node.get_out_reg_mask g n 0 with
+                  | None -> false
+                  | Some m when Registers.Mask.equal m Registers.Mask.flags -> false
+                  | Some _ -> true
+                then
+                  Some n :: deps
+                else
+                  deps
+            in
+            let regs = nodes |> List.filter_opt |> List.map ~f:(Hashtbl.find_exn reg_assoc) in
+            let op_str = asm_of_op n.kind in
+            let reg_str = regs |> List.map ~f:asm_of_loc |> String.concat ~sep:", " in
+            Printf.sprintf "\t%s %s" op_str reg_str
+        | Set _ ->
+            let op_str = asm_of_op n.kind in
+            let reg = Hashtbl.find_exn reg_assoc n in
+            Printf.sprintf "\t%s %s" op_str (asm_of_loc reg)
+        | DProj _ -> ""
+        | FunctionProlog i ->
+            let target = Linker.get_name linker i in
+            Printf.sprintf "%s:" target
+        | Return ->
+            (* TODO: restore rsp and regs *)
+            "\t" ^ asm_of_op n.kind
+        | Param _ -> ""
+        | FunctionCall i ->
+            let op = asm_of_op n.kind in
+            let target = Linker.get_name linker i in
+            Printf.sprintf "\t%s %s" op target
+        | FunctionCallEnd ->
+            if is_jmp_target g n then
+              Printf.sprintf "%s:" (get_label n)
+            else
+              ""
+        | New ->
+            let ptr =
+                Graph.get_dependants g n
+                |> List.find_exn ~f:(fun n ->
+                    match n.kind with
+                    | DProj 1 -> true
+                    | _ -> false)
+            in
+            let ptr_reg = Hashtbl.find_exn reg_assoc ptr in
+            let size_reg =
+                Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn)
+            in
+            assert (Poly.equal ptr_reg (Reg RAX));
+            assert (Poly.equal size_reg (Reg RDI));
+            (* HACK: this is only until i get heap memory alloc *)
+            Printf.sprintf "\tsub rsp, %s   ; alloc\n\tmov %s, rsp" (asm_of_loc size_reg)
+              (asm_of_loc ptr_reg)
+        | Store ->
+            let reg = Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 4 |> Option.value_exn) in
+            let ptr_reg =
+                Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn)
+            in
+            let offset_reg =
+                Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 3 |> Option.value_exn)
+            in
+            let op_str = asm_of_op n.kind in
+            Printf.sprintf "\t%s [%s + %s], %s" op_str (asm_of_loc ptr_reg) (asm_of_loc offset_reg)
+              (asm_of_loc reg)
+        | Load ->
+            let reg = Hashtbl.find_exn reg_assoc n in
+            let ptr_reg =
+                Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn)
+            in
+            let offset_reg =
+                Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 3 |> Option.value_exn)
+            in
+            let op_str = asm_of_op n.kind in
+            Printf.sprintf "\t%s %s, [%s + %s]" op_str (asm_of_loc reg) (asm_of_loc ptr_reg)
+              (asm_of_loc offset_reg)
+    in
+    match next_node with
+    | None -> node_asm
+    | Some next_node ->
+        if Machine_node.is_control_node n && not (Machine_node.is_blockhead n) then
+          node_asm
+        else
+          let cfg =
+              if Machine_node.is_blockhead n then
+                n
+              else
+                Graph.get_dependency g n 0 |> Option.value_exn
+          in
+          if
+            Machine_node.is_blockhead next_node
+            && not (List.mem (Graph.get_dependants g cfg) next_node ~equal:Machine_node.equal)
+          then
+            let op_str = asm_of_op JmpAlways in
+            let target = Graph.get_dependants g cfg |> List.find_exn ~f:Machine_node.is_blockhead in
+            let label_str = get_label target in
+            Printf.sprintf "\t%s %s\n%s\n" op_str label_str node_asm
+          else
+            node_asm
 
 let add_jumps g (program : Machine_node.t list) =
     let rec insert_after l target node_to_insert =
@@ -347,9 +391,15 @@ let add_jumps g (program : Machine_node.t list) =
 (*         | _ -> n) *)
 
 let emit_function g reg_assoc program linker =
+    let rec aux l =
+        match l with
+        | [] -> []
+        | [ n ] -> [ asm_of_node g reg_assoc linker n None ]
+        | n :: n' :: t -> asm_of_node g reg_assoc linker n (Some n') :: aux (n' :: t)
+    in
     add_jumps g program
     (* |> invert_loop_conditions g *)
-    |> List.map ~f:(fun n -> asm_of_node g reg_assoc linker n)
+    |> aux
     |> List.filter ~f:(Fun.negate String.is_empty)
     |> String.concat ~sep:"\n"
 

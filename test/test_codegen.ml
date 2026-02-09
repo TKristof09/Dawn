@@ -159,7 +159,9 @@ let%expect_test "" =
       L_10:
       add rbx, 1
       mov rax, rbx
+      jmp L_9
       mov rbx, rax
+
       L_19:
       L_9:
       mov rax, rbx
@@ -169,7 +171,9 @@ let%expect_test "" =
       L_7:
       add rbx, 4
       mov rax, rbx
+      jmp L_6
       mov rbx, rax
+
       L_24:
       L_6:
       mov rcx, 420
@@ -179,7 +183,9 @@ let%expect_test "" =
       cmp rax, rbx
       jne L_3
 
+      jmp L_3
       L_4:
+
       L_31:
       L_3:
       ;Exit program
@@ -451,7 +457,9 @@ let%expect_test "nested loop" =
       cmp rdx, 0
       jne L_3
 
+      jmp L_3
       L_4:
+
       L_31:
       L_3:
       ;Exit program
@@ -550,7 +558,9 @@ let%expect_test "binops" =
       cmp rax, 1
       jne L_3
 
+      jmp L_3
       L_4:
+
       L_14:
       L_3:
       ;Exit program
@@ -689,7 +699,9 @@ let%expect_test "function call" =
       cmp rax, 0
       jne L_3
 
+      jmp L_3
       L_4:
+
       L_37:
       L_3:
       ;Exit program

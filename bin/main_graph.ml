@@ -116,19 +116,37 @@ open Dawn
 (*     arr[2] = arr[0] + arr[1]; *)
 (*     if(arr[1] == arr[2]){} *)
 (*     |} *)
-let test_str =
-    {|
-    fun print_int(i: int) -> int = @extern("print_int");
-    if(print_int(2) == 1) {}
-    |}
+(* let test_str = *)
+(*     {| *)
+(*     fun print_int(i: int) -> int = @extern("print_int"); *)
+(*     if(print_int(2) == 1) {} *)
+(*     |} *)
+
+(* let test_str = *)
+(*     {| *)
+(*     fun print(s: string) -> int = @extern("print"); *)
+(*     let s:string = "abc"; *)
+(*     if(print(s) == 0) {} *)
+(*     |} *)
+(* let test_str = {| *)
+(*     let i:i64 = 3; *)
+(*     if(i == 2 || i == 4) {} *)
+(*     |} *)
+
+let filename =
+    if Array.length (Core.Sys.get_argv ()) < 2 then
+      "examples/test.eos" (* default filename *)
+    else
+      (Core.Sys.get_argv ()).(1)
 
 let () =
-    match Parser.parse_str test_str with
+    match Parser.parse filename with
+    (* match Parser.parse_str test_str with *)
     | Ok ast ->
         let linker = Linker.create () in
         let son = Son.of_ast ast linker in
         let son = Graph.readonly son in
-        (* Ir_printer.to_dot son |> Printf.printf "\n\n%s\n"; *)
+        Ir_printer.to_dot son |> Printf.printf "\n\n%s\n";
         let schedules = Scheduler.schedule son in
 
         (* let program, reg_assoc = Basic_reg_allocator.allocate machine_graph program in *)
