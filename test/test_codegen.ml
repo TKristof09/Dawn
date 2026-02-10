@@ -154,7 +154,7 @@ let%expect_test "" =
       mov rbx, rax
       mov rax, rbx
       cmp rcx, rax
-      jne L_9
+      jne L_19
 
       L_10:
       add rbx, 1
@@ -166,7 +166,7 @@ let%expect_test "" =
       L_9:
       mov rax, rbx
       cmp rax, 0
-      jne L_6
+      jne L_24
 
       L_7:
       add rbx, 4
@@ -181,7 +181,7 @@ let%expect_test "" =
       cqo
       idiv rcx 		// rax = rax / rcx
       cmp rax, rbx
-      jne L_3
+      jne L_31
 
       jmp L_3
       L_4:
@@ -289,7 +289,7 @@ let%expect_test "fibonacci" =
       mov rcx, rax
       mov rax, rbx
       cmp rax, 0
-      jl Exit
+      jl L_3
 
       L_6:
       add rax, rcx
@@ -442,7 +442,7 @@ let%expect_test "nested loop" =
       mov rbx, rax
       add rbx, rdx
       cmp rbx, 11
-      jne Loop_8
+      jne L_9
 
       L_12:
       mov rbx, rdx
@@ -455,7 +455,7 @@ let%expect_test "nested loop" =
 
       L_6:
       cmp rdx, 0
-      jne L_3
+      jne L_31
 
       jmp L_3
       L_4:
@@ -556,7 +556,7 @@ let%expect_test "binops" =
       sar rax, 1
       and rax, 1
       cmp rax, 1
-      jne L_3
+      jne L_14
 
       jmp L_3
       L_4:
@@ -697,7 +697,7 @@ let%expect_test "function call" =
       call f
       add rax, 69
       cmp rax, 0
-      jne L_3
+      jne L_37
 
       jmp L_3
       L_4:

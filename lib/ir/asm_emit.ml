@@ -66,8 +66,8 @@ let asm_of_loc (loc : Registers.loc) =
     | Reg reg -> Registers.show_reg reg |> String.lowercase
     | Stack offs ->
         (* HACK: for now we consider everything as 64 bit value but this needs to be dealt with better *)
-        let offs = offs * 8 in
-        Printf.sprintf "[rbp %s %d]" (if offs > 0 then "+" else "-") (abs offs)
+        let offs = (offs * 8) + 256 in
+        Printf.sprintf "[rbp %s 0x%x]" (if offs > 0 then "+" else "-") (abs offs)
 
 let get_label (n : Machine_node.t) =
     match n.kind with
@@ -83,7 +83,7 @@ let is_jmp_target g (n : Machine_node.t) =
         | Some { kind = Jmp _; _ }
         | Some { kind = JmpAlways; _ } ->
             true
-        | Some ({ kind = Ideal (CProj 1); _ } as n') ->
+        | Some ({ kind = Ideal (CProj _); _ } as n') ->
             (* TODO: these useless CProj nodes should just get removed, that would be way cleaner *)
             List.length (Graph.get_dependants g n') = 1
         | _ -> false)
@@ -171,7 +171,11 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) next_node =
                   n.kind
             in
             let op_str, label_str =
-                if List.length (Graph.get_dependants g target_branch) = 1 then
+                (* FIXME: this is not correct when we have cproj ->
+                    functioncall(ptr/const) because the ptr/const might not be
+                    part of the cproj bb. Probably need to check List.filter
+                    ~f:is_blockhead |> is_empty or something like that *)
+                if List.length (Graph.get_dependants g target_branch) = 1 && false then
                   let next_target_bb = get_first_blockhead g target_branch in
                   (asm_of_op op, get_label next_target_bb)
                 else
@@ -277,10 +281,10 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) next_node =
             Printf.sprintf "\t%s %s, [%s + %s]" op_str (asm_of_loc reg) (asm_of_loc ptr_reg)
               (asm_of_loc offset_reg)
     in
-    let node_loc =
-        Printf.sprintf "%s:%d:%d" n.ir_node.loc.filename n.ir_node.loc.line n.ir_node.loc.col
-    in
-    let node_asm = Printf.sprintf "%s ; %s" node_asm node_loc in
+    (* let node_loc = *)
+    (*     Printf.sprintf "%s:%d:%d" n.ir_node.loc.filename n.ir_node.loc.line n.ir_node.loc.col *)
+    (* in *)
+    (* let node_asm = Printf.sprintf "%s ; %s" node_asm node_loc in *)
     match next_node with
     | None -> node_asm
     | Some next_node ->

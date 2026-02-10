@@ -580,7 +580,6 @@ and of_ctrl_node g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
     | FunctionCall ->
         let deps = Graph.get_dependencies g n in
         let fun_ptr = Fun_node.get_call_fun_ptr g n in
-        Node.show fun_ptr |> print_endline;
         let fun_idx = Types.get_fun_idx fun_ptr.typ in
         let kind = FunctionCall fun_idx in
         let node = { id = next_id (); kind; ir_node = n } in

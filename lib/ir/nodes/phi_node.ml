@@ -29,6 +29,7 @@ let add_backedge_input g (n : Node.t) (dep : Node.t) =
 let compute_type g phi =
     let typ =
         Graph.get_dependencies g phi
+        |> Core.List.tl_exn
         |> Core.List.filter_opt
         |> Core.List.map ~f:(fun (n : Node.t) -> n.typ)
         |> Core.List.reduce_exn ~f:Types.join

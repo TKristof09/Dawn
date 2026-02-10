@@ -903,7 +903,7 @@ let allocate g program =
             let* coloring = InterferenceGraph.color ifg g in
             Ok coloring
         in
-        if round > 10 then
+        if round > 100 then
           failwith "This should've finished by now"
         else (
           Graph.cleanup g;
