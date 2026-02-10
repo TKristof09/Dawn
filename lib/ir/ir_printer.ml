@@ -318,6 +318,15 @@ let to_string_machine_linear g (program : Machine_node.t list) =
                             | Ideal (CProj 1) -> Some (Printf.sprintf "T: ___,F: #%d" b.id)
                             | _ -> assert false)
                         | _ -> assert false)
+                    | FunctionCall _ ->
+                        let call_end =
+                            Graph.get_dependants g n
+                            |> List.find_exn ~f:(fun n ->
+                                match n.kind with
+                                | FunctionCallEnd -> true
+                                | _ -> false)
+                        in
+                        Some (Printf.sprintf "#%d" call_end.id)
                     | _ -> None)
               |> String.concat ~sep:", "
           in
@@ -367,6 +376,15 @@ let to_string_machine_linear_regs g (program : Machine_node.t list)
                             | Ideal (CProj 1) -> Some (Printf.sprintf "T: ___,F: #%d" b.id)
                             | _ -> assert false)
                         | _ -> assert false)
+                    | FunctionCall _ ->
+                        let call_end =
+                            Graph.get_dependants g n
+                            |> List.find_exn ~f:(fun n ->
+                                match n.kind with
+                                | FunctionCallEnd -> true
+                                | _ -> false)
+                        in
+                        Some (Printf.sprintf "#%d" call_end.id)
                     | _ -> None)
               |> String.concat ~sep:", "
           in

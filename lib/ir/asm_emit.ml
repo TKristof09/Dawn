@@ -76,7 +76,7 @@ let get_label (n : Machine_node.t) =
     | _ when Machine_node.is_blockhead n -> Printf.sprintf "L_%d" n.id
     | _ -> failwithf "get_label invalid node: %s" (Machine_node.show n) ()
 
-let is_jmp_target g (n : Machine_node.t) =
+let rec is_jmp_target g (n : Machine_node.t) =
     Poly.equal n.kind (Ideal Region)
     || List.exists (Graph.get_dependencies g n) ~f:(fun (n' : Machine_node.t option) ->
         match n' with
@@ -85,7 +85,7 @@ let is_jmp_target g (n : Machine_node.t) =
             true
         | Some ({ kind = Ideal (CProj _); _ } as n') ->
             (* TODO: these useless CProj nodes should just get removed, that would be way cleaner *)
-            List.length (Graph.get_dependants g n') = 1
+            is_jmp_target g n' && List.length (Graph.get_dependants g n') = 1
         | _ -> false)
 
 let get_first_blockhead g n =
@@ -95,7 +95,7 @@ let get_first_blockhead g n =
     done;
     !n'
 
-let asm_of_node g reg_assoc linker (n : Machine_node.t) next_node =
+let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
     let node_asm =
         match n.kind with
         | Int i ->
@@ -136,15 +136,8 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) next_node =
             Printf.sprintf "\tcqo\n\t%s %s \t\t// rax = rax / %s" op_str reg_str reg_str
         | Ideal Stop ->
             let epilogue = "\t;Exit program\n\tmov rax, 60\n\txor rdi, rdi\n\tsyscall" in
-            if is_jmp_target g n then
-              Printf.sprintf "%s:\n%s" (get_label n) epilogue
-            else
-              epilogue
-        | Ideal _ ->
-            if is_jmp_target g n then
-              Printf.sprintf "%s:" (get_label n)
-            else
-              ""
+            epilogue
+        | Ideal _ -> ""
         | Jmp _ ->
             let true_branch =
                 Graph.get_dependants g n
@@ -236,11 +229,7 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) next_node =
             let op = asm_of_op n.kind in
             let target = Linker.get_name linker i in
             Printf.sprintf "\t%s %s" op target
-        | FunctionCallEnd ->
-            if is_jmp_target g n then
-              Printf.sprintf "%s:" (get_label n)
-            else
-              ""
+        | FunctionCallEnd -> ""
         | New ->
             let ptr =
                 Graph.get_dependants g n
@@ -285,131 +274,55 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) next_node =
     (*     Printf.sprintf "%s:%d:%d" n.ir_node.loc.filename n.ir_node.loc.line n.ir_node.loc.col *)
     (* in *)
     (* let node_asm = Printf.sprintf "%s ; %s" node_asm node_loc in *)
-    match next_node with
-    | None -> node_asm
-    | Some next_node ->
-        if Machine_node.is_control_node n && not (Machine_node.is_blockhead n) then
-          node_asm
-        else
-          let cfg =
-              if Machine_node.is_blockhead n then
-                n
-              else
-                Graph.get_dependency g n 0 |> Option.value_exn
-          in
-          if
-            Machine_node.is_blockhead next_node
-            && not (List.mem (Graph.get_dependants g cfg) next_node ~equal:Machine_node.equal)
-          then
-            let op_str = asm_of_op JmpAlways in
-            let target = Graph.get_dependants g cfg |> List.find_exn ~f:Machine_node.is_blockhead in
-            let label_str = get_label target in
-            Printf.sprintf "\t%s %s\n%s\n" op_str label_str node_asm
-          else
-            node_asm
-
-let add_jumps g (program : Machine_node.t list) =
-    let rec insert_after l target node_to_insert =
-        match l with
-        | [] -> []
-        | h :: t when Machine_node.equal h target -> h :: node_to_insert :: t
-        | h :: t -> h :: insert_after t target node_to_insert
-    in
-
-    let end_of_bb g program bb =
-        List.fold_until (List.tl_exn program) ~init:None
-          ~f:(fun acc n ->
-            let cfg = if Machine_node.equal n bb then Some n else Graph.get_dependency g n 0 in
-            match cfg with
-            | None -> Continue acc
-            | Some cfg -> (
-                match acc with
-                | None -> if Machine_node.equal bb cfg then Continue (Some n) else Continue None
-                | Some n' -> if Machine_node.equal bb cfg then Continue (Some n) else Stop (Some n')
-                ))
-          ~finish:(fun res ->
-            match res with
-            | Some n -> Some n
-            | None -> failwithf "Couldn't find end of bb %s" (Machine_node.show bb) ())
-        |> Option.value_exn
-    in
-    let rec aux (l : Machine_node.t list) res =
-        match l with
-        | [] -> List.rev res
-        | h :: t -> (
-            match h.kind with
-            | Ideal Loop ->
-                let backedge = Loop_node.get_back_edge g h in
-                let end_of_backedge_bb = end_of_bb g l backedge in
-                let jmp_node : Machine_node.t =
-                    { id = Machine_node.next_id (); kind = JmpAlways; ir_node = h.ir_node }
-                in
-                Graph.add_dependencies g jmp_node [ Some backedge ];
-                Graph.set_dependency g h (Some jmp_node) 1;
-                (* Graph.add_dependencies g jmp_node [ Some h ]; *)
-                let t = insert_after t end_of_backedge_bb jmp_node in
-                aux t (h :: res)
-            | Ideal Region ->
-                if
-                  Graph.get_dependants g h
-                  |> List.exists ~f:(fun n' ->
-                      match n'.kind with
-                      | Return -> true
-                      | _ -> false)
-                then
-                  aux t (h :: res)
+    let jmp_target =
+        match prev_node with
+        | None -> None
+        | Some prev_node ->
+            let cfg_prev =
+                if Machine_node.is_control_node prev_node then
+                  prev_node
                 else
-                  let true_branch = Graph.get_dependency g h 1 |> Option.value_exn in
-                  let false_branch = Graph.get_dependency g h 2 |> Option.value_exn in
-                  (* if no else branch just fall through *)
-                  if List.length (Graph.get_dependants g false_branch) = 1 then
-                    aux t (h :: res)
-                  else
-                    let end_of_true_branch_bb = end_of_bb g program true_branch in
-                    let jmp_node : Machine_node.t =
-                        { id = Machine_node.next_id (); kind = JmpAlways; ir_node = h.ir_node }
-                    in
-                    Graph.add_dependencies g jmp_node [ Some true_branch ];
-                    Graph.set_dependency g h (Some jmp_node) 1;
-                    (* Graph.add_dependencies g jmp_node [ Some h ]; *)
-                    (* Ewww *)
-                    let res =
-                        insert_after (List.rev res) end_of_true_branch_bb jmp_node |> List.rev
-                    in
-                    aux t (h :: res)
-            | _ -> aux t (h :: res))
+                  Graph.get_dependency g prev_node 0 |> Option.value_exn
+            in
+            let precedent =
+                match Graph.get_dependency g n 0 with
+                | Some n -> n
+                | None ->
+                    Graph.get_dependencies g n
+                    |> List.filter_opt
+                    |> List.find_exn ~f:Machine_node.is_control_node
+            in
+            if Machine_node.is_blockhead n && not (Machine_node.equal precedent cfg_prev) then
+              let target =
+                  Graph.get_dependants g cfg_prev |> List.find_exn ~f:Machine_node.is_blockhead
+              in
+              Some target
+            else
+              None
     in
-    aux program []
-
-(* let invert_loop_conditions g (program : Machine_node.t list) = *)
-(*     List.map program ~f:(fun n -> *)
-(*         match n.kind with *)
-(*         | Jmp _ -> ( *)
-(*             let cfg_parent = Graph.get_dependency g n 0 |> Option.value_exn in *)
-(*             match cfg_parent.kind with *)
-(*             | Ideal Loop -> *)
-(*                 n.kind <- Machine_node.invert_jmp n.kind; *)
-(*                 let children = Graph.get_dependants g n in *)
-(*                 List.iter children ~f:(fun c -> *)
-(*                     match c.kind with *)
-(*                     | Ideal (CProj i) -> c.kind <- Ideal (CProj (1 - i)) *)
-(*                     | _ -> ()); *)
-(*                 n *)
-(*             | _ -> n) *)
-(*         | _ -> n) *)
+    match jmp_target with
+    | None ->
+        if is_jmp_target g n then
+          let this_label_str = get_label n in
+          Printf.sprintf "%s:\n%s" this_label_str node_asm
+        else
+          node_asm
+    | Some jmp_target ->
+        let op_str = asm_of_op JmpAlways in
+        let target_label_str = get_label jmp_target in
+        let this_label_str = get_label n in
+        Printf.sprintf "\t%s %s\n%s:\n%s" op_str target_label_str this_label_str node_asm
 
 let emit_function g reg_assoc program linker =
-    let rec aux l =
+    let rec aux l prev =
         match l with
         | [] -> []
-        | [ n ] -> [ asm_of_node g reg_assoc linker n None ]
-        | n :: n' :: t -> asm_of_node g reg_assoc linker n (Some n') :: aux (n' :: t)
+        | [ n ] -> [ asm_of_node g reg_assoc linker n prev None ]
+        | n :: n' :: t -> asm_of_node g reg_assoc linker n prev (Some n') :: aux (n' :: t) (Some n)
     in
-    add_jumps g program
+    (* let program = add_jumps g program in *)
     (* |> invert_loop_conditions g *)
-    |> aux
-    |> List.filter ~f:(Fun.negate String.is_empty)
-    |> String.concat ~sep:"\n"
+    aux program None |> List.filter ~f:(Fun.negate String.is_empty) |> String.concat ~sep:"\n"
 
 let stdlib_functions =
     let print_int =

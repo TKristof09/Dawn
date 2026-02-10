@@ -157,25 +157,31 @@ let%expect_test "" =
       jne L_19
 
       L_10:
+
       add rbx, 1
       mov rax, rbx
-      jmp L_9
       mov rbx, rax
-
+      jmp L_9
       L_19:
+
+      jmp L_9
       L_9:
+
       mov rax, rbx
       cmp rax, 0
       jne L_24
 
       L_7:
+
       add rbx, 4
       mov rax, rbx
-      jmp L_6
       mov rbx, rax
-
+      jmp L_6
       L_24:
+
+      jmp L_6
       L_6:
+
       mov rcx, 420
       mov rax, 69
       cqo
@@ -183,11 +189,14 @@ let%expect_test "" =
       cmp rax, rbx
       jne L_31
 
-      jmp L_3
       L_4:
 
+      jmp L_3
       L_31:
+
+      jmp L_3
       L_3:
+
       ;Exit program
       mov rax, 60
       xor rdi, rdi
@@ -285,18 +294,21 @@ let%expect_test "fibonacci" =
       mov rbp, rsp
       mov rbx, 0
       mov rax, 1
+      jmp Loop_5
       Loop_5:
+
       mov rcx, rax
       mov rax, rbx
       cmp rax, 0
       jl L_3
 
       L_6:
+
       add rax, rcx
       mov rbx, rcx
       jmp Loop_5
-
       L_3:
+
       Exit:
       ;Exit program
       mov rax, 60
@@ -428,16 +440,21 @@ let%expect_test "nested loop" =
       sub rcx, 1
       mov rax, 0
       mov rsi, 0
+      jmp Loop_8
       Loop_8:
+
       mov rdx, rsi
       cmp rax, rcx
       jne L_6
 
       L_13:
+
       add rax, 1
       mov rbx, 0
       mov rsi, rdx
+      jmp Loop_11
       Loop_11:
+
       mov rdx, rbx
       mov rbx, rax
       add rbx, rdx
@@ -445,23 +462,27 @@ let%expect_test "nested loop" =
       jne L_9
 
       L_12:
+
       mov rbx, rdx
       add rbx, 2
       mov rsi, rdx
       jmp Loop_11
-
       L_9:
-      jmp Loop_8
 
+      jmp Loop_8
       L_6:
+
       cmp rdx, 0
       jne L_31
 
-      jmp L_3
       L_4:
 
+      jmp L_3
       L_31:
+
+      jmp L_3
       L_3:
+
       ;Exit program
       mov rax, 60
       xor rdi, rdi
@@ -558,11 +579,14 @@ let%expect_test "binops" =
       cmp rax, 1
       jne L_14
 
-      jmp L_3
       L_4:
 
+      jmp L_3
       L_14:
+
+      jmp L_3
       L_3:
+
       ;Exit program
       mov rax, 60
       xor rdi, rdi
@@ -587,7 +611,7 @@ let%expect_test "function call" =
 
       Block #1 ((Ideal Start)): -> [#9]
 
-      Block #9 ((Ideal (CProj 0))): -> []
+      Block #9 ((Ideal (CProj 0))): -> [#7]
         #RDX   (%12 ): (Int 3)                                                       (Ideal IR: #26)
         #RCX   (%13 ): (Int 4)                                                       (Ideal IR: #27)
         #R9    (%15 ): (Int 6)                                                       (Ideal IR: #29)
@@ -699,11 +723,14 @@ let%expect_test "function call" =
       cmp rax, 0
       jne L_37
 
-      jmp L_3
       L_4:
 
+      jmp L_3
       L_37:
+
+      jmp L_3
       L_3:
+
       ;Exit program
       mov rax, 60
       xor rdi, rdi
@@ -718,6 +745,7 @@ let%expect_test "function call" =
       add rax, r8
       add rax, r9
       L_17:
+
       ret
       ;Exit program
       mov rax, 60
