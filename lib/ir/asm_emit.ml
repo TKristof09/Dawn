@@ -51,10 +51,11 @@ let asm_of_op (kind : Machine_node.machine_node_kind) =
         | GEq -> "setge")
     | DProj _ -> ""
     | Ideal _ -> ""
-    | FunctionProlog _ -> ""
+    | FunctionProlog _ -> "enter"
     | Return -> "ret"
     | FunctionCall _ -> "call"
     | FunctionCallEnd -> ""
+    | CalleeSave _ -> ""
     | Param _ -> ""
     | New -> assert false
     | Store -> "mov"
@@ -220,16 +221,15 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
         | DProj _ -> ""
         | FunctionProlog i ->
             let target = Linker.get_name linker i in
-            Printf.sprintf "%s:" target
-        | Return ->
-            (* TODO: restore rsp and regs *)
-            "\t" ^ asm_of_op n.kind
+            Printf.sprintf "%s:\n\tpush rbp\n\tmov rbp, rsp" target
+        | Return -> Printf.sprintf "\tleave\n\t%s" (asm_of_op n.kind)
         | Param _ -> ""
         | FunctionCall i ->
             let op = asm_of_op n.kind in
             let target = Linker.get_name linker i in
             Printf.sprintf "\t%s %s" op target
         | FunctionCallEnd -> ""
+        | CalleeSave _ -> ""
         | New ->
             let ptr =
                 Graph.get_dependants g n

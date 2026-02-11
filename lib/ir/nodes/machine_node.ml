@@ -55,6 +55,7 @@ type machine_node_kind =
     | FunctionCall of int
     | FunctionCallEnd
     | Param of int
+    | CalleeSave of Registers.reg
     | New
     | Store
     | Load
@@ -137,6 +138,7 @@ let is_control_node n =
     | New
     | Store
     | Load
+    | CalleeSave _
     | Ideal (External _) ->
         false
 
@@ -184,6 +186,7 @@ let is_two_address n =
     | FunctionCall _
     | FunctionCallEnd
     | Param _
+    | CalleeSave _
     | New
     | Store
     | Load
@@ -245,11 +248,15 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
         Some Registers.Mask.all_and_stack
     | FunctionProlog _ -> None
     | Return ->
-        assert (i = 0);
-        Some Registers.Mask.rax
+        if i = 0 then
+          Some Registers.Mask.rax (* retutrn value *)
+        else
+          let calle_saved = Registers.Mask.callee_save |> Registers.Mask.to_list in
+          Some (Registers.Mask.of_list [ List.nth_exn calle_saved (i - 1) ])
     | FunctionCall _ -> Some (Registers.Mask.x64_systemv i)
     | FunctionCallEnd -> None
     | Param _ -> None
+    | CalleeSave _ -> None
     | New -> if i = 1 then Some (Registers.Mask.x64_systemv 0) else None
     | Store -> (
         match i with
@@ -320,6 +327,7 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     | Param idx ->
         assert (i = 0);
         Some (Registers.Mask.x64_systemv idx)
+    | CalleeSave reg -> Some (Registers.Mask.of_list [ Reg reg ])
     | Return ->
         assert (i = 0);
         if i = 0 then Some Registers.Mask.rax else None

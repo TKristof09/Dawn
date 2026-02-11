@@ -51,40 +51,36 @@ let%expect_test "" =
       Block #12 ((Ideal (CProj 0))): -> [T: #10,F: #19]
         #RCX   (%16 ): (Int 1)                                                       (Ideal IR: #11)
         #RCX   (%15 ): (AddImm 69)     [ #RCX (%16) ]                                (Ideal IR: #12)
-        #RAX   (%43 ): (Int 69)                                                      (Ideal IR: #6)
-        #RBX   (%44 ): (Int 69)                                                      (Ideal IR: #6)
-        #RAX   (%17 ): Div             [ #RAX (%43), #RBX (%44) ]                    (Ideal IR: #8)
-        #RBX   (%34 ): Mov             [ #RAX (%17) ]                                (Ideal IR: #8)
-        #RAX   (%33 ): Mov             [ #RBX (%34) ]                                (Ideal IR: #8)
-        #Flags (%14 ): Cmp             [ #RCX (%15), #RAX (%33) ]                    (Ideal IR: #13)
+        #RAX   (%45 ): (Int 69)                                                      (Ideal IR: #6)
+        #RBX   (%46 ): (Int 69)                                                      (Ideal IR: #6)
+        #RAX   (%17 ): Div             [ #RAX (%45), #RBX (%46) ]                    (Ideal IR: #8)
+        #RBX   (%33 ): Mov             [ #RAX (%17) ]                                (Ideal IR: #8)
+        #Flags (%14 ): Cmp             [ #RCX (%15), #RBX (%33) ]                    (Ideal IR: #13)
                (%11 ): (Jmp Eq)        [ #Flags (%14) ]                              (Ideal IR: #14)
 
       Block #10 ((Ideal (CProj 0))): -> [#9]
-        #RBX   (%23 ): (AddImm 1)      [ #RBX (%34) ]                                (Ideal IR: #19)
-        #RAX   (%38 ): Mov             [ #RBX (%23) ]                                (Ideal IR: #19)
-        #RBX   (%37 ): Mov             [ #RAX (%38) ]                                (Ideal IR: #19)
+        #RAX   (%23 ): (AddImm 1)      [ #RAX (%17) ]                                (Ideal IR: #19)
 
       Block #19 ((Ideal (CProj 1))): -> [#9]
 
       Block #9 ((Ideal Region)): -> [T: #7,F: #24]
-        #RBX   (%22 ): (Ideal Phi)     [ #RBX (%37), #RBX (%34) ]                    (Ideal IR: #21)
-        #RAX   (%35 ): Mov             [ #RBX (%22) ]                                (Ideal IR: #21)
-        #Flags (%21 ): (CmpImm 0)      [ #RAX (%35) ]                                (Ideal IR: #23)
+        #RAX   (%22 ): (Ideal Phi)     [ #RAX (%23), #RAX (%17) ]                    (Ideal IR: #21)
+        #RBX   (%35 ): Mov             [ #RAX (%22) ]                                (Ideal IR: #21)
+        #Flags (%21 ): (CmpImm 0)      [ #RBX (%35) ]                                (Ideal IR: #23)
                (%8  ): (Jmp Eq)        [ #Flags (%21) ]                              (Ideal IR: #24)
 
       Block #7 ((Ideal (CProj 0))): -> [#6]
-        #RBX   (%30 ): (AddImm 4)      [ #RBX (%22) ]                                (Ideal IR: #29)
-        #RAX   (%42 ): Mov             [ #RBX (%30) ]                                (Ideal IR: #29)
-        #RBX   (%41 ): Mov             [ #RAX (%42) ]                                (Ideal IR: #29)
+        #RAX   (%30 ): (AddImm 4)      [ #RAX (%22) ]                                (Ideal IR: #29)
 
       Block #24 ((Ideal (CProj 1))): -> [#6]
 
       Block #6 ((Ideal Region)): -> [T: #4,F: #31]
-        #RBX   (%29 ): (Ideal Phi)     [ #RBX (%41), #RBX (%22) ]                    (Ideal IR: #31)
+        #RAX   (%29 ): (Ideal Phi)     [ #RAX (%30), #RAX (%22) ]                    (Ideal IR: #31)
+        #RBX   (%41 ): Mov             [ #RAX (%29) ]                                (Ideal IR: #31)
         #RCX   (%28 ): (Int 420)                                                     (Ideal IR: #9)
-        #RAX   (%45 ): (Int 69)                                                      (Ideal IR: #6)
-        #RAX   (%27 ): Div             [ #RAX (%45), #RCX (%28) ]                    (Ideal IR: #10)
-        #Flags (%26 ): Cmp             [ #RAX (%27), #RBX (%29) ]                    (Ideal IR: #32)
+        #RAX   (%47 ): (Int 69)                                                      (Ideal IR: #6)
+        #RAX   (%27 ): Div             [ #RAX (%47), #RCX (%28) ]                    (Ideal IR: #10)
+        #Flags (%26 ): Cmp             [ #RAX (%27), #RBX (%41) ]                    (Ideal IR: #32)
                (%5  ): (Jmp Eq)        [ #Flags (%26) ]                              (Ideal IR: #33)
 
       Block #4 ((Ideal (CProj 0))): -> [#3]
@@ -152,36 +148,32 @@ let%expect_test "" =
       cqo
       idiv rbx 		// rax = rax / rbx
       mov rbx, rax
-      mov rax, rbx
-      cmp rcx, rax
+      cmp rcx, rbx
       jne L_19
 
       L_10:
 
-      add rbx, 1
-      mov rax, rbx
-      mov rbx, rax
+      add rax, 1
       jmp L_9
       L_19:
 
       jmp L_9
       L_9:
 
-      mov rax, rbx
-      cmp rax, 0
+      mov rbx, rax
+      cmp rbx, 0
       jne L_24
 
       L_7:
 
-      add rbx, 4
-      mov rax, rbx
-      mov rbx, rax
+      add rax, 4
       jmp L_6
       L_24:
 
       jmp L_6
       L_6:
 
+      mov rbx, rax
       mov rcx, 420
       mov rax, 69
       cqo
@@ -642,12 +634,19 @@ let%expect_test "function call" =
       Block #1 ((Ideal Start)): -> [#18]
 
       Block #18 ((FunctionProlog 1)): -> [#17]
-        #R9    (%32 ): (Param 5)                                                     (Ideal IR: #16)
-        #RDX   (%29 ): (Param 2)                                                     (Ideal IR: #13)
         #RDI   (%27 ): (Param 0)                                                     (Ideal IR: #11)
-        #R8    (%31 ): (Param 4)                                                     (Ideal IR: #15)
-        #RCX   (%30 ): (Param 3)                                                     (Ideal IR: #14)
         #RSI   (%28 ): (Param 1)                                                     (Ideal IR: #12)
+        #RDX   (%29 ): (Param 2)                                                     (Ideal IR: #13)
+        #RCX   (%30 ): (Param 3)                                                     (Ideal IR: #14)
+        #R8    (%31 ): (Param 4)                                                     (Ideal IR: #15)
+        #R9    (%32 ): (Param 5)                                                     (Ideal IR: #16)
+        #RBX   (%40 ): (CalleeSave RBX)                                               (Ideal IR: #9)
+        #R12   (%41 ): (CalleeSave R12)                                               (Ideal IR: #9)
+        #R13   (%42 ): (CalleeSave R13)                                               (Ideal IR: #9)
+        #R14   (%43 ): (CalleeSave R14)                                               (Ideal IR: #9)
+        #R15   (%44 ): (CalleeSave R15)                                               (Ideal IR: #9)
+        #RSP   (%45 ): (CalleeSave RSP)                                               (Ideal IR: #9)
+        #RBP   (%46 ): (CalleeSave RBP)                                               (Ideal IR: #9)
         #RAX   (%39 ): (Int 69)                                                      (Ideal IR: #17)
         #RAX   (%25 ): Sub             [ #RAX (%39), #RDI (%27) ]                    (Ideal IR: #18)
         #RAX   (%24 ): Add             [ #RAX (%25), #RSI (%28) ]                    (Ideal IR: #19)
@@ -658,7 +657,7 @@ let%expect_test "function call" =
 
       Block #17 ((Ideal Region)): -> []
         #RAX   (%19 ): (Ideal Phi)     [ #RAX (%20) ]                                (Ideal IR: #6)
-        #RAX   (%16 ): Return          [ #RAX (%19) ]                                (Ideal IR: #8)
+        #RAX   (%16 ): Return          [ #RAX (%19), #RBX (%40), #R12 (%41), #R13 (%42), #R14 (%43), #R15 (%44), #RSP (%45), #RBP (%46) ] (Ideal IR: #8)
 
       Block #2 ((Ideal Stop)): -> []
 
@@ -737,6 +736,8 @@ let%expect_test "function call" =
       syscall
 
       f:
+      push rbp
+      mov rbp, rsp
       mov rax, 69
       sub rax, rdi
       add rax, rsi
@@ -746,6 +747,7 @@ let%expect_test "function call" =
       add rax, r9
       L_17:
 
+      leave
       ret
       ;Exit program
       mov rax, 60

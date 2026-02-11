@@ -54,7 +54,9 @@ module Mask : sig
   val flags : t
   val x64_systemv : int -> t
   val caller_save : t
+  val callee_save : t
   val of_list : loc list -> t
+  val to_list : t -> loc list
   val common : t -> t -> t
   val choose : t -> loc option
   val mem : t -> loc -> bool
@@ -165,7 +167,9 @@ end = struct
       S.of_list
         [ Reg RAX; Reg RCX; Reg RDX; Reg RDI; Reg RSI; Reg R8; Reg R9; Reg R10; Reg R11; Reg Flags ]
 
+  let callee_save = S.of_list [ Reg RBX; Reg RBP; Reg RSP; Reg R12; Reg R13; Reg R14; Reg R15 ]
   let of_list = S.of_list
+  let to_list = Set.to_list
   let common a b = Set.inter a b
   let choose = Set.min_elt
   let mem = Set.mem

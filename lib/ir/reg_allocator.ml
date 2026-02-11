@@ -13,7 +13,7 @@ end
 module Range = struct
   type t = {
       mutable reg_mask : Registers.Mask.t;
-      nodes : NodeSet.t;
+      mutable nodes : NodeSet.t;
     }
   [@@deriving sexp_of]
 
@@ -378,7 +378,13 @@ end = struct
       let risky_score g (r : Range.t) =
           (* if the range has not many neighbours it has an easier chance of "accidentally" getting colored despite being non trivial *)
           let base_score =
-              1000
+              match Set.choose r.nodes with
+              | None -> 1000
+              | Some n -> (
+                  match n.kind with
+                  (* prefer callee save for risky pick as they cover big area (entire function) *)
+                  | Machine_node.CalleeSave _ -> 100000 - 1
+                  | _ -> 1000)
               (*- (Hashtbl.find_exn ifg r |> Set.length)*)
           in
           if Set.length r.nodes = 1 && Machine_node.is_cheap_to_clone (Set.choose_exn r.nodes) then
@@ -490,7 +496,7 @@ end = struct
         Error { failed_ranges; self_conflicts = Hashtbl.create (module Range) }
 end
 
-let spill_node g n =
+let spill_node g (lrg : Range.t) n =
     let clone_node g (n : Machine_node.t) =
         let n' = { n with id = Machine_node.next_id () } in
         Graph.add_dependencies g n' (Graph.get_dependencies g n);
@@ -505,9 +511,17 @@ let spill_node g n =
         Graph.add_dependencies g n' [ cfg; Some n ];
         n'
     in
-    if Machine_node.is_cheap_to_clone n then clone_node g n else copy_node g n
+    if Machine_node.is_cheap_to_clone n then (
+      let n' = clone_node g n in
+      lrg.nodes <- Set.add lrg.nodes n';
+      n')
+    else
+      let n' = copy_node g n in
+      lrg.nodes <- Set.add lrg.nodes n';
+      n'
 
-let insert_before g program ~(before_this : Machine_node.t) ~(node_to_spill : Machine_node.t) =
+let insert_before ?(skip = true) g program ~(before_this : Machine_node.t)
+    ~(node_to_spill : Machine_node.t) lrg =
     let rec insert_aux g program ~(before_this : Machine_node.t) ~(node_to_spill : Machine_node.t) =
         assert (
           List.mem
@@ -555,7 +569,7 @@ let insert_before g program ~(before_this : Machine_node.t) ~(node_to_spill : Ma
         match program with
         | [] -> []
         | h :: t when Machine_node.equal h target -> (
-            let n' = spill_node g node_to_spill in
+            let n' = spill_node g lrg node_to_spill in
             (* Printf.printf "INSERTING %s (%s) before %s\n" (Machine_node.show n') *)
             (* (Machine_node.show node_to_spill) (Machine_node.show before_this); *)
             Graph.set_dependency g n' (Some bb) 0;
@@ -573,10 +587,11 @@ let insert_before g program ~(before_this : Machine_node.t) ~(node_to_spill : Ma
     in
     (* if there is an intermediary split or clone already inserted we don't do anything *)
     if
-      not
-      @@ List.mem
-           (Graph.get_dependencies g before_this)
-           (Some node_to_spill) ~equal:(Option.equal Machine_node.equal)
+      skip
+      && not
+         @@ List.mem
+              (Graph.get_dependencies g before_this)
+              (Some node_to_spill) ~equal:(Option.equal Machine_node.equal)
     then
       match
         Graph.get_dependencies g before_this
@@ -599,20 +614,22 @@ let insert_before g program ~(before_this : Machine_node.t) ~(node_to_spill : Ma
     else
       insert_aux g program ~before_this ~node_to_spill
 
-let rec duplicate_after g program node =
-    let rec skip_phis (l : Machine_node.t list) n =
+let rec duplicate_after g program lrg node =
+    let rec skip_phis_and_callee_save (l : Machine_node.t list) n =
         match l with
         | [] -> [ n ]
         | h :: t -> (
             match h.kind with
-            | Ideal Phi -> h :: skip_phis t n
+            | Ideal Phi
+            | CalleeSave _ ->
+                h :: skip_phis_and_callee_save t n
             | _ -> n :: l)
     in
     match program with
     | [] -> []
     | h :: t when Machine_node.equal h node ->
         let dependants = Graph.get_dependants g node in
-        let n' = spill_node g node in
+        let n' = spill_node g lrg node in
         (* Printf.printf "INSERTING %s after %s\n" (Machine_node.show n') (Machine_node.show node); *)
         dependants
         |> List.iter ~f:(fun use ->
@@ -623,32 +640,29 @@ let rec duplicate_after g program node =
                     | Some dep -> Machine_node.equal dep node)
             in
             Graph.set_dependency g use (Some n') dep_idx);
-        h :: skip_phis t n'
-    | h :: t -> h :: duplicate_after g t node
+        h :: skip_phis_and_callee_save t n'
+    | h :: t -> h :: duplicate_after g t lrg node
 
-let rec loop_depth g (node : Machine_node.t) =
-    match node.kind with
-    | Ideal Start -> 0
-    | Ideal Stop -> 0
-    | FunctionProlog _ -> 0
+let rec loop_depth g (n : Machine_node.t) =
+    match n.kind with
     | Ideal Loop ->
-        let ld = 1 + loop_depth g (Loop_node.get_entry_edge g node) in
-        ld
-    | Ideal (CProj _) ->
-        let if_node = Graph.get_dependency g node 0 |> Option.value_exn in
-        let potential_loop = Graph.get_dependency g node 0 |> Option.value_exn in
-        if Poly.equal potential_loop.kind (Ideal Loop) then
-          let backedge = Loop_node.get_back_edge g potential_loop in
-          if Machine_node.equal backedge node then
-            loop_depth g if_node
-          else
-            loop_depth g if_node - 1
-        else
-          loop_depth g if_node
-    | Ideal Region -> loop_depth g (Graph.get_dependency g node 1 |> Option.value_exn)
-    | _ -> loop_depth g (Graph.get_dependency g node 0 |> Option.value_exn)
+        let entry_depth = Loop_node.get_entry_edge g n |> loop_depth g in
+        entry_depth + 1
+    | Ideal Start -> 1
+    | FunctionProlog _ -> 1
+    | Ideal Region -> Graph.get_dependency g n 1 |> Option.value_exn |> loop_depth g
+    | Ideal (CProj 1) -> (
+        let p = Graph.get_dependency g n 0 |> Option.value_exn in
+        match p.kind with
+        | Jmp _ -> (
+            let p = Graph.get_dependency g p 0 |> Option.value_exn in
+            match p.kind with
+            | Ideal Loop -> Loop_node.get_entry_edge g p |> loop_depth g
+            | _ -> Graph.get_dependency g n 0 |> Option.value_exn |> loop_depth g)
+        | _ -> Graph.get_dependency g n 0 |> Option.value_exn |> loop_depth g)
+    | _ -> Graph.get_dependency g n 0 |> Option.value_exn |> loop_depth g
 
-let split_self_conflict g program (self_conflicting_nodes : NodeSet.t) =
+let split_self_conflict g program lrg (self_conflicting_nodes : NodeSet.t) =
     Set.fold self_conflicting_nodes ~init:program ~f:(fun program n ->
         let program =
             List.fold (Graph.get_dependants g n) ~init:program ~f:(fun program use ->
@@ -664,21 +678,21 @@ let split_self_conflict g program (self_conflicting_nodes : NodeSet.t) =
                     then
                       program
                     else
-                      insert_before g program ~node_to_spill:n ~before_this:use
+                      insert_before g program lrg ~node_to_spill:n ~before_this:use
                 | _
                   when Machine_node.is_two_address use
                        && Machine_node.equal (Graph.get_dependency g use 1 |> Option.value_exn) n ->
-                    insert_before g program ~node_to_spill:n ~before_this:use
+                    insert_before g program lrg ~node_to_spill:n ~before_this:use
                 | _ -> program)
         in
         match n.kind with
         | Ideal Phi ->
             let backedge = Loop_node.get_entry_edge g n in
-            let program = duplicate_after g program n in
-            insert_before g program ~node_to_spill:backedge ~before_this:n
+            let program = duplicate_after g program lrg n in
+            insert_before g program lrg ~node_to_spill:backedge ~before_this:n
         | _ when Machine_node.is_two_address n ->
             let dep = Graph.get_dependency g n 1 |> Option.value_exn in
-            insert_before g program ~node_to_spill:dep ~before_this:n
+            insert_before g program lrg ~node_to_spill:dep ~before_this:n
         | _ -> program)
 
 let split_empty_mask g program (lrg : Range.t) =
@@ -720,13 +734,13 @@ let split_empty_mask g program (lrg : Range.t) =
     then
       let program =
           if Set.length single_reg_defs = 1 then
-            duplicate_after g program (Set.choose_exn single_reg_defs)
+            duplicate_after g program lrg (Set.choose_exn single_reg_defs)
           else
             program
       in
       let program =
           match single_reg_uses with
-          | [ (def, use) ] -> insert_before g program ~before_this:use ~node_to_spill:def
+          | [ (def, use) ] -> insert_before g program lrg ~before_this:use ~node_to_spill:def
           | _ -> program
       in
       program
@@ -735,7 +749,7 @@ let split_empty_mask g program (lrg : Range.t) =
           let def = Set.choose_exn lrg.nodes in
           (* TODO: group uses into register classes instead of splitting before each use *)
           List.fold (Graph.get_dependants g def) ~init:program ~f:(fun program use ->
-              insert_before g program ~before_this:use ~node_to_spill:def)
+              insert_before g program lrg ~before_this:use ~node_to_spill:def)
       in
       program
     else
@@ -809,7 +823,7 @@ let split_by_loop g program (lrg : Range.t) =
                     && (not (Machine_node.is_cheap_to_clone n))
                     && not (false && single_user_split_adjacent)
                   then
-                    duplicate_after g program n
+                    duplicate_after g program lrg n
                   else
                     program
               in
@@ -842,7 +856,7 @@ let split_by_loop g program (lrg : Range.t) =
                        && Poly.equal input.kind (Ideal Phi)
                        && Machine_node.equal cfg_in cfg)
                 then
-                  insert_before g program ~before_this:n ~node_to_spill:input
+                  insert_before g program lrg ~before_this:n ~node_to_spill:input
                 else
                   program)
         | _ ->
@@ -853,7 +867,7 @@ let split_by_loop g program (lrg : Range.t) =
                 let cfg = Graph.get_dependency g n 0 |> Option.value_exn in
                 if min_d = max_d || Machine_node.is_cheap_to_clone use || loop_depth g cfg <= min_d
                 then
-                  insert_before g program ~before_this:n ~node_to_spill:use
+                  insert_before ~skip:false g program lrg ~before_this:n ~node_to_spill:use
                 else
                   program))
 
@@ -903,7 +917,7 @@ let allocate g program =
             let* coloring = InterferenceGraph.color ifg g in
             Ok coloring
         in
-        if round > 100 then
+        if round > 10 then
           failwith "This should've finished by now"
         else (
           Graph.cleanup g;
@@ -916,8 +930,8 @@ let allocate g program =
               (* TODO: perhaps sort failed ranges to make sure we are deterministic *)
               let new_program =
                   Hashtbl.fold self_conflicts ~init:program
-                    ~f:(fun ~key:_ ~data:self_conflicting_nodes program ->
-                      split_self_conflict g program self_conflicting_nodes)
+                    ~f:(fun ~key:lrg ~data:self_conflicting_nodes program ->
+                      split_self_conflict g program lrg self_conflicting_nodes)
               in
               let new_program =
                   List.fold failed_ranges ~init:new_program ~f:(fun program lrg ->

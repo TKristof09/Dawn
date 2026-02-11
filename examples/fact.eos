@@ -1,0 +1,12 @@
+fun print_int(i: i64) -> i64 = @extern("print_int");
+
+fun fact(i: i64) -> i64 {
+    if(i == 0) {
+        1
+    }
+    else {
+        i * fact(i-1)
+    }
+}
+
+print_int(fact(5));

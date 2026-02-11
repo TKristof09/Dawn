@@ -16,7 +16,7 @@ type reg =
     | RSP
     | RBP
     | Flags
-[@@deriving show]
+[@@deriving show, sexp]
 
 type loc =
     | Reg of reg
@@ -41,7 +41,9 @@ module Mask : sig
   val flags : t
   val x64_systemv : int -> t
   val caller_save : t
+  val callee_save : t
   val of_list : loc list -> t
+  val to_list : t -> loc list
   val common : t -> t -> t
   val choose : t -> loc option
   val mem : t -> loc -> bool

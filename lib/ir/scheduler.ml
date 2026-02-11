@@ -234,7 +234,9 @@ let schedule_late g =
     let rec schedule (node : Machine_node.t) =
         if not (Hashtbl.mem m node) then (
           (match node.kind with
-          | Ideal Phi ->
+          | Ideal Phi
+          | Param _
+          | CalleeSave _ ->
               Hashtbl.set m ~key:node ~data:(Graph.get_dependency g node 0 |> Option.value_exn)
           | DProj _ ->
               let cfg = Graph.get_dependency g node 0 |> Option.value_exn in
@@ -282,11 +284,20 @@ let score g (n : Machine_node.t) =
     match n.kind with
     | DProj _
     | Ideal (CProj 0) ->
-        1001
-    | Ideal (CProj 1) -> 1002
-    | Ideal Phi
-    | Param _ ->
-        1000
+        1049
+    | Ideal (CProj 1) -> 1050
+    | Ideal Phi -> 1030
+    | Param i -> 1030 - i (* make them be in order so it looks nicer :) *)
+    | CalleeSave r ->
+        (* make them be in order so it looks nicer :) *)
+        let idx =
+            Registers.Mask.callee_save
+            |> Registers.Mask.to_list
+            |> List.findi_exn ~f:(fun _ r' -> Poly.equal (Registers.Reg r) r')
+            |> fst
+        in
+        999 - idx
+        (* just after the params *)
     | _ when Machine_node.is_control_node n -> 1
     | Ideal _ -> 500
     | _ ->
@@ -405,18 +416,70 @@ let schedule g =
         if Graph.get_dependants top_level n |> List.is_empty then Graph.remove_node top_level n);
 
     List.iter per_function_graphs ~f:(fun g ->
+        (* unlink all calls. This means removing the
+           FunctionProlog<--FunctionCall depedency and also the Param <-- arg
+           depedencies *)
+        let fun_prolog =
+            Graph.find g ~f:(fun n ->
+                match n.kind with
+                | FunctionProlog _ -> true
+                | _ -> false)
+        in
+        (match fun_prolog with
+        | None -> ()
+        | Some fun_prolog ->
+            List.iter (Graph.get_dependencies g fun_prolog) ~f:(function
+              | None -> ()
+              | Some n -> (
+                  match n.kind with
+                  | FunctionCall _ ->
+                      let call_args =
+                          Graph.get_dependencies g n |> List.tl_exn |> List.filter_opt
+                      in
+                      List.iter call_args ~f:(fun arg ->
+                          let param =
+                              Graph.get_dependants g arg
+                              |> List.find_exn ~f:(fun n ->
+                                  match n.kind with
+                                  | Param _ -> true
+                                  | _ -> false)
+                          in
+                          Graph.remove_dependency g ~node:param ~dep:arg);
+                      Graph.remove_dependency g ~node:fun_prolog ~dep:n
+                  | _ -> ())));
+
+        (* link the return node to the stop node so that the scheduling
+           algorithms can reach the nodes (since the algorithms start from the
+           stop node) *)
         let ret_node =
             Graph.find g ~f:(fun n ->
                 match n.kind with
                 | Return -> true
                 | _ -> false)
         in
+
         match ret_node with
         | None -> ()
-        | Some ret_node -> Graph.add_dependencies g (Graph.get_stop g) [ Some ret_node ]);
+        | Some ret_node ->
+            (* if there is a return there must be a fun prolog *)
+            let fun_prolog = fun_prolog |> Option.value_exn in
+            List.iter (Registers.Mask.callee_save |> Registers.Mask.to_list) ~f:(fun r ->
+                match r with
+                | Reg reg ->
+                    let n : Machine_node.t =
+                        {
+                          id = Machine_node.next_id ();
+                          kind = CalleeSave reg;
+                          ir_node = fun_prolog.ir_node;
+                        }
+                    in
+                    Graph.add_dependencies g ret_node [ Some n ];
+                    Graph.add_dependencies g n [ Some fun_prolog ]
+                | _ -> assert false);
+            Graph.add_dependencies g (Graph.get_stop g) [ Some ret_node ]);
     (* FIXME schedule early pulls out nodes from branches of an if to before the if. They then get pulled back in to the branch in schedule_flat but it still feels wrong for schedule_early to be able to pull them out *)
     List.map per_function_graphs ~f:(fun g ->
+        (* Ir_printer.to_dot_machine g |> print_endline; *)
         schedule_early g;
         schedule_late g;
-        (* Ir_printer.to_dot_machine g |> print_endline; *)
         (g, schedule_flat g))
