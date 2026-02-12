@@ -631,8 +631,6 @@ let%expect_test "function call" =
 
       === Machine Graph (Linearized with registers) ===
 
-      Block #1 ((Ideal Start)): -> [#18]
-
       Block #18 ((FunctionProlog 1)): -> [#17]
         #RDI   (%27 ): (Param 0)                                                     (Ideal IR: #11)
         #RSI   (%28 ): (Param 1)                                                     (Ideal IR: #12)
@@ -658,8 +656,6 @@ let%expect_test "function call" =
       Block #17 ((Ideal Region)): -> []
         #RAX   (%19 ): (Ideal Phi)     [ #RAX (%20) ]                                (Ideal IR: #6)
         #RAX   (%16 ): Return          [ #RAX (%19), #RBX (%40), #R12 (%41), #R13 (%42), #R14 (%43), #R15 (%44), #RSP (%45), #RBP (%46) ] (Ideal IR: #8)
-
-      Block #2 ((Ideal Stop)): -> []
 
 
       format ELF64 executable 3
@@ -749,8 +745,4 @@ let%expect_test "function call" =
 
       leave
       ret
-      ;Exit program
-      mov rax, 60
-      xor rdi, rdi
-      syscall
       |}]

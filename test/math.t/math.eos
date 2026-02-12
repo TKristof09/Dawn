@@ -1,3 +1,6 @@
+fun print(s: str) -> i64 = @extern("print");
+fun print_int(i: i64) -> i64 = @extern("print_int");
+
 let a: int = 10;
 let b: int = 5;
 

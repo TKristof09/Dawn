@@ -1,3 +1,4 @@
+fun print_int(i: i64) -> i64 = @extern("print_int");
 let i:int = 0;
 while(i < 10) {
     print_int(i);

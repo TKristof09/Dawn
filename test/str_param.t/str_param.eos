@@ -1,9 +1,10 @@
-fun dprint(s:str, s2:str)
+fun print(s: str) -> i64 = @extern("print");
+fun dprint(s:str, s2:str) -> i64
 {
     print(s);
     print(s2);
+    1 // void return not implemented yet
 }
 let s:str = "Hello, World!";
 let s2:str = "Hello, Eos!";
 dprint(s, s2);
-

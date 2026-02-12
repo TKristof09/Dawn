@@ -244,9 +244,9 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             in
             assert (Poly.equal ptr_reg (Reg RAX));
             assert (Poly.equal size_reg (Reg RDI));
-            (* HACK: this is only until i get heap memory alloc *)
-            Printf.sprintf "\tsub rsp, %s   ; alloc\n\tmov %s, rsp" (asm_of_loc size_reg)
-              (asm_of_loc ptr_reg)
+            (* HACK: this is only until i get heap memory alloc. Extra -8 is to make space for the len field *)
+            Printf.sprintf "\tsub rsp, %s   ; alloc\n\tsub rsp, 8\n\tmov %s, rsp"
+              (asm_of_loc size_reg) (asm_of_loc ptr_reg)
         | Store ->
             let reg = Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 4 |> Option.value_exn) in
             let ptr_reg =

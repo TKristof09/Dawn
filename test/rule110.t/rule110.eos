@@ -1,31 +1,42 @@
-let board_size: int = 30;
-let board: int[60]; // 2*30
+fun print(c:str) -> i64 = @extern("print");
 
-let k: int = 0;
+
+let board_size: i64 = 30;
+let board: i64[30]; // 2*30
+
+let k: i64 = 0;
+
 while(k < board_size)
 {
-    if(k == 0 || k == board_size - 1)
+    if(k == 0)
     {
         board[k] = 1;
         board[k + board_size] = 1;
     }
     else{
-        board[k] = 0;
-        board[k + board_size] = 0;
+        if(k == board_size - 1)
+        {
+            board[k] = 1;
+            board[k + board_size] = 1;
+        }
+        else {
+            board[k] = 0;
+            board[k + board_size] = 0;
+        }
     }
 
     k = k + 1;
 }
 
-let i: int = 0;
-let j: int = 1;
-let curr_board: int = 0;
+let i: i64 = 0;
+let j: i64 = 1;
+let curr_board: i64 = 0;
 
-let a:int;
-let b:int;
-let c:int;
+let a:i64;
+let b:i64;
+let c:i64;
 
-let patterns: int[8];
+let patterns: i64[8];
 patterns[0] = 0;
 patterns[1] = 1;
 patterns[2] = 1;
@@ -35,8 +46,8 @@ patterns[5] = 1;
 patterns[6] = 1;
 patterns[7] = 0;
 
-let lookup: int;
-let next_board: int;
+let lookup: i64;
+let next_board: i64 = 0;
 while(i < board_size)
 {
     j = 0;
@@ -56,16 +67,20 @@ while(i < board_size)
     next_board = 1 - curr_board;
     while(j < (board_size - 1))
     {
-        a = board[curr_board * board_size + j - 1];
-        b = board[curr_board * board_size + j];
-        c = board[curr_board * board_size + j + 1];
+        let idx: i64 = curr_board * board_size + j;
+        a = board[idx - 1];
+        b = board[idx];
+        c = board[idx + 1];
         lookup = (a << 2) | (b << 1) | c;
         lookup = lookup & 7;
 
-        board[next_board * board_size + j] = patterns[lookup];
+        idx = next_board * board_size + j;
+        board[idx] = patterns[lookup];
 
         j = j + 1;
     }
     curr_board = next_board;
     i = i + 1;
 }
+
+

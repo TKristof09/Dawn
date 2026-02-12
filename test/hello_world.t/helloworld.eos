@@ -1,2 +1,5 @@
-let s:str = "Hello, World!";
+fun print(s: str) -> i64 = @extern("print");
+
+let s: str = "Hello, World!";
 print(s);
+

@@ -1,12 +1,16 @@
-fun print_val(i : int, v : int){
+fun print(s: str) -> i64 = @extern("print");
+fun print_int(i: i64) -> i64 = @extern("print_int");
+
+fun print_val(i : i64, v : i64) -> i64{
     print_int(i);
     print("   :   ");
     print_int(v);
     print("\n");
+    1 // void return not implemented yet
 }
 
-let arr: int[20];
-let arr_size: int = 20;
+let arr: i64[20];
+let arr_size: i64 = 20;
 
 let i: int = 0;
 while(i < arr_size){

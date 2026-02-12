@@ -7,7 +7,7 @@ module NodeSet = struct
   end)
 
   let show s = Set.to_list s |> [%derive.show: Machine_node.t list] |> Printf.sprintf "%s"
-  let pp fmt s = Format.fprintf fmt "%s" (show s)
+  let _pp fmt s = Format.fprintf fmt "%s" (show s)
 end
 
 module Range = struct
@@ -38,7 +38,7 @@ module RangeSet = struct
   end)
 
   let show s = Set.to_list s |> [%derive.show: Range.t list] |> Printf.sprintf "%s"
-  let pp fmt s = Format.fprintf fmt "%s" (show s)
+  let _pp fmt s = Format.fprintf fmt "%s" (show s)
 end
 
 let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node.t list) =
@@ -126,7 +126,7 @@ let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node
           Set.iter r ~f:(fun n -> Hashtbl.set node_to_lrg ~key:n ~data:lrg));
     node_to_lrg
 
-let print_lrgs node_to_lrg =
+let _print_lrgs node_to_lrg =
     Hashtbl.data node_to_lrg |> RangeSet.of_list |> RangeSet.show |> Printf.printf "%s\n"
 
 type basic_block = {
@@ -150,7 +150,7 @@ module InterferenceGraph : sig
     (Machine_node.t, Range.t) Hashtbl.t ->
     (t, allocation_failure) result
 
-  val print : t -> unit
+  val _print : t -> unit
   val color : t -> (Machine_node.t, 'a) Graph.t -> (reg_assignment, allocation_failure) result
 end = struct
   type t = (Range.t, RangeSet.t) Hashtbl.t
@@ -165,7 +165,7 @@ end = struct
 
   let mark_need_split tbl r = Hash_set.add tbl r
 
-  let print ifg =
+  let _print ifg =
       Printf.printf "graph G {\n";
       Hashtbl.iteri ifg ~f:(fun ~key:r ~data:neighbors ->
           let r_id = Int.abs (Range.hash r) in
