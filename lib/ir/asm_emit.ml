@@ -134,7 +134,7 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             let op_str = asm_of_op n.kind in
             (* have to sign extend RAX into RDX for signed division *)
             (* TODO: use xor rdx, rdx  for unsigned division once we have that distinction *)
-            Printf.sprintf "\tcqo\n\t%s %s \t\t// rax = rax / %s" op_str reg_str reg_str
+            Printf.sprintf "\tcqo\n\t%s %s \t\t; rax = rax / %s" op_str reg_str reg_str
         | Ideal Stop ->
             let epilogue = "\t;Exit program\n\tmov rax, 60\n\txor rdi, rdi\n\tsyscall" in
             epilogue

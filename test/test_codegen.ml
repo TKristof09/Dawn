@@ -146,7 +146,7 @@ let%expect_test "" =
       mov rax, 69
       mov rbx, 69
       cqo
-      idiv rbx 		// rax = rax / rbx
+      idiv rbx 		; rax = rax / rbx
       mov rbx, rax
       cmp rcx, rbx
       jne L_19
@@ -177,7 +177,7 @@ let%expect_test "" =
       mov rcx, 420
       mov rax, 69
       cqo
-      idiv rcx 		// rax = rax / rcx
+      idiv rcx 		; rax = rax / rcx
       cmp rax, rbx
       jne L_31
 

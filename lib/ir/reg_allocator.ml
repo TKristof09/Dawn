@@ -14,6 +14,7 @@ module Range = struct
   type t = {
       mutable reg_mask : Registers.Mask.t;
       mutable nodes : NodeSet.t;
+      single_reg_uses : NodeSet.t;
     }
   [@@deriving sexp_of]
 
@@ -90,9 +91,11 @@ let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node
                       (Machine_node.get_out_reg_mask g n 0
                       |> Option.value ~default:Registers.Mask.empty))
         in
-        if not (Registers.Mask.is_empty reg_mask) then (* use side constraints *)
-          let reg_mask =
-              Set.fold r ~init:reg_mask ~f:(fun acc n ->
+        (* use side constraints *)
+        if not (Registers.Mask.is_empty reg_mask) then
+          let reg_mask, single_reg_uses =
+              Set.fold r ~init:(reg_mask, NodeSet.empty)
+                ~f:(fun (reg_mask, single_reg_use_count) n ->
                   let uses =
                       Graph.get_dependants g n
                       |> List.filter ~f:(fun use ->
@@ -100,7 +103,8 @@ let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node
                           | Ideal _ -> false
                           | _ -> Hashtbl.mem ranges use)
                   in
-                  List.fold uses ~init:acc ~f:(fun acc use ->
+                  List.fold uses ~init:(reg_mask, single_reg_use_count)
+                    ~f:(fun (reg_mask, single_reg_uses) use ->
                       let i, _ =
                           List.findi_exn (Graph.get_dependencies g use) ~f:(fun _ n' ->
                               match n' with
@@ -108,10 +112,17 @@ let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node
                               | Some n' -> Machine_node.equal n n')
                       in
                       match Machine_node.get_in_reg_mask g use (i - 1) with
-                      | Some m -> Registers.Mask.common acc m
-                      | None -> acc))
+                      | Some m ->
+                          let single_reg_uses =
+                              if Registers.Mask.length m = 1 then
+                                Set.add single_reg_uses use
+                              else
+                                single_reg_uses
+                          in
+                          (Registers.Mask.common reg_mask m, single_reg_uses)
+                      | None -> (reg_mask, single_reg_uses)))
           in
-          let lrg : Range.t = { reg_mask; nodes = r } in
+          let lrg : Range.t = { reg_mask; nodes = r; single_reg_uses } in
           Set.iter r ~f:(fun n -> Hashtbl.set node_to_lrg ~key:n ~data:lrg));
     node_to_lrg
 
@@ -257,8 +268,10 @@ end = struct
                     let diff = Registers.Mask.diff r'.reg_mask kills in
                     if not (Registers.Mask.is_empty diff) then
                       r'.reg_mask <- diff
-                    else
-                      mark_need_split need_splits r')
+                    else (
+                      r'.reg_mask <- diff;
+                      (* Printf.printf "Killed %s by %s\n" (Range.show r') (Machine_node.show n); *)
+                      mark_need_split need_splits r'))
       in
       let do_node ifg need_splits self_conflicts actives node =
           (match Hashtbl.find node_to_lrg node with
@@ -331,6 +344,9 @@ end = struct
                     | _ -> false)
                 |> List.iter ~f:(do_node ifg need_splits self_conflicts actives);
               do_node ifg need_splits self_conflicts actives node);
+          (match bb.head.kind with
+          | Ideal _ -> ()
+          | _ -> check_kills need_splits actives bb.head);
           update_bb_outs self_conflicts bb actives
       in
       let ifg = Hashtbl.create (module Range) in
@@ -571,7 +587,7 @@ let insert_before ?(skip = true) g program ~(before_this : Machine_node.t)
         | h :: t when Machine_node.equal h target -> (
             let n' = spill_node g lrg node_to_spill in
             (* Printf.printf "INSERTING %s (%s) before %s\n" (Machine_node.show n') *)
-            (* (Machine_node.show node_to_spill) (Machine_node.show before_this); *)
+            (*   (Machine_node.show node_to_spill) (Machine_node.show before_this); *)
             Graph.set_dependency g n' (Some bb) 0;
             let dep_idx, _ =
                 List.findi_exn (Graph.get_dependencies g before_this) ~f:(fun _ dep ->
@@ -705,28 +721,8 @@ let split_empty_mask g program (lrg : Range.t) =
             in
             num_regs = 1)
     in
-    let single_reg_uses =
-        Set.fold lrg.nodes ~init:[] ~f:(fun acc n ->
-            let single_reg_uses =
-                List.filter_map (Graph.get_dependants g n) ~f:(fun use ->
-                    (* FIXME: this is not correct when a node takes in another node in more than one positions, e.g. div x,x  *)
-                    let dep_idx, _ =
-                        List.findi_exn (Graph.get_dependencies g use) ~f:(fun _ dep ->
-                            match dep with
-                            | None -> false
-                            | Some dep -> Machine_node.equal dep n)
-                    in
-                    let num_regs =
-                        match Machine_node.get_in_reg_mask g use (dep_idx - 1) with
-                        | Some mask -> Registers.Mask.length mask
-                        | None -> 0
-                    in
-                    if num_regs = 1 then Some (n, use) else None)
-            in
-            single_reg_uses @ acc)
-    in
     let single_reg_def_count = Set.length single_reg_defs in
-    let single_reg_use_count = List.length single_reg_uses in
+    let single_reg_use_count = Set.length lrg.single_reg_uses in
     if
       single_reg_def_count <= 1
       && single_reg_use_count <= 1
@@ -739,8 +735,16 @@ let split_empty_mask g program (lrg : Range.t) =
             program
       in
       let program =
-          match single_reg_uses with
-          | [ (def, use) ] -> insert_before g program lrg ~before_this:use ~node_to_spill:def
+          match Set.choose lrg.single_reg_uses with
+          | Some use ->
+              let def =
+                  Graph.get_dependencies g use
+                  |> List.find_exn ~f:(function
+                    | None -> false
+                    | Some def -> Set.mem lrg.nodes def)
+                  |> Option.value_exn
+              in
+              insert_before g program lrg ~before_this:use ~node_to_spill:def
           | _ -> program
       in
       program
@@ -873,8 +877,9 @@ let split_by_loop g program (lrg : Range.t) =
 
 let split g program (lrg : Range.t) =
     (* TODO: actually calculate this *)
-    let single_reg_use_count = 0 in
-    if Registers.Mask.is_empty lrg.reg_mask && (Set.length lrg.nodes = 1 || single_reg_use_count = 1)
+    if
+      Registers.Mask.is_empty lrg.reg_mask
+      && (Set.length lrg.nodes = 1 || Set.length lrg.single_reg_uses = 1)
     then
       split_empty_mask g program lrg
     else

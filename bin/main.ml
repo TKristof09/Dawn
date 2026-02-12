@@ -31,7 +31,7 @@ let () =
         let linker = Linker.create () in
         let son = Son.of_ast ast linker in
         let son = Graph.readonly son in
-        Ir_printer.to_dot son |> Printf.printf "\n\n%s\n";
+        (* Ir_printer.to_dot son |> Printf.printf "\n\n%s\n"; *)
         let schedules = Scheduler.schedule son in
 
         (* let program, reg_assoc = Basic_reg_allocator.allocate machine_graph program in *)
@@ -46,12 +46,12 @@ let () =
                     | _ -> false)
                 |> Option.is_none)
             |> Core.List.map ~f:(fun (g, program) ->
-                Ir_printer.to_dot_machine g |> Printf.printf "\n\n%s\n";
+                (* Ir_printer.to_dot_machine g |> Printf.printf "\n\n%s\n"; *)
                 let flat_program = List.concat program in
                 (* Ir_printer.to_string_machine_linear g flat_program |> print_endline; *)
                 let program, reg_assignment = Reg_allocator.allocate g flat_program in
-                Ir_printer.to_string_machine_linear_regs g program reg_assignment
-                |> Printf.printf "\n\n%s\n";
+                (* Ir_printer.to_string_machine_linear_regs g program reg_assignment *)
+                (* |> Printf.printf "\n\n%s\n"; *)
                 (g, reg_assignment, program))
         in
         let code = Asm_emit.emit_program functions linker in
