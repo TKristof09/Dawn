@@ -1,6 +1,5 @@
 Test:
   $ dawn rule110.eos
-  Output: rule110.asm
   $ fasm rule110.asm > /dev/null
   $ ./rule110
   #                            #

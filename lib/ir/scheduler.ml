@@ -269,9 +269,6 @@ let schedule_late g =
                 else
                   Graph.get_dependency g early 0 |> Option.value_exn
             in
-            (* if node.id = 73 then ( *)
-            (*   Printf.printf "EARLY: %s LATE: %s\n" (Machine_node.show early) (Machine_node.show lca); *)
-            (*   assert false); *)
             let best = find_best early lca in
             Hashtbl.set m ~key:node ~data:best)
     in
@@ -403,7 +400,6 @@ let duplicate_constants g function_graphs =
 
 let schedule g =
     let g = Machine_node.convert_graph g in
-    (* Ir_printer.to_dot_machine g |> print_endline; *)
     let per_function_graphs =
         Graph.partition g ~f:(get_function g)
           ~get_start:(fun n ->
@@ -495,7 +491,6 @@ let schedule g =
                 | _ -> assert false));
     (* FIXME schedule early pulls out nodes from branches of an if to before the if. They then get pulled back in to the branch in schedule_flat but it still feels wrong for schedule_early to be able to pull them out *)
     List.map per_function_graphs ~f:(fun g ->
-        (* Ir_printer.to_dot_machine g |> print_endline; *)
         schedule_early g;
         schedule_late g;
         (g, schedule_flat g))

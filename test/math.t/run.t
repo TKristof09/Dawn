@@ -1,6 +1,5 @@
 Test:
   $ dawn math.eos
-  Output: math.asm
   $ fasm math.asm > /dev/null
   $ ./math
   Testing addition:

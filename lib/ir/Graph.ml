@@ -197,8 +197,7 @@ let rec remove_dependency : type a. (a, readwrite) t -> node:a -> dep:a -> unit 
     (match Hashtbl.find g.dependants dep with
     | None ->
         (* shouldn't happen *)
-        Printf.printf "ERROR: %s\n" (Node.show node);
-        Printf.printf "ERROR: %s\n" (Node.show dep);
+        [%log.error "Remove depedency failed: Node: %a Dep: %a" Node.pp node Node.pp dep];
         assert false
     | Some arr ->
         if Dynarray.is_empty arr && node_is_removable g dep then
@@ -226,8 +225,8 @@ and remove_node : type a. (a, readwrite) t -> a -> unit =
         Hash_set.remove g.nodes n;
         Hash_set.remove g.gvn n
     | Some _ ->
-        Printf.printf "Couldn't remove node %s because it has dependants or is a persistent node\n"
-          (Node.show n));
+        [%log.warn
+            "Couldn't remove node %a because it has dependants or is a persistent node\n" Node.pp n]);
     check g
 
 let replace_node_with (type a) g base new_node =

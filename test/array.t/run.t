@@ -1,6 +1,5 @@
 Test:
   $ dawn array.eos
-  Output: array.asm
   $ fasm array.asm > /dev/null 
   $ ./array
   0   :   0

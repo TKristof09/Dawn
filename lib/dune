@@ -1,9 +1,18 @@
-
+(library
+ (name ppx_logger)
+ (kind ppx_rewriter)
+ (modules ppx_logger) 
+ (libraries ppxlib)
+ (preprocess (pps ppxlib.metaquot)))
 
 (library
   (name dawn)
   (libraries core menhirLib core_kernel.pairing_heap)
-  (preprocess (pps ppx_deriving.show ppx_deriving.eq ppx_jane ppx_let)))
+  (modules :standard \ ppx_logger)
+  (preprocess (pps ppx_deriving.show ppx_deriving.eq 
+                   ppx_pipebang ppx_sexp_conv ppx_compare 
+                   ppx_logger)))
+
 
 (include_subdirs unqualified)
 

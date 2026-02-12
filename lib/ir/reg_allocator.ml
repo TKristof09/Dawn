@@ -7,7 +7,7 @@ module NodeSet = struct
   end)
 
   let show s = Set.to_list s |> [%derive.show: Machine_node.t list] |> Printf.sprintf "%s"
-  let _pp fmt s = Format.fprintf fmt "%s" (show s)
+  let pp fmt s = Format.fprintf fmt "%s" (show s)
 end
 
 module Range = struct
@@ -38,7 +38,7 @@ module RangeSet = struct
   end)
 
   let show s = Set.to_list s |> [%derive.show: Range.t list] |> Printf.sprintf "%s"
-  let _pp fmt s = Format.fprintf fmt "%s" (show s)
+  let pp fmt s = Format.fprintf fmt "%s" (show s)
 end
 
 let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node.t list) =
@@ -126,8 +126,8 @@ let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node
           Set.iter r ~f:(fun n -> Hashtbl.set node_to_lrg ~key:n ~data:lrg));
     node_to_lrg
 
-let _print_lrgs node_to_lrg =
-    Hashtbl.data node_to_lrg |> RangeSet.of_list |> RangeSet.show |> Printf.printf "%s\n"
+let pp_lrgs fmt node_to_lrg =
+    Format.fprintf fmt "%a" RangeSet.pp (Hashtbl.data node_to_lrg |> RangeSet.of_list)
 
 type basic_block = {
     head : Machine_node.t;
@@ -150,8 +150,8 @@ module InterferenceGraph : sig
     (Machine_node.t, Range.t) Hashtbl.t ->
     (t, allocation_failure) result
 
-  val _print : t -> unit
   val color : t -> (Machine_node.t, 'a) Graph.t -> (reg_assignment, allocation_failure) result
+  val pp : Format.formatter -> t -> unit
 end = struct
   type t = (Range.t, RangeSet.t) Hashtbl.t
 
@@ -165,15 +165,16 @@ end = struct
 
   let mark_need_split tbl r = Hash_set.add tbl r
 
-  let _print ifg =
-      Printf.printf "graph G {\n";
-      Hashtbl.iteri ifg ~f:(fun ~key:r ~data:neighbors ->
-          let r_id = Int.abs (Range.hash r) in
-          Printf.printf "  r%d [label=\"%s\"];\n" r_id (String.escaped (Range.show r));
-          Set.iter neighbors ~f:(fun r' ->
-              if Range.compare r r' < 0 then
-                Printf.printf "  r%d -- r%d;\n" r_id (Int.abs (Range.hash r'))));
-      Printf.printf "}\n"
+  let pp pp_f ifg =
+      Format.fprintf pp_f "graph G {\n%a\n}"
+        (fun fmt () ->
+          Hashtbl.iteri ifg ~f:(fun ~key:r ~data:neighbors ->
+              let r_id = Int.abs (Range.hash r) in
+              Format.fprintf fmt "  r%d [label=\"%a\"];@," r_id Range.pp r;
+              Set.iter neighbors ~f:(fun r' ->
+                  if Range.compare r r' < 0 then
+                    Format.fprintf fmt "  r%d -- r%d;@," r_id (Int.abs (Range.hash r')))))
+        ()
 
   let build g program node_to_lrg =
       let program = List.group program ~break:(fun _ n -> Machine_node.is_blockhead n) in
@@ -270,7 +271,7 @@ end = struct
                       r'.reg_mask <- diff
                     else (
                       r'.reg_mask <- diff;
-                      (* Printf.printf "Killed %s by %s\n" (Range.show r') (Machine_node.show n); *)
+                      [%log.debug "Killed %a by %a" Range.pp r' Machine_node.pp n];
                       mark_need_split need_splits r'))
       in
       let do_node ifg need_splits self_conflicts actives node =
@@ -364,14 +365,22 @@ end = struct
       done;
       if Hash_set.is_empty need_splits && Hashtbl.is_empty self_conflicts then
         Ok ifg
-      else
-        (* print ifg; *)
-        (* Printf.printf "\nNeed Splits:\n"; *)
-        (* Hash_set.iter need_splits ~f:(fun r -> Printf.printf "  %s\n" (Range.show r)); *)
-        (* Printf.printf "\nSelf Conflicts:\n"; *)
-        (* Hashtbl.iteri self_conflicts ~f:(fun ~key:r ~data:nodes -> *)
-        (*     Printf.printf "  %s -> %s\n" (Range.show r) (NodeSet.show nodes)); *)
-        Error { failed_ranges = Hash_set.to_list need_splits; self_conflicts }
+      else (
+        [%log.debug "%a" pp ifg];
+
+        [%log.debug
+            "Need splits:\n%a"
+              (fun fmt () ->
+                Hash_set.iter need_splits ~f:(fun r -> Format.fprintf fmt "  %a@," Range.pp r))
+              ()];
+
+        [%log.debug
+            "Self conflicts:\n%a"
+              (fun fmt () ->
+                Hashtbl.iteri self_conflicts ~f:(fun ~key:r ~data:nodes ->
+                    Format.fprintf fmt "  %a -> %a@," Range.pp r NodeSet.pp nodes))
+              ()];
+        Error { failed_ranges = Hash_set.to_list need_splits; self_conflicts })
 
   let degree ifg r =
       match Hashtbl.find ifg r with
@@ -422,7 +431,6 @@ end = struct
       Int.compare score_1 score_2
 
   let remove_from_graph ifg r =
-      (* Printf.printf "Removing %s\n" (Range.show r); *)
       let neighbours = Hashtbl.find_exn ifg r in
       Set.iter neighbours ~f:(fun r' ->
           Hashtbl.change ifg r' ~f:(function
@@ -437,7 +445,6 @@ end = struct
       Hashtbl.iter_keys ifg ~f:(fun (r : Range.t) ->
           let d = degree ifg r in
           if d < Registers.Mask.length r.reg_mask then
-            (* Printf.printf "Adding %s\n" (Range.show r); *)
             Pairing_heap.add trivial_lrgs r
           else
             Hash_set.add non_trivial_lrgs r);
@@ -450,13 +457,13 @@ end = struct
                   (* just now become trivial *)
                   d = Registers.Mask.length r.reg_mask - 1)
               |> Set.iter ~f:(fun r ->
-                  (* Printf.printf "Adding to trivials: %s\n" (Range.show r); *)
+                  [%log.debug "Adding to trivials: %a" Range.pp r];
                   Pairing_heap.add trivial_lrgs r;
                   Hash_set.remove non_trivial_lrgs r)
           in
           match Pairing_heap.pop trivial_lrgs with
           | Some r ->
-              (* Printf.printf "Trivial: %s\n" (Range.show r); *)
+              [%log.debug "Trivial %a" Range.pp r];
               visit_node r;
               process (r :: acc)
           | None -> (
@@ -470,7 +477,7 @@ end = struct
               match pop_first () with
               | None -> acc
               | Some r ->
-                  (* Printf.printf "Non-Trivial: %s\n" (Range.show r); *)
+                  [%log.debug "Non-trivial %a" Range.pp r];
                   visit_node r;
                   process (r :: acc))
       in
@@ -502,14 +509,15 @@ end = struct
               | Some loc ->
                   assert (Poly.(loc <> Stack (-1)));
                   (* TODO: we could choose smarter here, see biasColor in Simple:IFG.java *)
-                  (* Printf.printf "ASSIGNING: %s -> %s\n" (Registers.show_loc loc) (Range.show r); *)
+                  [%log.debug "Assigning %a -> %a" Registers.pp_loc loc Range.pp r];
                   Hashtbl.set reg_assoc ~key:r ~data:loc;
                   failed_ranges)
       in
       if List.is_empty failed_ranges then
         Ok reg_assoc
-      else (* Printf.printf "Failed: %s\n" ([%derive.show: Range.t list] failed_ranges); *)
-        Error { failed_ranges; self_conflicts = Hashtbl.create (module Range) }
+      else (
+        [%log.debug "Coloring failed for %a" (Format.pp_print_list Range.pp) failed_ranges];
+        Error { failed_ranges; self_conflicts = Hashtbl.create (module Range) })
 end
 
 let spill_node g (lrg : Range.t) n =
@@ -586,8 +594,6 @@ let insert_before ?(skip = true) g program ~(before_this : Machine_node.t)
         | [] -> []
         | h :: t when Machine_node.equal h target -> (
             let n' = spill_node g lrg node_to_spill in
-            (* Printf.printf "INSERTING %s (%s) before %s\n" (Machine_node.show n') *)
-            (*   (Machine_node.show node_to_spill) (Machine_node.show before_this); *)
             Graph.set_dependency g n' (Some bb) 0;
             let dep_idx, _ =
                 List.findi_exn (Graph.get_dependencies g before_this) ~f:(fun _ dep ->
@@ -646,7 +652,6 @@ let rec duplicate_after g program lrg node =
     | h :: t when Machine_node.equal h node ->
         let dependants = Graph.get_dependants g node in
         let n' = spill_node g lrg node in
-        (* Printf.printf "INSERTING %s after %s\n" (Machine_node.show n') (Machine_node.show node); *)
         dependants
         |> List.iter ~f:(fun use ->
             let dep_idx, _ =
@@ -911,14 +916,13 @@ let rec post_alloc_cleanup g (program : Machine_node.t list) reg_assign =
 let allocate g program =
     let ( let* ) = Stdlib.Result.bind in
     let rec loop program round =
-        (* Printf.printf "\n\n ================= ROUND %d ======================\n\n" round; *)
+        [%log.debug "\n\n ================= ROUND %d ======================\n\n" round];
         let attempt g program =
-            (* Ir_printer.to_dot_machine g |> Printf.printf "\n\n%s\n"; *)
-            (* Ir_printer.to_string_machine_linear g program |> print_endline; *)
+            [%log.debug "\n%a" Ir_printer.pp_machine_linear (g, program)];
             let node_to_lrg = build_live_ranges g program in
-            (* print_lrgs node_to_lrg; *)
+            [%log.debug "%a" pp_lrgs node_to_lrg];
             let* ifg = InterferenceGraph.build g program node_to_lrg in
-            (* InterferenceGraph.print ifg; *)
+            [%log.debug "\n%a" InterferenceGraph.pp ifg];
             let* coloring = InterferenceGraph.color ifg g in
             Ok coloring
         in
@@ -929,7 +933,7 @@ let allocate g program =
           let program = List.filter program ~f:(Graph.mem g) in
           match attempt g program with
           | Ok reg_assoc ->
-              (* Printf.printf "Register allocation done in %d rounds\n" round; *)
+              [%log.debug "Register allocation done in %d rounds" round];
               (program, reg_assoc)
           | Error { failed_ranges; self_conflicts } ->
               (* TODO: perhaps sort failed ranges to make sure we are deterministic *)
@@ -945,8 +949,6 @@ let allocate g program =
               loop new_program (round + 1))
     in
     let program, lrg_to_reg = loop program 1 in
-    (* Hashtbl.iteri lrg_to_reg ~f:(fun ~key ~data -> *)
-    (* Printf.printf "%s : %s\n\n" (Registers.show_loc data) (Range.show key)); *)
     let reg_assign = Hashtbl.create (module Machine_node) in
     Hashtbl.iteri lrg_to_reg ~f:(fun ~key:range ~data:reg ->
         Set.iter range.nodes ~f:(fun n -> Hashtbl.set reg_assign ~key:n ~data:reg));

@@ -11,3 +11,23 @@ val to_string_machine_linear_regs :
   Machine_node.t list ->
   (Machine_node.t, Registers.loc) Base.Hashtbl.t ->
   string
+
+val pp_dot : Format.formatter -> (Node.t, 'a) Graph.t -> unit
+val pp_dot_machine : Format.formatter -> (Machine_node.t, 'a) Graph.t -> unit
+
+val pp_machine_compact :
+  ?reg_assoc:(Machine_node.t, Registers.loc) Base.Hashtbl.t ->
+  (Machine_node.t, 'a) Graph.t ->
+  Format.formatter ->
+  Machine_node.t ->
+  unit
+
+val pp_machine_linear :
+  Format.formatter -> (Machine_node.t, 'a) Graph.t * Machine_node.t list -> unit
+
+val pp_machine_linear_regs :
+  Format.formatter ->
+  (Machine_node.t, 'a) Graph.t
+  * Machine_node.t list
+  * (Machine_node.t, Registers.loc) Base.Hashtbl.t ->
+  unit
