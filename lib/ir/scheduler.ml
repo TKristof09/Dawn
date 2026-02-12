@@ -362,7 +362,9 @@ let duplicate_constants g function_graphs =
         Graph.get_dependants g start
         |> List.filter ~f:(fun (n : Machine_node.t) ->
             match n.kind with
-            | Int _ -> true
+            | Int _
+            | Ptr ->
+                true
             | _ -> false)
     in
     let new_copies = Hashtbl.create (module Int) in
