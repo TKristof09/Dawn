@@ -6,6 +6,8 @@ let next_id () =
     incr id_counter;
     !id_counter
 
+let reset_id () = id_counter := 0
+
 type cmp =
     | Eq
     | NEq

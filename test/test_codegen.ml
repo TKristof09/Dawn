@@ -2,7 +2,7 @@ open Dawn
 
 let test str =
     (* HACK: the output seems to be dependant on node ids. So this just resets it to get more stable output until i fix *)
-    Machine_node.id_counter := 0;
+    Machine_node.reset_id ();
     Node.reset_id ();
 
     match Parser.parse_str str with
