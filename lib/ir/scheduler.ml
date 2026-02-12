@@ -30,8 +30,9 @@ let rev_post_order_cfg g node =
 (* consider caching this *)
 let rec idepth g (node : Machine_node.t) =
     match node.kind with
-    | Ideal Start -> 0
-    | FunctionProlog _ -> 0
+    | Ideal Start
+    | FunctionProlog _ ->
+        0
     | Ideal Region ->
         Graph.get_dependencies g node
         |> List.fold ~init:0 ~f:(fun acc n ->
@@ -49,8 +50,9 @@ let rec loop_depth g (n : Machine_node.t) =
     | Ideal Loop ->
         let entry_depth = Loop_node.get_entry_edge g n |> loop_depth g in
         entry_depth + 1
-    | Ideal Start -> 1
-    | FunctionProlog _ -> 1
+    | Ideal Start
+    | FunctionProlog _ ->
+        1
     | Ideal Region -> Graph.get_dependency g n 1 |> Option.value_exn |> loop_depth g
     | Ideal (CProj 1) -> (
         let p = Graph.get_dependency g n 0 |> Option.value_exn in
@@ -65,10 +67,11 @@ let rec loop_depth g (n : Machine_node.t) =
 
 let rec dom g (n : Machine_node.t) =
     match n.kind with
-    | Ideal Start -> assert false
-    | Ideal Loop -> Loop_node.get_entry_edge g n
-    | Ideal Region
+    | Ideal Start
     | FunctionProlog _ ->
+        assert false
+    | Ideal Loop -> Loop_node.get_entry_edge g n
+    | Ideal Region ->
         Graph.get_dependencies g n |> List.filter_opt |> List.reduce_exn ~f:(common_dom g)
     | _ -> Graph.get_dependency g n 0 |> Option.value_exn
 
@@ -401,7 +404,19 @@ let duplicate_constants g function_graphs =
 let schedule g =
     let g = Machine_node.convert_graph g in
     (* Ir_printer.to_dot_machine g |> print_endline; *)
-    let per_function_graphs = Graph.partition g ~f:(get_function g) in
+    let per_function_graphs =
+        Graph.partition g ~f:(get_function g)
+          ~get_start:(fun n ->
+            match n.kind with
+            | FunctionProlog _ -> true
+            | Ideal Start -> true
+            | _ -> false)
+          ~get_stop:(fun n ->
+            match n.kind with
+            | Return -> true
+            | Ideal Stop -> true
+            | _ -> false)
+    in
     (* connect return nodes to stop node *)
     (* TODO: we might want separate stop and start nodes per graph if it messes
        up reg alloc or other downstream usage that looks up the neighbours of
@@ -477,8 +492,7 @@ let schedule g =
                     in
                     Graph.add_dependencies g ret_node [ Some n ];
                     Graph.add_dependencies g n [ Some fun_prolog ]
-                | _ -> assert false);
-            Graph.add_dependencies g (Graph.get_stop g) [ Some ret_node ]);
+                | _ -> assert false));
     (* FIXME schedule early pulls out nodes from branches of an if to before the if. They then get pulled back in to the branch in schedule_flat but it still feels wrong for schedule_early to be able to pull them out *)
     List.map per_function_graphs ~f:(fun g ->
         (* Ir_printer.to_dot_machine g |> print_endline; *)

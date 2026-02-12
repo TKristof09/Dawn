@@ -41,4 +41,10 @@ val remove_node : ('a, readwrite) t -> 'a -> unit
 val get_num_nodes : ('a, 'b) t -> int
 val finalize_node : ('a, readwrite) t -> 'a -> 'a
 val cleanup : ('a, readwrite) t -> unit
-val partition : ('a, 'b) t -> f:('a -> int) -> ('a, 'readwrite) t list
+
+val partition :
+  ('a, 'b) t ->
+  f:('a -> int) ->
+  get_start:('a -> bool) ->
+  get_stop:('a -> bool) ->
+  ('a, 'readwrite) t list
