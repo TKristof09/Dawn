@@ -4,7 +4,7 @@ type 'a sub_lattice =
     | Any
     | Value of 'a
     | All
-[@@deriving sexp_of]
+[@@deriving sexp_of, equal]
 
 let pp_sub_lattice pp_a fmt = function
     | Any -> Format.fprintf fmt "Any"
@@ -22,8 +22,8 @@ let pp_fun_indices fmt = function
           (Set.to_list set)
 
 type fun_ptr = {
-    params : node_type list;
-    ret : node_type;
+    params : t list;
+    ret : t;
     (* cofinite sets to allow us to move up/down the lattice nicely without
        having to resort to having a finite number of functions. `Include
        means only the ids in the Int.Set.t, exclude means everything except
@@ -33,23 +33,24 @@ type fun_ptr = {
 
 and struct_type = {
     name : string;
-    fields : (string * node_type) list;
+    fields : (string * t) list;
   }
 
-and const_array = node_type list
+and const_array = t list
 
-and node_type =
+and t =
     | ANY
     | Integer of int sub_lattice
-    | Tuple of node_type list sub_lattice
+    | Tuple of t list sub_lattice
     | FunPtr of fun_ptr sub_lattice
-    | Ptr of node_type
+    | Ptr of t
     | Struct of struct_type sub_lattice
     | ConstArray of const_array sub_lattice
     | Memory
     | Control
+    | DeadControl
     | ALL
-[@@deriving show { with_path = false }, sexp_of]
+[@@deriving show { with_path = false }, sexp_of, equal]
 
 let make_fun_ptr ?idx params ret =
     let is_valid_param_type t =
@@ -121,7 +122,7 @@ let make_string s =
     let el_type = ConstArray (Value contents) in
     make_array el_type (Integer (Value len))
 
-let of_ast_type (ast_type : Ast.var_type) : node_type =
+let of_ast_type (ast_type : Ast.var_type) : t =
     (* FIXME actually implement *)
     match ast_type with
     | Ast.Type "i64" -> Integer Any
@@ -193,6 +194,9 @@ let rec meet t t' =
         in
         ConstArray l
     | Control, Control -> Control
+    | Control, DeadControl -> Control
+    | DeadControl, Control -> Control
+    | DeadControl, DeadControl -> DeadControl
     | Memory, Memory -> Memory
     | ALL, _
     | _, ALL ->
@@ -205,6 +209,7 @@ let rec meet t t' =
     | Struct _, _
     | Ptr _, _
     | Control, _
+    | DeadControl, _
     | Memory, _
     | ConstArray _, _ ->
         ALL
@@ -272,6 +277,9 @@ let rec join t t' =
         in
         ConstArray l
     | Control, Control -> Control
+    | Control, DeadControl -> DeadControl
+    | DeadControl, Control -> DeadControl
+    | DeadControl, DeadControl -> DeadControl
     | Memory, Memory -> Memory
     | ALL, _ -> t'
     | _, ALL -> t
@@ -284,6 +292,7 @@ let rec join t t' =
     | Struct _, _
     | Ptr _, _
     | Control, _
+    | DeadControl, _
     | Memory, _
     | ConstArray _, _ ->
         ANY
@@ -299,6 +308,7 @@ let rec is_constant t =
     | ANY
     | ALL
     | Control
+    | DeadControl
     | Memory ->
         false
     | Integer x -> is_constant_lattice x
@@ -380,3 +390,5 @@ let get_offset t field =
               Continue (acc + 8))
           ~finish:(fun _ -> assert false)
     | _ -> assert false
+
+let is_a lhs rhs = equal (meet lhs rhs) rhs

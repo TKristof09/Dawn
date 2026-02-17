@@ -4,7 +4,7 @@ val create_new :
   ctrl:Node.t ->
   mem:Node.t ->
   size:Node.t ->
-  Types.node_type ->
+  Types.t ->
   Node.t
 
 val create_store :
@@ -21,5 +21,6 @@ val create_load :
   Ast.loc ->
   mem:Node.t ->
   ptr:Node.t ->
+  string ->
   offset:Node.t ->
   Node.t

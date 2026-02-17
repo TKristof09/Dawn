@@ -30,7 +30,7 @@ and ctrl_kind =
     | Loop
     | Function of {
         ret : t;
-        signature : Types.node_type;
+        signature : Types.t;
         idx : int;
       }
     | Return
@@ -39,7 +39,7 @@ and ctrl_kind =
 
 and mem_kind =
     | New
-    | Load
+    | Load of string
     | Store
 
 and kind =
@@ -49,7 +49,7 @@ and kind =
     | Scope of t Symbol_table.t
 
 and t = {
-    mutable typ : Types.node_type;
+    mutable typ : Types.t;
     mutable kind : kind;
     id : int;
     loc : Ast.loc;
@@ -80,7 +80,7 @@ let show_kind kind =
 
 let show node =
     let kind_str = show_kind node.kind in
-    let type_string = Types.show_node_type node.typ in
+    let type_string = Types.show node.typ in
     Printf.sprintf "Node { id : %d ; kind : %s; type :%s}" node.id kind_str type_string
 
 let pp fmt node = Format.fprintf fmt "%s" (show node)

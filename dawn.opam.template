@@ -1,3 +1,0 @@
-pin-depends: [
-  ["lrgrep.dev" "git+https://github.com/TKristof09/lrgrep"]
-]

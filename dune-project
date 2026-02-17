@@ -1,4 +1,4 @@
-(lang dune 3.16)
+(lang dune 3.21)
 
 (name dawn)
 (cram enable)
@@ -18,10 +18,6 @@
 
 (using menhir 3.0) 
 
-(pin 
-  (url "git+https://github.com/TKristof09/lrgrep")
-  (package (name lrgrep)))
-
 (package
  (name dawn)
  (synopsis "A short synopsis")
@@ -32,6 +28,7 @@
    ppx_deriving
    menhir
    core
+   core_kernel
    lrgrep
    )
  (tags

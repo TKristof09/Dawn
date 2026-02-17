@@ -49,19 +49,19 @@ let pp_dot fmt g =
         | Ctrl Start ->
             Format.fprintf fmt "  { rank = source; %s [shape=%s,label=\"%s\",tooltip=\"%s\"]};@\n"
               (node_to_dot_id node.id) (node_shape node) (node_label node)
-              (Types.show_node_type node.typ
+              (Types.show node.typ
               |> String.substr_replace_all ~pattern:"\n" ~with_:" "
               |> String.escaped)
         | Ctrl Stop ->
             Format.fprintf fmt "  { rank = sink; %s [shape=%s,label=\"%s\",tooltip=\"%s\"]};@\n"
               (node_to_dot_id node.id) (node_shape node) (node_label node)
-              (Types.show_node_type node.typ
+              (Types.show node.typ
               |> String.substr_replace_all ~pattern:"\n" ~with_:" "
               |> String.escaped)
         | _ ->
             Format.fprintf fmt "  %s [shape=%s,label=\"%s\",tooltip=\"#%d: %s\"];@\n"
               (node_to_dot_id node.id) (node_shape node) (node_label node) node.id
-              (Types.show_node_type node.typ
+              (Types.show node.typ
               |> String.substr_replace_all ~pattern:"\n" ~with_:" "
               |> String.escaped));
 
@@ -191,9 +191,7 @@ let to_dot_machine g = Format.asprintf "%a" pp_dot_machine g
 
 let show_node_compact g (node : Node.t) =
     let kind_str = node_label node in
-    let type_str =
-        Types.show_node_type node.typ |> String.substr_replace_all ~pattern:"\n" ~with_:" "
-    in
+    let type_str = Types.show node.typ |> String.substr_replace_all ~pattern:"\n" ~with_:" " in
     let deps_str =
         Graph.get_dependencies g node
         |> List.tl

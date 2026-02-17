@@ -1,1 +1,1 @@
-val create : (Node.t, Graph.readwrite) Graph.t -> Ast.loc -> Types.node_type -> string -> Node.t
+val create : (Node.t, Graph.readwrite) Graph.t -> Ast.loc -> Types.t -> string -> Node.t

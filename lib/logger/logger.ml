@@ -57,9 +57,10 @@ let log_s ?loc_str level s =
       match
         loc_str
       with
-      | None -> Format.printf "%s[%a]:%s %s" (color_of_level level) pp_level level reset_color s
+      | None -> Format.printf "%s[%a]:%s %s\n%!" (color_of_level level) pp_level level reset_color s
       | Some loc ->
-          Format.printf "%s[%a]: (%s)%s %s" (color_of_level level) pp_level level loc reset_color s
+          Format.printf "%s[%a]: (%s)%s %s\n%!" (color_of_level level) pp_level level loc
+            reset_color s
 
 let log_debug ?loc_str f = log ?loc_str Debug f
 let log_info ?loc_str f = log ?loc_str Info f

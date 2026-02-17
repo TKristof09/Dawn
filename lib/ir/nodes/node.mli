@@ -28,7 +28,7 @@ and ctrl_kind =
     | Loop
     | Function of {
         ret : t;
-        signature : Types.node_type;
+        signature : Types.t;
         idx : int;
       }
     | Return
@@ -37,7 +37,7 @@ and ctrl_kind =
 
 and mem_kind =
     | New
-    | Load
+    | Load of string
     | Store
 
 and kind =
@@ -47,7 +47,7 @@ and kind =
     | Scope of t Symbol_table.t
 
 and t = {
-    mutable typ : Types.node_type;
+    mutable typ : Types.t;
     mutable kind : kind;
     id : int;
     loc : Ast.loc;
@@ -62,9 +62,9 @@ val equal : t -> t -> bool
 
 val compare : t -> t -> int
 val hash : t -> int
-val create_data : Ast.loc -> Types.node_type -> data_kind -> t
-val create_ctrl : Ast.loc -> Types.node_type -> ctrl_kind -> t
-val create_mem : Ast.loc -> Types.node_type -> mem_kind -> t
+val create_data : Ast.loc -> Types.t -> data_kind -> t
+val create_ctrl : Ast.loc -> Types.t -> ctrl_kind -> t
+val create_mem : Ast.loc -> Types.t -> mem_kind -> t
 val create_scope : unit -> t
 val show : t -> string
 val show_kind : kind -> string

@@ -133,7 +133,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
                   (Const_node.create_int g loc base)
                   (Bitop_nodes.create_lsh g loc index el_size)
             in
-            let load = Mem_nodes.create_load g loc ~mem ~ptr ~offset in
+            let load = Mem_nodes.create_load g loc ~mem ~ptr "[]" ~offset in
             Some load)
     | Ast.VarAssign (name, expr) ->
         let n = do_expr g expr scope cur_ret_node linker |> Option.value_exn in

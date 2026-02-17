@@ -14,7 +14,7 @@ let create_fun_ptr g loc (fun_node : Node.t) idx =
         match signature with
         | FunPtr (Value ptr) -> Types.make_fun_ptr ~idx ptr.params ptr.ret
         | FunPtr _ -> failwith "Should be fine but idk"
-        | _ -> failwithf "Expected function ptr but got %s" (Types.show_node_type signature) ()
+        | _ -> failwithf "Expected function ptr but got %s" (Types.show signature) ()
     in
     let n = Node.create_data loc typ Constant in
     Graph.add_dependencies g n [ Some (Graph.get_start g) ];
@@ -23,5 +23,11 @@ let create_fun_ptr g loc (fun_node : Node.t) idx =
 let create_string g loc s =
     let arr_typ = Types.make_string s in
     let n = Node.create_data loc (Ptr arr_typ) Constant in
+    Graph.add_dependencies g n [ Some (Graph.get_start g) ];
+    Graph.finalize_node g n
+
+let create_from_type g loc typ =
+    assert (Types.is_constant typ);
+    let n = Node.create_data loc typ Constant in
     Graph.add_dependencies g n [ Some (Graph.get_start g) ];
     Graph.finalize_node g n

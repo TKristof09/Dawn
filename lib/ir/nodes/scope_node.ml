@@ -171,8 +171,8 @@ let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
                     phis := n_this :: !phis;
                     Phi_node.add_backedge_input g n_this n_body));
 
-        (* need to compute type of phis **AFTER** they all have both their inputs *)
-        Core.List.iter !phis ~f:(Phi_node.compute_type g);
+        (* TODO: we put phis to bottom type for now. we'll have constant propagation that calculates better type later in SCCP *)
+        Core.List.iter !phis ~f:(fun n -> n.typ <- ALL);
         Symbol_table.iter exit_tbl (fun ~name ~symbol ~depth:_ ->
             match symbol with
             | None -> ()
