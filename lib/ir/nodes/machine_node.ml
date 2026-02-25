@@ -617,7 +617,7 @@ and of_mem_node g machine_g kind (n : Node.t) =
     in
     match kind with
     | Node.New -> simple New
-    | Store -> (* TODO check for ops like add that can address memory directly *) simple Store
+    | Store _ -> (* TODO check for ops like add that can address memory directly *) simple Store
     | Load _ -> (* TODO check for ops like add that can address memory directly *) simple Load
 
 and convert_node g machine_g (n : Node.t) =

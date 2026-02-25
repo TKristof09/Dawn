@@ -13,11 +13,12 @@ let opt filename =
         let son = Son.of_ast ast linker in
         [%log.debug "\n%a" Ir_printer.pp_dot son];
         Sccp.run son;
-        Graph.iter son ~f:(fun n ->
-            match n.typ with
-            | ALL -> [%log.error "Type error in %s" (Node.show n)]
-            | _ -> ());
-        [%log.debug "\n%s" (Ir_printer.to_dot son)]
+        let type_errors = Type_check.run son in
+        if List.is_empty type_errors then
+          [%log.debug "\n%s" (Ir_printer.to_dot son)]
+        else (
+          List.iter type_errors ~f:(fun err -> [%log.error err]);
+          failwith "TypeCheckFailed")
     | Error msg -> Printf.eprintf "%s\n" msg
 
 let compile filename =

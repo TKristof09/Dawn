@@ -27,7 +27,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
             let mem = Proj_node.create g loc n 0 in
             let ptr = Proj_node.create g loc n 1 in
             let offset = Types.get_offset arr_type "len" |> Const_node.create_int g loc in
-            let store = Mem_nodes.create_store g loc ~mem ~ptr ~offset ~value:count in
+            let store = Mem_nodes.create_store g loc ~mem ~ptr ~offset "len" ~value:count in
             Scope_node.define g scope name ptr;
             Scope_node.set_mem g scope store
         | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type typ) ())
@@ -156,7 +156,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
               (Const_node.create_int g loc base)
               (Bitop_nodes.create_lsh g loc index el_size)
         in
-        let store_mem = Mem_nodes.create_store g loc ~mem ~ptr ~offset ~value in
+        let store_mem = Mem_nodes.create_store g loc ~mem ~ptr ~offset "[]" ~value in
         Scope_node.set_mem g scope store_mem;
         Some value
     | Ast.Add (lhs, rhs) -> binop lhs rhs Arithmetic_nodes.create_add

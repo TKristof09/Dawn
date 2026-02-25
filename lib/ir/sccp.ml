@@ -105,7 +105,7 @@ let do_mem_node extra_node_deps g n (m : Node.mem_kind) =
             | ANY -> (~new_type:ANY, ~extra_deps:[])
             | ALL -> (~new_type:ALL, ~extra_deps:[])
             | _ -> assert false)
-    | Store -> work extra_node_deps g n ~type_fn:(fun _ _ -> (~new_type:Memory, ~extra_deps:[]))
+    | Store _ -> work extra_node_deps g n ~type_fn:(fun _ _ -> (~new_type:Memory, ~extra_deps:[]))
     | New -> []
 
 let do_node extra_node_deps (g : (Node.t, Graph.readwrite) Graph.t) (n : Node.t) =

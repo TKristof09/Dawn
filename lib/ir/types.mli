@@ -47,3 +47,6 @@ val get_string : t -> string option
 val is_const_array : t -> bool
 val get_offset : t -> string -> int
 val is_a : t -> t -> bool
+val get_fun_param_type : t -> int -> t
+val get_field_type : t -> string -> t
+val human_readable : t -> string

@@ -13,6 +13,7 @@ val create_store :
   mem:Node.t ->
   ptr:Node.t ->
   offset:Node.t ->
+  string ->
   value:Node.t ->
   Node.t
 

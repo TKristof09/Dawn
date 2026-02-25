@@ -88,7 +88,7 @@ let make_struct name fields =
     assert (List.for_all fields ~f:is_valid_field_type);
     Struct (Value { name; fields })
 
-let make_array element_type len_type =
+let make_array_inner name element_type len_type =
     let is_valid_element_type =
         match element_type with
         | Integer _
@@ -104,6 +104,9 @@ let make_array element_type len_type =
     in
     assert is_valid_element_type;
     assert is_valid_len_type;
+    make_struct name [ ("len", len_type); ("[]", element_type) ]
+
+let make_array element_type len_type =
     let name =
         match element_type with
         | Integer _ -> "int_array"
@@ -114,23 +117,19 @@ let make_array element_type len_type =
             | _ -> failwith "TODO")
         | _ -> assert false
     in
-    make_struct name [ ("len", len_type); ("[]", element_type) ]
+    make_array_inner name element_type len_type
 
 let make_string s =
     let len = String.length s in
     let contents = s |> String.to_list |> List.map ~f:(fun c -> Integer (Value (Char.to_int c))) in
     let el_type = ConstArray (Value contents) in
-    make_array el_type (Integer (Value len))
+    make_array_inner "str" el_type (Integer (Value len))
 
 let of_ast_type (ast_type : Ast.var_type) : t =
     (* FIXME actually implement *)
     match ast_type with
-    | Ast.Type "i64" -> Integer Any
-    | Ast.Type "str" ->
-        Ptr
-          (Struct
-             (Value
-                { name = "int_array"; fields = [ ("len", Integer Any); ("[]", ConstArray Any) ] }))
+    | Ast.Type "i64" -> Integer All
+    | Ast.Type "str" -> Ptr (make_array_inner "str" (ConstArray All) (Integer All))
     | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type ast_type) ()
 
 let rec meet t t' =
@@ -184,7 +183,7 @@ let rec meet t t' =
                   | Unequal_lengths -> assert false)
         in
         Struct l
-    | Ptr p, Ptr p' -> meet p p'
+    | Ptr p, Ptr p' -> Ptr (meet p p')
     | ConstArray a, ConstArray a' ->
         let l =
             meet_sub_lattice a a' ~f:(fun x x' ->
@@ -392,3 +391,33 @@ let get_offset t field =
     | _ -> assert false
 
 let is_a lhs rhs = equal (meet lhs rhs) rhs
+
+let get_fun_param_type fun_type i =
+    match fun_type with
+    | FunPtr (Value { params; ret = _; fun_indices = _ }) -> List.nth_exn params i
+    | _ -> assert false
+
+let get_field_type t field_name =
+    match t with
+    | Struct (Value { name = _; fields }) ->
+        List.find_map_exn fields ~f:(fun (name, t) ->
+            if String.equal name field_name then
+              Some t
+            else
+              None)
+    | _ -> assert false
+
+let rec human_readable t =
+    match t with
+    | Integer _ -> "i64"
+    | Struct Any
+    | Struct All ->
+        "struct"
+    | Struct (Value s) -> s.name
+    | Ptr (Struct _ as s) ->
+        (* HACK: we always represent structs as Ptr(Struct...) now so this
+           makes the pretty printer look nicer, but idk if in the future i want
+           to change this representation *)
+        human_readable s
+    | Ptr p -> "*" ^ human_readable p
+    | _ -> assert false

@@ -38,7 +38,7 @@ and ctrl_kind =
 and mem_kind =
     | New
     | Load of string
-    | Store
+    | Store of string
 
 and kind =
     | Data of data_kind
