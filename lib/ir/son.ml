@@ -213,7 +213,6 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
             Fun_node.add_call g loc ~ctrl:(Scope_node.get_ctrl g scope) ~fun_ptr args
         in
         let ctrl = Proj_node.create g loc call_end 0 in
-        Linker.link linker g call_node;
         Scope_node.set_ctrl g scope ctrl;
         let return_val = Proj_node.create g loc call_end 1 in
         Some return_val

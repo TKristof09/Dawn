@@ -86,7 +86,9 @@ let rec is_jmp_target g (n : Machine_node.t) =
             true
         | Some ({ kind = Ideal (CProj _); _ } as n') ->
             (* TODO: these useless CProj nodes should just get removed, that would be way cleaner *)
-            is_jmp_target g n' && List.length (Graph.get_dependants g n') = 1
+            is_jmp_target g n'
+            && List.length (Graph.get_dependants g n') = 1
+            && Graph.get_dependants g n' |> List.hd_exn |> Machine_node.is_blockhead
         | _ -> false)
 
 let get_first_blockhead g n =

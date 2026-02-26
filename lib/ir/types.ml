@@ -130,6 +130,7 @@ let of_ast_type (ast_type : Ast.var_type) : t =
     match ast_type with
     | Ast.Type "i64" -> Integer All
     | Ast.Type "str" -> Ptr (make_array_inner "str" (ConstArray All) (Integer All))
+    | Ast.Type "bool" -> (* TODO: actual bool type *) Integer All
     | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type ast_type) ()
 
 let rec meet t t' =

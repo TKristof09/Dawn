@@ -39,6 +39,24 @@ let do_data_node g (n : Node.t) (k : Node.data_kind) =
     | Constant -> None
     | Proj _ -> None
     | Phi ->
+        (* FIXME: This feels kind of useless since phi.typ is always the meet of its alive inputs so this expected_types should never find errors since every input isa phi.typ by definition *)
+        let in_control =
+            Graph.get_dependency g n 0
+            |> Option.value_exn
+            |> Graph.get_dependencies g
+            |> List.tl_exn
+        in
+        let in_data = Graph.get_dependencies g n |> List.tl_exn in
+        let inputs =
+            List.zip_exn in_control in_data
+            |> List.filter_map ~f:(fun (c, d) ->
+                match (c, d) with
+                | Some c, Some d -> (
+                    match c.Node.typ with
+                    | DeadControl -> None
+                    | _ -> Some d.typ)
+                | _ -> None)
+        in
         let expected = List.init (List.length inputs) ~f:(Fun.const n.typ) in
         expect_types n.loc ~expected ~inputs
     | Param _ ->
@@ -80,7 +98,14 @@ let do_ctrl_node g (n : Node.t) (k : Node.ctrl_kind) =
             |> List.filter_opt
             |> List.map ~f:(fun n -> n.typ)
         in
-        expect_types n.loc ~expected ~inputs:actual_args
+        if List.length expected <> List.length actual_args then
+          Some
+            [
+              Printf.sprintf "%s:%d: Invalid number of arguments, got %d expected %d" n.loc.filename
+                n.loc.line (List.length actual_args) (List.length expected);
+            ]
+        else
+          expect_types n.loc ~expected ~inputs:actual_args
     | FunctionCallEnd -> None
 
 let do_mem_node g (n : Node.t) (k : Node.mem_kind) =

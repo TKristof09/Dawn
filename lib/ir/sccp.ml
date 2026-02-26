@@ -58,7 +58,7 @@ let do_data_node extra_node_deps g n (k : Node.data_kind) =
         work extra_node_deps g n ~type_fn:Phi_node.compute_type
     | External _ -> (* this is just like a constant *) []
 
-let do_ctrl_node extra_node_deps g n (c : Node.ctrl_kind) =
+let do_ctrl_node extra_node_deps g linker n (c : Node.ctrl_kind) =
     match c with
     | Start ->
         work extra_node_deps g n ~type_fn:(fun _ _ ->
@@ -80,9 +80,15 @@ let do_ctrl_node extra_node_deps g n (c : Node.ctrl_kind) =
             let new_type = Types.Tuple (Value [ ctrl.typ; data.typ ]) in
             (~new_type, ~extra_deps:[]))
     | FunctionCall ->
-        work extra_node_deps g n ~type_fn:(fun g n ->
+        let old_type = n.typ in
+        let new_type =
             let ctrl = Graph.get_dependency g n 0 |> Option.value_exn in
-            (~new_type:ctrl.typ, ~extra_deps:[]))
+            ctrl.typ
+        in
+        (* link calls to function when it just became reachable *)
+        if (not (Types.equal old_type Control)) && Types.equal new_type Control then
+          Linker.link linker g n;
+        work extra_node_deps g n ~type_fn:(fun _ _ -> (~new_type, ~extra_deps:[]))
     | FunctionCallEnd -> work extra_node_deps g n ~type_fn:Fun_node.compute_call_end_type
 
 let do_mem_node extra_node_deps g n (m : Node.mem_kind) =
@@ -108,14 +114,14 @@ let do_mem_node extra_node_deps g n (m : Node.mem_kind) =
     | Store _ -> work extra_node_deps g n ~type_fn:(fun _ _ -> (~new_type:Memory, ~extra_deps:[]))
     | New -> []
 
-let do_node extra_node_deps (g : (Node.t, Graph.readwrite) Graph.t) (n : Node.t) =
+let do_node extra_node_deps (g : (Node.t, Graph.readwrite) Graph.t) linker (n : Node.t) =
     match n.kind with
     | Data d -> do_data_node extra_node_deps g n d
-    | Ctrl c -> do_ctrl_node extra_node_deps g n c
+    | Ctrl c -> do_ctrl_node extra_node_deps g linker n c
     | Scope _ -> []
     | Mem m -> do_mem_node extra_node_deps g n m
 
-let run g =
+let run g linker =
     let worklist = Queue.create ~capacity:(Graph.get_num_nodes g) () in
     Graph.iter g ~f:(fun (n : Node.t) ->
         (* TODO: I really dont like this type of skipping some kinds, looks like a mess waiting to happen *)
@@ -146,7 +152,7 @@ let run g =
         match Queue.dequeue worklist with
         | None -> i
         | Some n ->
-            let news = do_node extra_node_deps g n in
+            let news = do_node extra_node_deps g linker n in
             Queue.enqueue_all worklist news;
             loop (i + 1)
     in

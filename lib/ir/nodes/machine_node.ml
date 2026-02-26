@@ -476,12 +476,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
                 in
                 let set_node = { id = next_id (); kind = Set m_cmp; ir_node = n } in
                 let cmp_node = { id = next_id (); kind = CmpImm value; ir_node = n } in
-                let deps =
-                    List.filter cmp_deps ~f:(fun n ->
-                        match n with
-                        | None -> true
-                        | Some n -> not (Node.equal cn n))
-                in
+                let deps = List.filteri cmp_deps ~f:(fun i _ -> i <> idx) in
                 let deps = List.map deps ~f:(Option.map ~f:(convert_node g machine_g)) in
                 Graph.add_dependencies machine_g cmp_node deps;
                 Graph.add_dependencies machine_g set_node [ List.hd_exn deps; Some cmp_node ];

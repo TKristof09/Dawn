@@ -1,3 +1,4 @@
 Test:
   $ dawn type_check.eos
-  type_check.eos:5:15: Type error: expected `str` but got `int`.
+  [ERROR]: (Main:35) type_check.eos:6: Expected str, got i64
+  [ERROR]: (Main:35) type_check.eos:20: Invalid number of arguments, got 3 expected 2

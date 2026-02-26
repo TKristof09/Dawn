@@ -1,4 +1,5 @@
-fun dprint(s:str, s2:str, c:bool)
+fun print(c:str) -> i64 = @extern("print");
+fun dprint(s:str, s2:str, c:bool) -> i64
 {
     if(c) {
         print(s);
@@ -6,9 +7,9 @@ fun dprint(s:str, s2:str, c:bool)
     else{
         print(s2);
     }
+    1
 }
 let s:str = "Hello, World!";
 let s2:str = "Hello, Eos!";
 let b:bool = false;
 dprint(s, s2, b);
-

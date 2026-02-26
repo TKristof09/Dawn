@@ -56,8 +56,6 @@ let link_call g ~(call_node : Node.t) ~(fun_node : Node.t) =
             | Ctrl FunctionCallEnd -> true
             | _ -> false)
     in
-    Graph.add_dependencies g call_end [ Some ret_node ];
-    Graph.add_dependencies g fun_node [ Some call_node ];
     let param_nodes =
         Graph.get_dependants g fun_node
         |> List.filter ~f:(fun n ->
@@ -67,8 +65,13 @@ let link_call g ~(call_node : Node.t) ~(fun_node : Node.t) =
     in
     (* drop ctrl and fun_ptr *)
     let args = List.drop (Graph.get_dependencies g call_node) 2 in
-    List.zip_exn param_nodes args
-    |> List.iter ~f:(fun (param, arg) -> Graph.add_dependencies g param [ arg ])
+    match List.zip param_nodes args with
+    | Unequal_lengths ->
+        [%log.debug "Call linking failed for %a, incorrect number of arguments" Node.pp call_end]
+    | Ok l ->
+        Graph.add_dependencies g call_end [ Some ret_node ];
+        Graph.add_dependencies g fun_node [ Some call_node ];
+        List.iter l ~f:(fun (param, arg) -> Graph.add_dependencies g param [ arg ])
 
 let add_return g ret_node ~ctrl ~val_n =
     let region = Graph.get_dependency g ret_node 0 |> Option.value_exn in
@@ -118,13 +121,17 @@ let compute_call_end_type g (n : Node.t) =
               possible functions. In this case we'll only want to do the
               Types.meet for precise return type calculation once all possible
               functions are already linked *)
-              let ret_node = Graph.get_dependency g n 1 |> Option.value_exn in
-              let ret_node_ret_type =
-                  match ret_node.typ with
-                  | Tuple (Value [ _; ret_typ ]) -> ret_typ
-                  | _ -> ANY
+              let ret_nodes = Graph.get_dependencies g n |> List.tl_exn |> List.filter_opt in
+              let ret_type =
+                  List.fold ret_nodes ~init:Types.ANY ~f:(fun acc ret_node ->
+                      let ret_node_ret_type =
+                          match ret_node.typ with
+                          | Tuple (Value [ _; ret_typ ]) -> ret_typ
+                          | _ -> ANY
+                      in
+                      Types.meet acc ret_node_ret_type)
               in
-              Types.Tuple (Value [ call.typ; Types.meet ret ret_node_ret_type ])
+              Types.Tuple (Value [ call.typ; Types.meet ret ret_type ])
           | _ -> failwith "Function ptr isn't known"
     in
     (~new_type, ~extra_deps:[])

@@ -12,7 +12,8 @@ let opt filename =
         let linker = Linker.create () in
         let son = Son.of_ast ast linker in
         [%log.debug "\n%a" Ir_printer.pp_dot son];
-        Sccp.run son;
+        Sccp.run son linker;
+        [%log.debug "\n%a" Ir_printer.pp_dot son];
         let type_errors = Type_check.run son in
         if List.is_empty type_errors then
           [%log.debug "\n%s" (Ir_printer.to_dot son)]
@@ -26,7 +27,14 @@ let compile filename =
     | Ok ast ->
         let linker = Linker.create () in
         let son = Son.of_ast ast linker in
+        Sccp.run son linker;
         let son = Graph.readonly son in
+        let type_errors = Type_check.run son in
+        [%log.debug "\n%s" (Ir_printer.to_dot son)];
+        if not (List.is_empty type_errors) then (
+          List.iter type_errors ~f:(fun err -> [%log.error err]);
+          failwith "TypeCheckFailed");
+
         [%log.debug "\n%a" Ir_printer.pp_dot son];
         let schedules = Scheduler.schedule son in
         (* only do code gen on non external functions *)
