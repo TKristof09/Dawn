@@ -51,6 +51,7 @@ type machine_node_kind =
     | New
     | Store
     | Load
+    | Noop
     | Ideal of ideal
 [@@deriving show { with_path = false }, sexp_of]
 

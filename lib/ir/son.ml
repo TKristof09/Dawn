@@ -72,7 +72,10 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
             let param_type = Types.of_ast_type typ in
             let param_node = Fun_node.create_param g loc fun_node param_type i in
             Scope_node.define g scope pname param_node);
-        let body_n = do_expr g body scope (Some ret_node) linker |> Option.value_exn in
+        let body_n =
+            do_expr g body scope (Some ret_node) linker
+            |> Option.value ~default:(Const_node.create_from_type g body.loc Types.Void)
+        in
         Fun_node.add_return g ret_node ~ctrl:(Scope_node.get_ctrl g scope) ~val_n:body_n;
         Scope_node.pop g scope;
         Scope_node.set_ctrl g scope old_ctrl

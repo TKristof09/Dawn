@@ -1,4 +1,4 @@
-fun print(s: str) -> i64 = @extern("print");
+fun print(s: str) = @extern("print");
 
 let s: str = "Hello, World!";
 print(s);

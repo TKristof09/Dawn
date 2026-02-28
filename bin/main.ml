@@ -27,37 +27,37 @@ let compile filename =
     | Ok ast ->
         let linker = Linker.create () in
         let son = Son.of_ast ast linker in
+        [%log.debug "\n%s" (Ir_printer.to_dot son)];
         Sccp.run son linker;
         let son = Graph.readonly son in
         let type_errors = Type_check.run son in
         [%log.debug "\n%s" (Ir_printer.to_dot son)];
-        if not (List.is_empty type_errors) then (
-          List.iter type_errors ~f:(fun err -> [%log.error err]);
-          failwith "TypeCheckFailed");
+        if not (List.is_empty type_errors) then
+          List.iter type_errors ~f:(fun err -> [%log.error err])
+        else (
+          [%log.debug "\n%a" Ir_printer.pp_dot son];
+          let schedules = Scheduler.schedule son in
+          (* only do code gen on non external functions *)
+          let functions =
+              Core.List.filter schedules ~f:(fun (g, _) ->
+                  Graph.find g ~f:(fun n ->
+                      match n.kind with
+                      | Ideal (External _) -> true
+                      | _ -> false)
+                  |> Option.is_none)
+              |> Core.List.map ~f:(fun (g, program) ->
+                  [%log.debug "\n%a" Ir_printer.pp_dot_machine g];
+                  let flat_program = List.concat program in
+                  [%log.debug "\n%a" Ir_printer.pp_machine_linear (g, flat_program)];
+                  let program, reg_assignment = Reg_allocator.allocate g flat_program in
+                  [%log.debug "\n%a" Ir_printer.pp_machine_linear_regs (g, program, reg_assignment)];
+                  (g, reg_assignment, program))
+          in
+          let code = Asm_emit.emit_program functions linker in
+          let outfile = Filename.chop_extension filename ^ ".asm" in
+          [%log.info "Output: %s" outfile];
 
-        [%log.debug "\n%a" Ir_printer.pp_dot son];
-        let schedules = Scheduler.schedule son in
-        (* only do code gen on non external functions *)
-        let functions =
-            Core.List.filter schedules ~f:(fun (g, _) ->
-                Graph.find g ~f:(fun n ->
-                    match n.kind with
-                    | Ideal (External _) -> true
-                    | _ -> false)
-                |> Option.is_none)
-            |> Core.List.map ~f:(fun (g, program) ->
-                [%log.debug "\n%a" Ir_printer.pp_dot_machine g];
-                let flat_program = List.concat program in
-                [%log.debug "\n%a" Ir_printer.pp_machine_linear (g, flat_program)];
-                let program, reg_assignment = Reg_allocator.allocate g flat_program in
-                [%log.debug "\n%a" Ir_printer.pp_machine_linear_regs (g, program, reg_assignment)];
-                (g, reg_assignment, program))
-        in
-        let code = Asm_emit.emit_program functions linker in
-        let outfile = Filename.chop_extension filename ^ ".asm" in
-        [%log.info "Output: %s" outfile];
-
-        Out_channel.write_all outfile ~data:code
+          Out_channel.write_all outfile ~data:code)
     | Error msg -> Printf.eprintf "%s\n" msg
 
 let usage_msg =

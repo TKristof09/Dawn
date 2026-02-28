@@ -60,6 +60,7 @@ let asm_of_op (kind : Machine_node.machine_node_kind) =
     | New -> assert false
     | Store -> "mov"
     | Load -> "mov"
+    | Noop -> ""
 
 let asm_of_loc (loc : Registers.loc) =
     match loc with
@@ -271,6 +272,7 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             let op_str = asm_of_op n.kind in
             Printf.sprintf "\t%s %s, [%s + %s]" op_str (asm_of_loc reg) (asm_of_loc ptr_reg)
               (asm_of_loc offset_reg)
+        | Noop -> ""
     in
     (* let node_loc = *)
     (*     Printf.sprintf "%s:%d:%d" n.ir_node.loc.filename n.ir_node.loc.line n.ir_node.loc.col *)

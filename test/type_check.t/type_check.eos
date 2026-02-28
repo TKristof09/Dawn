@@ -1,4 +1,4 @@
-fun print(c:str) -> i64 = @extern("print");
+fun print(c:str) = @extern("print");
 fun testFn(x: i64, y: i64) -> bool
 {
     if(x == 0)
@@ -12,7 +12,6 @@ fun testFn(x: i64, y: i64) -> bool
         x = x - 1;
         testFn(x, y);
     }
-    "hello"
 }
 
 let y:bool = 5;

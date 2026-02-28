@@ -46,6 +46,7 @@ and t =
     | Ptr of t
     | Struct of struct_type sub_lattice
     | ConstArray of const_array sub_lattice
+    | Void
     | Memory
     | Control
     | DeadControl
@@ -63,7 +64,8 @@ let make_fun_ptr ?idx params ret =
     let is_valid_ret_type =
         match ret with
         | Integer _
-        | Ptr _ ->
+        | Ptr _
+        | Void ->
             true
         | _ -> false
     in
@@ -128,9 +130,10 @@ let make_string s =
 let of_ast_type (ast_type : Ast.var_type) : t =
     (* FIXME actually implement *)
     match ast_type with
-    | Ast.Type "i64" -> Integer All
-    | Ast.Type "str" -> Ptr (make_array_inner "str" (ConstArray All) (Integer All))
-    | Ast.Type "bool" -> (* TODO: actual bool type *) Integer All
+    | Type "i64" -> Integer All
+    | Type "str" -> Ptr (make_array_inner "str" (ConstArray All) (Integer All))
+    | Type "bool" -> (* TODO: actual bool type *) Integer All
+    | Type "void" -> Void
     | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type ast_type) ()
 
 let rec meet t t' =
@@ -198,6 +201,7 @@ let rec meet t t' =
     | DeadControl, Control -> Control
     | DeadControl, DeadControl -> DeadControl
     | Memory, Memory -> Memory
+    | Void, Void -> Void
     | ALL, _
     | _, ALL ->
         ALL
@@ -211,7 +215,8 @@ let rec meet t t' =
     | Control, _
     | DeadControl, _
     | Memory, _
-    | ConstArray _, _ ->
+    | ConstArray _, _
+    | Void, _ ->
         ALL
 
 let rec join t t' =
@@ -281,6 +286,7 @@ let rec join t t' =
     | DeadControl, Control -> DeadControl
     | DeadControl, DeadControl -> DeadControl
     | Memory, Memory -> Memory
+    | Void, Void -> Void
     | ALL, _ -> t'
     | _, ALL -> t
     | ANY, _
@@ -294,7 +300,8 @@ let rec join t t' =
     | Control, _
     | DeadControl, _
     | Memory, _
-    | ConstArray _, _ ->
+    | ConstArray _, _
+    | Void, _ ->
         ANY
 
 let rec is_constant t =
@@ -327,6 +334,7 @@ let rec is_constant t =
         | Value s -> List.for_all s.fields ~f:(fun (_, t) -> is_constant t))
     | Ptr p -> is_constant p
     | ConstArray x -> is_constant_lattice x
+    | Void -> true
 
 let get_fun_idx t =
     match t with
@@ -421,4 +429,5 @@ let rec human_readable t =
            to change this representation *)
         human_readable s
     | Ptr p -> "*" ^ human_readable p
+    | Void -> "void"
     | _ -> assert false

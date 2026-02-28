@@ -363,7 +363,8 @@ let duplicate_constants g function_graphs =
         |> List.filter ~f:(fun (n : Machine_node.t) ->
             match n.kind with
             | Int _
-            | Ptr ->
+            | Ptr
+            | Noop ->
                 true
             | _ -> false)
     in

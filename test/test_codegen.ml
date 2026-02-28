@@ -573,21 +573,21 @@ let%expect_test "function call" =
       Block #1 ((Ideal Start)): -> [#9]
 
       Block #9 ((Ideal (CProj 0))): -> [#7]
-        #RDX   (%12 ): (Int 3)                                                       (Ideal IR: #26)
-        #RCX   (%13 ): (Int 4)                                                       (Ideal IR: #27)
-        #R9    (%15 ): (Int 6)                                                       (Ideal IR: #29)
-        #R8    (%14 ): (Int 5)                                                       (Ideal IR: #28)
-        #RSI   (%11 ): (Int 2)                                                       (Ideal IR: #25)
-        #RDI   (%10 ): (Int 1)                                                       (Ideal IR: #24)
-               (%8  ): (FunctionCall 1) [ #RDI (%10), #RSI (%11), #RDX (%12), #RCX (%13), #R8 (%14), #R9 (%15) ] (Ideal IR: #30)
+        #RDX   (%12 ): (Int 3)                                                       (Ideal IR: #27)
+        #RCX   (%13 ): (Int 4)                                                       (Ideal IR: #28)
+        #R9    (%15 ): (Int 6)                                                       (Ideal IR: #30)
+        #R8    (%14 ): (Int 5)                                                       (Ideal IR: #29)
+        #RSI   (%11 ): (Int 2)                                                       (Ideal IR: #26)
+        #RDI   (%10 ): (Int 1)                                                       (Ideal IR: #25)
+               (%8  ): (FunctionCall 1) [ #RDI (%10), #RSI (%11), #RDX (%12), #RCX (%13), #R8 (%14), #R9 (%15) ] (Ideal IR: #31)
 
       Block #7 (FunctionCallEnd): -> [#6]
-        #RAX   (%25 ):   |-(DProj 1)                                                 (Ideal IR: #33)
+        #RAX   (%25 ):   |-(DProj 1)                                                 (Ideal IR: #34)
 
       Block #6 ((Ideal (CProj 0))): -> [T: #4,F: #26]
-        #RAX   (%24 ): (AddImm 69)     [ #RAX (%25) ]                                (Ideal IR: #35)
-        #Flags (%23 ): (CmpImm 0)      [ #RAX (%24) ]                                (Ideal IR: #37)
-               (%5  ): (Jmp Eq)        [ #Flags (%23) ]                              (Ideal IR: #38)
+        #RAX   (%24 ): (AddImm 69)     [ #RAX (%25) ]                                (Ideal IR: #36)
+        #Flags (%23 ): (CmpImm 0)      [ #RAX (%24) ]                                (Ideal IR: #38)
+               (%5  ): (Jmp Eq)        [ #Flags (%23) ]                              (Ideal IR: #39)
 
       Block #4 ((Ideal (CProj 0))): -> [#3]
 
@@ -610,7 +610,7 @@ let%expect_test "function call" =
         #RSP   (%33 ): (CalleeSave RSP)                                               (Ideal IR: #9)
         #RBP   (%34 ): (CalleeSave RBP)                                               (Ideal IR: #9)
         #RAX   (%35 ): Mov             [ #R9 (%21) ]                                 (Ideal IR: #16)
-        #RAX   (%20 ): (AddImm 82)     [ #RAX (%35) ]                                (Ideal IR: #23)
+        #RAX   (%20 ): (AddImm 82)     [ #RAX (%35) ]                                (Ideal IR: #24)
 
       Block #17 ((Ideal Region)): -> []
         #RAX   (%19 ): (Ideal Phi)     [ #RAX (%20) ]                                (Ideal IR: #6)

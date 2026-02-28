@@ -82,8 +82,22 @@ let do_ctrl_node g (n : Node.t) (k : Node.ctrl_kind) =
             ]
     | Region -> None
     | Loop -> None
-    | Function _ -> None
-    | Return -> None
+    | Function { ret; signature; idx = _ } ->
+        (* It's easier to check return type here because we have access to both signature and return node *)
+        let expected_ret_type =
+            match signature with
+            | FunPtr (Value { params = _; ret; fun_indices = _ }) -> ret
+            | _ -> assert false
+        in
+        let actual_ret_type =
+            match ret.typ with
+            | Tuple (Value [ _; ret_type ]) -> ret_type
+            | _ -> assert false
+        in
+        expect_types ret.loc ~expected:[ expected_ret_type ] ~inputs:[ actual_ret_type ]
+    | Return ->
+        (* return type checked in the Function node check because that has easier access to expected signature *)
+        None
     | FunctionCall ->
         let fun_ptr_node = Graph.get_dependency g n 1 |> Option.value_exn in
         let expected =

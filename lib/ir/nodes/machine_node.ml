@@ -61,6 +61,7 @@ type machine_node_kind =
     | New
     | Store
     | Load
+    | Noop
     (* nodes that have no machine equivalent *)
     | Ideal of ideal
 [@@deriving show { with_path = false }, sexp_of]
@@ -141,7 +142,8 @@ let is_control_node n =
     | Store
     | Load
     | CalleeSave _
-    | Ideal (External _) ->
+    | Ideal (External _)
+    | Noop ->
         false
 
 let is_blockhead n =
@@ -192,7 +194,8 @@ let is_two_address n =
     | New
     | Store
     | Load
-    | Ideal _ ->
+    | Ideal _
+    | Noop ->
         false
 
 let is_multi_output n =
@@ -273,6 +276,7 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
         | 1 -> Some Registers.Mask.general_r (* base*)
         | 2 -> Some Registers.Mask.general_r (* index *)
         | _ -> failwithf "Invalid index %d for input reg mask of %s" i (show n) ())
+    | Noop -> None
     | Ideal _ -> None
 
 let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
@@ -336,6 +340,7 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     | New -> if i = 1 then Some Registers.Mask.rax else None
     | Store -> None
     | Load -> Some Registers.Mask.general_w
+    | Noop -> None
     | Ideal _ -> None
 
 let get_register_kills (n : t) =
@@ -404,6 +409,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
             match n.typ with
             | Integer (Value i) -> Int i
             | Ptr _ -> Ptr
+            | Void -> Noop
             | _ -> assert false
         in
         let node = { id = next_id (); kind; ir_node = n } in

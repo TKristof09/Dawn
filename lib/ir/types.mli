@@ -27,6 +27,7 @@ and t =
     | Ptr of t
     | Struct of struct_type sub_lattice
     | ConstArray of const_array sub_lattice
+    | Void
     | Memory
     | Control
     | DeadControl
