@@ -1,7 +1,7 @@
 open Core
 
 let create_common g loc (lhs : Node.t) (rhs : Node.t) kind =
-    let typ = Types.Integer Any in
+    let typ = Types.Bool Any in
     let n = Node.create_data loc typ kind in
     Graph.add_dependencies g n [ None; Some lhs; Some rhs ];
     Graph.finalize_node g n
@@ -28,16 +28,15 @@ let compute_type g (n : Node.t) =
     let rhs = Graph.get_dependency g n 2 |> Option.value_exn in
     let new_type : Types.t =
         match (lhs.typ, rhs.typ) with
-        | Integer (Value lhs_v), Integer (Value rhs_v) ->
-            Integer (Value (op lhs_v rhs_v |> Bool.to_int))
-        | Integer Any, Integer Any -> Integer Any
+        | Integer (Value lhs_v), Integer (Value rhs_v) -> Bool (Value (op lhs_v rhs_v))
+        | Integer Any, Integer Any -> Bool Any
         | Integer Any, Integer (Value _)
         | Integer (Value _), Integer Any ->
-            Integer Any
-        | Integer _, Integer _ -> Integer All
+            Bool Any
+        | Integer _, Integer _ -> Bool All
         | ANY, _
         | _, ANY ->
-            Integer Any
+            Bool Any
         | _, _ -> ALL
     in
     (~new_type, ~extra_deps:[])

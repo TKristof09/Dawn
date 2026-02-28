@@ -22,6 +22,7 @@ and const_array = private t list
 and t =
     | ANY
     | Integer of int sub_lattice
+    | Bool of bool sub_lattice
     | Tuple of t list sub_lattice
     | FunPtr of fun_ptr sub_lattice
     | Ptr of t

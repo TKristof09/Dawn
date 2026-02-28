@@ -15,10 +15,10 @@ let compute_type g (n : Node.t) =
         | Control -> (
             let cond = Graph.get_dependency g n 1 |> Option.value_exn in
             match cond.typ with
-            | Integer (Value 0) -> Types.Tuple (Value [ DeadControl; Control ])
-            | Integer (Value 1) -> Types.Tuple (Value [ Control; DeadControl ])
+            | Bool (Value false) -> Types.Tuple (Value [ DeadControl; Control ])
+            | Bool (Value true) -> Types.Tuple (Value [ Control; DeadControl ])
             | ANY
-            | Integer Any ->
+            | Bool Any ->
                 Tuple (Value [ DeadControl; DeadControl ])
             | _ -> Tuple (Value [ Control; Control ]))
         | DeadControl ->
@@ -28,4 +28,3 @@ let compute_type g (n : Node.t) =
         | _ -> n.typ
     in
     (~new_type, ~extra_deps:[])
-

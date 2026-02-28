@@ -14,6 +14,6 @@ fun testFn(x: i64, y: i64) -> bool
     }
 }
 
-let y:bool = 5;
+let y:bool = 5; // TODO: this shouldn't be allowed but we don't detect types at variable declaration yet
 let x:i64 = 69;
 testFn(y, x, y);

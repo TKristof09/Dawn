@@ -41,6 +41,7 @@ and const_array = t list
 and t =
     | ANY
     | Integer of int sub_lattice
+    | Bool of bool sub_lattice
     | Tuple of t list sub_lattice
     | FunPtr of fun_ptr sub_lattice
     | Ptr of t
@@ -57,6 +58,7 @@ let make_fun_ptr ?idx params ret =
     let is_valid_param_type t =
         match t with
         | Integer _
+        | Bool _
         | Ptr _ ->
             true
         | _ -> false
@@ -64,6 +66,7 @@ let make_fun_ptr ?idx params ret =
     let is_valid_ret_type =
         match ret with
         | Integer _
+        | Bool _
         | Ptr _
         | Void ->
             true
@@ -82,6 +85,7 @@ let make_struct name fields =
     let is_valid_field_type (_, t) =
         match t with
         | Integer _
+        | Bool _
         | Ptr _
         | ConstArray _ ->
             true
@@ -94,6 +98,7 @@ let make_array_inner name element_type len_type =
     let is_valid_element_type =
         match element_type with
         | Integer _
+        | Bool _
         | Ptr _
         | ConstArray _ ->
             true
@@ -112,6 +117,7 @@ let make_array element_type len_type =
     let name =
         match element_type with
         | Integer _ -> "int_array"
+        | Bool _ -> "bool_array"
         | Ptr _ -> "ptr_array"
         | ConstArray (Value (x :: _)) -> (
             match x with
@@ -132,7 +138,7 @@ let of_ast_type (ast_type : Ast.var_type) : t =
     match ast_type with
     | Type "i64" -> Integer All
     | Type "str" -> Ptr (make_array_inner "str" (ConstArray All) (Integer All))
-    | Type "bool" -> (* TODO: actual bool type *) Integer All
+    | Type "bool" -> Bool All
     | Type "void" -> Void
     | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type ast_type) ()
 
@@ -148,6 +154,8 @@ let rec meet t t' =
     match (t, t') with
     | Integer t, Integer t' ->
         Integer (meet_sub_lattice t t' ~f:(fun i i' -> if i = i' then Value i else All))
+    | Bool t, Bool t' ->
+        Bool (meet_sub_lattice t t' ~f:(fun i i' -> if Bool.equal i i' then Value i else All))
     | Tuple t, Tuple t' ->
         let l =
             meet_sub_lattice t t' ~f:(fun x x' ->
@@ -208,6 +216,7 @@ let rec meet t t' =
     | ANY, _ -> t'
     | _, ANY -> t
     | Integer _, _
+    | Bool _, _
     | Tuple _, _
     | FunPtr _, _
     | Struct _, _
@@ -233,6 +242,9 @@ let rec join t t' =
     | Integer t, Integer t' ->
         let l = join_sub_lattice t t' ~f:(fun x x' -> if x = x' then Value x else Any) in
         Integer l
+    | Bool t, Bool t' ->
+        let l = join_sub_lattice t t' ~f:(fun x x' -> if Bool.equal x x' then Value x else Any) in
+        Bool l
     | Tuple t, Tuple t' ->
         let l =
             join_sub_lattice t t' ~f:(fun x x' ->
@@ -293,6 +305,7 @@ let rec join t t' =
     | _, ANY ->
         ANY
     | Integer _, _
+    | Bool _, _
     | Tuple _, _
     | FunPtr _, _
     | Struct _, _
@@ -319,6 +332,7 @@ let rec is_constant t =
     | Memory ->
         false
     | Integer x -> is_constant_lattice x
+    | Bool x -> is_constant_lattice x
     | Tuple x -> is_constant_lattice x
     | FunPtr x -> (
         match x with
@@ -419,6 +433,7 @@ let get_field_type t field_name =
 let rec human_readable t =
     match t with
     | Integer _ -> "i64"
+    | Bool _ -> "bool"
     | Struct Any
     | Struct All ->
         "struct"

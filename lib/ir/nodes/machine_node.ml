@@ -410,6 +410,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
             | Integer (Value i) -> Int i
             | Ptr _ -> Ptr
             | Void -> Noop
+            | Bool (Value b) -> Int (Bool.to_int b)
             | _ -> assert false
         in
         let node = { id = next_id (); kind; ir_node = n } in

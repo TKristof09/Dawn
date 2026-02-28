@@ -112,7 +112,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
     in
     match e.node with
     | Ast.Int i -> Some (Const_node.create_int g loc i)
-    | Ast.Bool b -> Some (Const_node.create_int g loc (Bool.to_int b))
+    | Ast.Bool b -> Some (Const_node.create_bool g loc b)
     | Ast.String s -> Some (Const_node.create_string g loc s)
     | Ast.Variable (name, idx_expr) -> (
         match idx_expr with

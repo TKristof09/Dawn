@@ -72,7 +72,7 @@ let do_ctrl_node g (n : Node.t) (k : Node.ctrl_kind) =
     | If ->
         let cond = Graph.get_dependency g n 1 |> Option.value_exn in
         (* TODO bool type *)
-        if Types.is_a cond.typ (Integer All) then
+        if Types.is_a cond.typ (Bool All) then
           None
         else
           Some

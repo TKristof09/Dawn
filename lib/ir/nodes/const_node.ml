@@ -1,11 +1,13 @@
 open Core
 
 let create_int g loc i =
-    let n =
-        let n = Node.create_data loc (Types.Integer (Value i)) Constant in
-        Graph.add_dependencies g n [ Some (Graph.get_start g) ];
-        n
-    in
+    let n = Node.create_data loc (Types.Integer (Value i)) Constant in
+    Graph.add_dependencies g n [ Some (Graph.get_start g) ];
+    Graph.finalize_node g n
+
+let create_bool g loc b =
+    let n = Node.create_data loc (Types.Bool (Value b)) Constant in
+    Graph.add_dependencies g n [ Some (Graph.get_start g) ];
     Graph.finalize_node g n
 
 let create_fun_ptr g loc (fun_node : Node.t) idx =
