@@ -88,34 +88,26 @@ let prog := terminated(statement*, EOF)
 let statement :=
     | expr_statement
     | while_loop
-    | LET; id = IDENTIFIER; COLON; t = IDENTIFIER; ASSIGN; e = terminated(expr, SEMICOLON); {  Declaration_assign (id, Type t, e, Mutable) |> make_node $sloc }
-    | CONST; id = IDENTIFIER; COLON; t = IDENTIFIER; ASSIGN; e = terminated(expr, SEMICOLON); {  Declaration_assign (id, Type t, e, Const) |> make_node $sloc }
+    | LET; id = IDENTIFIER; t = option(preceded(COLON, IDENTIFIER)); ASSIGN; e = terminated(expr, SEMICOLON); 
+        {  
+            match t with
+            | None -> 
+                (* TODO *)
+                Declaration_assign (id, Type "", e, Mutable) |> make_node $sloc
+            | Some t ->
+                Declaration_assign (id, Type t, e, Mutable) |> make_node $sloc
+        }
+    | CONST; id = IDENTIFIER; t = option(preceded(COLON, IDENTIFIER)); ASSIGN; e = terminated(expr, SEMICOLON); 
+        {  
+            match t with
+            | None -> 
+                (* TODO *)
+                Declaration_assign (id, Type "", e, Const) |> make_node $sloc
+            | Some t ->
+                Declaration_assign (id, Type t, e, Const) |> make_node $sloc
+        }
     | LET; id = IDENTIFIER; COLON; t = IDENTIFIER; n = delimited(LBRACKET, expr, RBRACKET); SEMICOLON; {  Declaration (id, Array (Type t, n)) |> make_node $sloc }
     | LET; id = IDENTIFIER; COLON; t = IDENTIFIER; SEMICOLON; {  Declaration (id, Type t) |> make_node $sloc }
-    | FUN; id = IDENTIFIER; params = delimited(LPAREN, separated_list(COMMA, param), RPAREN); ret_t = option(preceded(ARROW, IDENTIFIER)); body = block; 
-        { 
-            let param_types = List.map (fun (_,p) -> Type p) params in
-            let param_names = List.map (fun (id, _) -> id) params in
-            let ret_typ = 
-                match ret_t with
-                    | None -> Type "void"
-                    | Some t -> Type t
-            in
-            let typ = Fn (ret_typ, param_types) in
-            FnDeclaration (id, typ, param_names, body) |> make_node $sloc 
-        }
-                    | FUN; id = IDENTIFIER; params = delimited(LPAREN, separated_list(COMMA, param), RPAREN); ret_t = option(preceded(ARROW, IDENTIFIER)); ASSIGN; EXTERN; LPAREN; external_name = STRING; RPAREN; SEMICOLON;
-        { 
-            let param_types = List.map (fun (_,p) -> Type p) params in
-            let param_names = List.map (fun (id, _) -> id) params in
-            let ret_typ = 
-                match ret_t with
-                    | None -> Type "void"
-                    | Some t -> Type t
-            in
-            let typ = Fn (ret_typ, param_types) in
-            ExternalFnDeclaration (id, typ, param_names, external_name) |> make_node $sloc 
-        }
 
 
 let param := id = IDENTIFIER; COLON; typ = IDENTIFIER; { (id, typ) }
@@ -128,6 +120,30 @@ let expr_statement :=
 let expr := 
     | expr_without_block
     | expr_with_block
+    | FUN; params = delimited(LPAREN, separated_list(COMMA, param), RPAREN); ret_t = option(preceded(ARROW, IDENTIFIER)); body = block; 
+        { 
+            let param_types = List.map (fun (_,p) -> Type p) params in
+            let param_names = List.map (fun (id, _) -> id) params in
+            let ret_typ = 
+                match ret_t with
+                    | None -> Type "void"
+                    | Some t -> Type t
+            in
+            let typ = Fn (ret_typ, param_types) in
+            FnDeclaration (typ, param_names, body) |> make_node $sloc 
+        }
+    | FUN; params = delimited(LPAREN, separated_list(COMMA, param), RPAREN); ret_t = option(preceded(ARROW, IDENTIFIER)); ASSIGN; EXTERN; LPAREN; external_name = STRING; RPAREN; 
+        { 
+            let param_types = List.map (fun (_,p) -> Type p) params in
+            let param_names = List.map (fun (id, _) -> id) params in
+            let ret_typ = 
+                match ret_t with
+                    | None -> Type "void"
+                    | Some t -> Type t
+            in
+            let typ = Fn (ret_typ, param_types) in
+            ExternalFnDeclaration (typ, param_names, external_name) |> make_node $sloc 
+        }
 
 let expr_without_block := 
     | id = IDENTIFIER; ASSIGN; rhs = expr; {  VarAssign (id, rhs) |> make_node $sloc }

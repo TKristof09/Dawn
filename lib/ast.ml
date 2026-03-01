@@ -32,8 +32,6 @@ and program = statement node list
 and statement =
     | Declaration of name * var_type
     | Declaration_assign of name * var_type * expr node * qualifier
-    | FnDeclaration of name * var_type * name list * expr node
-    | ExternalFnDeclaration of name * var_type * name list * string
     | ExprStatement of expr node
     | While of expr node * expr node
 
@@ -63,4 +61,6 @@ and expr =
     | IfElse of expr node * expr node * expr node option
     | Block of statement node list * expr node option
     | FnCall of expr node * expr node list
+    | FnDeclaration of var_type * name list * expr node
+    | ExternalFnDeclaration of var_type * name list * string
 [@@deriving show { with_path = false }, eq, sexp_of]

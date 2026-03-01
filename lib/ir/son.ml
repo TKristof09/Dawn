@@ -6,6 +6,14 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
     | Ast.ExprStatement e -> do_expr g e scope cur_ret_node linker |> ignore
     | Ast.Declaration_assign (name, _typ, e, qualifier) ->
         let n = do_expr g e scope cur_ret_node linker |> Option.value_exn in
+        (match n.Node.kind with
+        | Data Constant -> (
+            match n.typ with
+            | Types.FunPtr (Value _) ->
+                let fun_idx = Types.get_fun_idx n.typ in
+                Linker.set_name linker fun_idx name
+            | _ -> ())
+        | _ -> ());
         Scope_node.define g scope name n (Poly.equal qualifier Ast.Const)
     | Ast.Declaration (name, typ) -> (
         match typ with
@@ -46,64 +54,6 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
         let _ = do_expr g body body_scope cur_ret_node linker in
         Loop_node.set_back_edge g loop_node (Scope_node.get_ctrl g body_scope);
         Scope_node.merge_loop g ~this:scope ~body:body_scope ~exit:exit_scope
-    | Ast.FnDeclaration (name, typ, param_names, body) ->
-        let ret_type, param_types =
-            match typ with
-            | Ast.Fn (ret, params) -> (ret, params)
-            | _ -> assert false
-        in
-        let fun_ptr_type =
-            Types.make_fun_ptr
-              (List.map param_types ~f:Types.of_ast_type)
-              (Types.of_ast_type ret_type)
-        in
-        let fun_node, ret_node = Fun_node.create g loc fun_ptr_type in
-        let fun_idx = Linker.define linker ~name fun_node in
-        (match fun_node.kind with
-        | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx })
-        | _ -> assert false);
-        let fun_ptr = Const_node.create_fun_ptr g loc fun_node fun_idx in
-        (*TODO fun ptr can be non const too but need parser modification *)
-        Scope_node.define g scope name fun_ptr true;
-        Scope_node.push scope;
-        let old_ctrl = Scope_node.get_ctrl g scope in
-        Scope_node.set_ctrl g scope fun_node;
-        List.zip_exn param_types param_names
-        |> List.iteri ~f:(fun i (typ, pname) ->
-            let param_type = Types.of_ast_type typ in
-            let param_node = Fun_node.create_param g loc fun_node param_type i in
-            Scope_node.define g scope pname param_node false);
-        let body_n =
-            do_expr g body scope (Some ret_node) linker
-            |> Option.value ~default:(Const_node.create_from_type g body.loc Types.Void)
-        in
-        Fun_node.add_return g ret_node ~ctrl:(Scope_node.get_ctrl g scope) ~val_n:body_n;
-        Scope_node.pop g scope;
-        Scope_node.set_ctrl g scope old_ctrl
-    | Ast.ExternalFnDeclaration (name, typ, _, external_name) ->
-        let ret_type, param_types =
-            match typ with
-            | Ast.Fn (ret, params) -> (ret, params)
-            | _ -> assert false
-        in
-        let ret_type = Types.of_ast_type ret_type in
-        let fun_ptr_type =
-            Types.make_fun_ptr (List.map param_types ~f:Types.of_ast_type) ret_type
-        in
-        let fun_node, ret_node = Fun_node.create g loc fun_ptr_type in
-        let fun_idx = Linker.define linker ~name:external_name fun_node in
-        (match fun_node.kind with
-        | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx })
-        | _ -> assert false);
-        let fun_ptr = Const_node.create_fun_ptr g loc fun_node fun_idx in
-        let ret_val = Extern_node.create g loc ret_type external_name in
-        List.mapi param_types ~f:(fun i typ ->
-            let param_type = Types.of_ast_type typ in
-            Some (Fun_node.create_param g loc fun_node param_type i))
-        |> Graph.add_dependencies g ret_val;
-        Fun_node.add_return g ret_node ~ctrl:fun_node ~val_n:ret_val;
-        Scope_node.define g scope name fun_ptr
-          true (*TODO fun ptr can be non const too but need parser modification *)
 
 and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
     let loc = e.loc in
@@ -222,6 +172,62 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         let return_val = Proj_node.create g loc call_end 1 in
         Some return_val
     (* | Ast.Return ->  *)
+    | Ast.FnDeclaration (typ, param_names, body) ->
+        let ret_type, param_types =
+            match typ with
+            | Ast.Fn (ret, params) -> (ret, params)
+            | _ -> assert false
+        in
+        let fun_ptr_type =
+            Types.make_fun_ptr
+              (List.map param_types ~f:Types.of_ast_type)
+              (Types.of_ast_type ret_type)
+        in
+        let fun_node, ret_node = Fun_node.create g loc fun_ptr_type in
+        let fun_idx = Linker.define linker fun_node in
+        (match fun_node.kind with
+        | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx })
+        | _ -> assert false);
+        let fun_ptr = Const_node.create_fun_ptr g loc fun_node fun_idx in
+        Scope_node.push scope;
+        let old_ctrl = Scope_node.get_ctrl g scope in
+        Scope_node.set_ctrl g scope fun_node;
+        List.zip_exn param_types param_names
+        |> List.iteri ~f:(fun i (typ, pname) ->
+            let param_type = Types.of_ast_type typ in
+            let param_node = Fun_node.create_param g loc fun_node param_type i in
+            Scope_node.define g scope pname param_node false);
+        let body_n =
+            do_expr g body scope (Some ret_node) linker
+            |> Option.value ~default:(Const_node.create_from_type g body.loc Types.Void)
+        in
+        Fun_node.add_return g ret_node ~ctrl:(Scope_node.get_ctrl g scope) ~val_n:body_n;
+        Scope_node.pop g scope;
+        Scope_node.set_ctrl g scope old_ctrl;
+        Some fun_ptr
+    | Ast.ExternalFnDeclaration (typ, _, external_name) ->
+        let ret_type, param_types =
+            match typ with
+            | Ast.Fn (ret, params) -> (ret, params)
+            | _ -> assert false
+        in
+        let ret_type = Types.of_ast_type ret_type in
+        let fun_ptr_type =
+            Types.make_fun_ptr (List.map param_types ~f:Types.of_ast_type) ret_type
+        in
+        let fun_node, ret_node = Fun_node.create g loc fun_ptr_type in
+        let fun_idx = Linker.define linker fun_node in
+        (match fun_node.kind with
+        | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx })
+        | _ -> assert false);
+        let fun_ptr = Const_node.create_fun_ptr g loc fun_node fun_idx in
+        let ret_val = Extern_node.create g loc ret_type external_name in
+        List.mapi param_types ~f:(fun i typ ->
+            let param_type = Types.of_ast_type typ in
+            Some (Fun_node.create_param g loc fun_node param_type i))
+        |> Graph.add_dependencies g ret_val;
+        Fun_node.add_return g ret_node ~ctrl:fun_node ~val_n:ret_val;
+        Some fun_ptr
     | _ -> failwithf "TODO: unimplemented %s" (Ast.show_expr e.node) ()
 
 let of_ast ast linker =
