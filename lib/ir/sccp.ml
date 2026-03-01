@@ -120,6 +120,9 @@ let do_node extra_node_deps (g : (Node.t, Graph.readwrite) Graph.t) linker (n : 
     | Ctrl c -> do_ctrl_node extra_node_deps g linker n c
     | Scope _ -> []
     | Mem m -> do_mem_node extra_node_deps g n m
+    | ForwardRef _ ->
+        (* ignore these, they will produce an error in type checking *)
+        []
 
 let run g linker =
     let worklist = Queue.create ~capacity:(Graph.get_num_nodes g) () in

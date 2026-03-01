@@ -2,21 +2,30 @@ let create () = Node.create_scope ()
 let ctrl_identifier = "$ctrl"
 let mem_identifier = "$mem"
 
-let define g (n : Node.t) name node =
-    match n.kind with
-    | Scope tbl ->
-        Symbol_table.add_symbol tbl name node;
-        Graph.add_dependencies g n [ Some node ]
-    | _ -> assert false
-
-let rec assign g (n : Node.t) name (node : Node.t) =
+let rec define g (n : Node.t) name node =
     match n.kind with
     | Scope tbl -> (
-        let symbol = Symbol_table.find_symbol tbl name in
+        match Symbol_table.find_symbol tbl name with
+        | None ->
+            Symbol_table.add_symbol tbl name node;
+            Graph.add_dependencies g n [ Some node ]
+        | Some sym -> (
+            match sym.kind with
+            | ForwardRef _ -> assign g n name node
+            | _ ->
+                (* TODO: do i want to allow shadowing? *)
+                Symbol_table.add_symbol tbl name node;
+                Graph.add_dependencies g n [ Some node ]))
+    | _ -> assert false
+
+and assign g (n : Node.t) name (node : Node.t) =
+    match n.kind with
+    | Scope tbl -> (
+        let symbol = Symbol_table.find_symbol tbl name |> Core.Option.value_exn in
         let symbol =
             match symbol.kind with
             | Scope old_tbl -> (
-                let tmp = Symbol_table.find_symbol old_tbl name in
+                let tmp = Symbol_table.find_symbol old_tbl name |> Core.Option.value_exn in
                 match tmp.kind with
                 | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> symbol
                 | _ ->
@@ -35,30 +44,51 @@ let rec assign g (n : Node.t) name (node : Node.t) =
               | None -> false
               | Some x -> Node.equal x symbol)
         in
-        match idx with
+        (match idx with
         | None -> Graph.add_dependencies g n [ Some node ]
-        | Some idx -> Graph.set_dependency g n (Some node) idx)
+        | Some idx -> Graph.set_dependency g n (Some node) idx);
+        match symbol.kind with
+        | ForwardRef _ ->
+            (* update uses of the forward ref to point to the actual thing *)
+            (* TODO: this is kind of awful having to iterate through the entire
+               symbol table to update names that point to the forward ref *)
+            let is_in_symbol_table = Graph.get_dependants g symbol |> List.exists (Node.equal n) in
+            if is_in_symbol_table then
+              Symbol_table.iter tbl (fun ~name ~symbol:other ~depth:_ ->
+                  match other with
+                  | Some other ->
+                      if Node.equal symbol other then
+                        Symbol_table.reassign_symbol tbl name node
+                  | None -> ());
+            Graph.replace_node_with g symbol node
+        | _ -> ())
     | _ -> assert false
 
 and get g (n : Node.t) name =
     match n.kind with
     | Scope tbl -> (
         let symbol = Symbol_table.find_symbol tbl name in
-        match symbol.kind with
-        | Scope old_tbl ->
-            let tmp = Symbol_table.find_symbol old_tbl name in
-            let symbol =
-                match tmp.kind with
-                | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> tmp
-                | _ ->
-                    let s = get g symbol name in
-                    let phi = Phi_node.create_no_backedge g s.loc (get_ctrl g symbol) s in
-                    assign g symbol name phi;
-                    phi
-            in
-            assign g n name symbol;
-            symbol
-        | _ -> symbol)
+        match symbol with
+        | None ->
+            let fref = Node.create_forward_ref name in
+            define g n name fref;
+            fref
+        | Some symbol -> (
+            match symbol.kind with
+            | Scope old_tbl ->
+                let tmp = Symbol_table.find_symbol old_tbl name |> Core.Option.value_exn in
+                let symbol =
+                    match tmp.kind with
+                    | Data Phi when Phi_node.get_ctrl g tmp = get_ctrl g symbol -> tmp
+                    | _ ->
+                        let s = get g symbol name in
+                        let phi = Phi_node.create_no_backedge g s.loc (get_ctrl g symbol) s in
+                        assign g symbol name phi;
+                        phi
+                in
+                assign g n name symbol;
+                symbol
+            | _ -> symbol))
     | _ -> assert false
 
 and get_ctrl g n = get g n ctrl_identifier
@@ -81,9 +111,14 @@ let push (n : Node.t) =
 let pop g (n : Node.t) =
     match n.kind with
     | Scope tbl ->
-        Symbol_table.iter_current_depth tbl (fun ~name:_ ~symbol ->
-            Graph.remove_dependency g ~node:n ~dep:symbol);
-        n.kind <- Scope (Symbol_table.pop tbl)
+        let parent_table = Symbol_table.pop tbl in
+        Symbol_table.iter_current_depth tbl (fun ~name ~symbol ->
+            match symbol.kind with
+            | ForwardRef _ ->
+                (* bubble up forward ref to parent scope *)
+                Symbol_table.add_symbol parent_table name symbol
+            | _ -> Graph.remove_dependency g ~node:n ~dep:symbol);
+        n.kind <- Scope parent_table
     | _ -> assert false
 
 let dup g (n : Node.t) =
@@ -116,7 +151,7 @@ let dup_loop g (n : Node.t) =
 let merge g loc ~(this : Node.t) ~(other : Node.t) =
     (* Same as `get` but can't have it assign the name to the phi node in the current table as we can't mutate the tabl while iterating *)
     let get_no_insert g tbl name =
-        let symbol : Node.t = Symbol_table.find_symbol tbl name in
+        let symbol : Node.t = Symbol_table.find_symbol tbl name |> Core.Option.value_exn in
         match symbol.kind with
         | Scope _ -> (
             (* 
@@ -160,8 +195,8 @@ let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
             | Some symbol ->
                 if name <> ctrl_identifier && not (Node.equal symbol this) then
                   (* Set the second input of the phi node *)
-                  let n_this = Symbol_table.find_symbol this_tbl name in
-                  let n_body = Symbol_table.find_symbol body_tbl name in
+                  let n_this = Symbol_table.find_symbol this_tbl name |> Core.Option.value_exn in
+                  let n_body = Symbol_table.find_symbol body_tbl name |> Core.Option.value_exn in
                   if Node.equal n_this n_body then (
                     let value = Graph.get_dependency g n_this 2 |> Core.Option.value_exn in
                     Graph.replace_node_with g n_this value;

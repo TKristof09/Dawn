@@ -637,7 +637,8 @@ and convert_node g machine_g (n : Node.t) =
         | Data k -> of_data_node g machine_g k n
         | Ctrl k -> of_ctrl_node g machine_g k n
         | Mem k -> of_mem_node g machine_g k n
-        | Scope _ -> assert false)
+        | Scope _ -> assert false
+        | ForwardRef _ -> assert false)
 
 let find_dep machine_g n ~f =
     Graph.get_dependencies machine_g n

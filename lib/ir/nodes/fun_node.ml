@@ -34,9 +34,11 @@ let add_call g loc ~ctrl ~fun_ptr args =
     let ret_typ =
         match fun_ptr.Node.typ with
         | FunPtr (Value { params = _; ret; fun_indices = _ }) -> ret
-        | t -> failwithf "Expected function pointer got: %s" (Types.show t) ()
+        | t -> (
+            match fun_ptr.kind with
+            | ForwardRef _ -> ALL
+            | _ -> failwithf "Expected function pointer got: %s" (Types.show t) ())
     in
-
     let call = Node.create_ctrl loc Control FunctionCall in
     Graph.add_dependencies g call (Some ctrl :: Some fun_ptr :: List.map args ~f:Option.some);
     let call_end = Node.create_ctrl loc (Tuple (Value [ Control; ret_typ ])) FunctionCallEnd in

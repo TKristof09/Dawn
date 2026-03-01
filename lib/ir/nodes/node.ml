@@ -47,6 +47,7 @@ and kind =
     | Ctrl of ctrl_kind
     | Mem of mem_kind
     | Scope of t Symbol_table.t
+    | ForwardRef of string
 
 and t = {
     mutable typ : Types.t;
@@ -77,6 +78,7 @@ let show_kind kind =
     | Ctrl c -> show_sexp (sexp_of_ctrl_kind c)
     | Mem m -> show_sexp (sexp_of_mem_kind m)
     | Scope _ -> "Scope"
+    | ForwardRef s -> "ForwardRef " ^ s
 
 let show node =
     let kind_str = show_kind node.kind in
@@ -118,6 +120,14 @@ let create_scope () =
     {
       typ = Types.ALL;
       kind = Scope (Symbol_table.create ());
+      id = next_id ();
+      loc = { filename = ""; line = 0; col = 0 };
+    }
+
+let create_forward_ref name =
+    {
+      typ = Types.ALL;
+      kind = ForwardRef name;
       id = next_id ();
       loc = { filename = ""; line = 0; col = 0 };
     }

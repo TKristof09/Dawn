@@ -169,6 +169,8 @@ let type_check_node g (n : Node.t) =
     | Ctrl c -> do_ctrl_node g n c
     | Scope _ -> None
     | Mem m -> do_mem_node g n m
+    | ForwardRef name ->
+        Some [ Printf.sprintf "%s:%d: Undefined symbol %s" n.loc.filename n.loc.line name ]
 
 let run (g : (Node.t, 'b) Graph.t) =
     Graph.fold g ~init:[] ~f:(fun errors n ->

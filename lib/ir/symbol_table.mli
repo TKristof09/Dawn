@@ -3,7 +3,7 @@ type 'a t [@@deriving sexp_of]
 val create : unit -> 'a t
 val push : 'a t -> 'a t
 val pop : 'a t -> 'a t
-val find_symbol : 'a t -> string -> 'a
+val find_symbol : 'a t -> string -> 'a option
 val reassign_symbol : 'a t -> string -> 'a -> unit
 val add_symbol : 'a t -> string -> 'a -> unit
 val iter : 'a t -> (name:string -> symbol:'a option -> depth:int -> unit) -> unit

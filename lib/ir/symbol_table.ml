@@ -32,17 +32,19 @@ let pop t =
 
 let rec find_symbol t s =
     match Hashtbl.find t.symbols s with
-    | Some sym -> sym
+    | Some sym -> Some sym
     | None -> (
         match t.parent with
         | Some p -> find_symbol p s
-        | None -> failwithf "Symbol not found %s" s ())
+        | None -> None)
 
 let rec reassign_symbol t sym value =
     if Hashtbl.mem t.symbols sym then
       Hashtbl.set t.symbols ~key:sym ~data:value
     else
-      match t.parent with
+      match
+        t.parent
+      with
       | Some p -> reassign_symbol p sym value
       | None -> failwith "Symbol not found"
 

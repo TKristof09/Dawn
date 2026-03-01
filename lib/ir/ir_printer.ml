@@ -8,6 +8,7 @@ let node_shape (node : Node.t) =
     | Ctrl _ -> "box"
     | Scope _ -> "box"
     | Mem _ -> "box"
+    | ForwardRef _ -> "box"
 
 let node_label node =
     let kind_str =
@@ -29,6 +30,7 @@ let node_label node =
         | Ctrl c -> show_sexp (Node.sexp_of_ctrl_kind c)
         | Mem m -> show_sexp (Node.sexp_of_mem_kind m)
         | Scope _ -> Printf.sprintf "Scope %d" node.id
+        | ForwardRef name -> Printf.sprintf "Forward ref %s" name
     in
     kind_str
 

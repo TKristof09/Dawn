@@ -1,13 +1,8 @@
-//fun f(i: i64) -> i64 {
-//    5 + i
-//}
-//
-//let i:i64 = 5;
-//while(i < 30)
-//{
-//    i = i + f(i);
-//}
-//i + f(10) + f(9);
-fun print(s: str) -> i64 = @extern("print");
-print("a");
-print(1);
+fun f(i: i64) {
+    print_int(i);
+}
+// TODO: fix this, this isn't supposed to be allowed. Only things like functions and types should be forward refable
+let i:i64 = j;
+let j: i64 = 5;
+f(i);
+fun print_int(i:i64) = @extern("print_int");

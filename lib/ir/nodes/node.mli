@@ -45,6 +45,7 @@ and kind =
     | Ctrl of ctrl_kind
     | Mem of mem_kind
     | Scope of t Symbol_table.t
+    | ForwardRef of string
 
 and t = {
     mutable typ : Types.t;
@@ -66,6 +67,7 @@ val create_data : Ast.loc -> Types.t -> data_kind -> t
 val create_ctrl : Ast.loc -> Types.t -> ctrl_kind -> t
 val create_mem : Ast.loc -> Types.t -> mem_kind -> t
 val create_scope : unit -> t
+val create_forward_ref : string -> t
 val show : t -> string
 val show_kind : kind -> string
 val pp : Format.formatter -> t -> unit
