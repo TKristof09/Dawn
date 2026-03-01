@@ -2,7 +2,9 @@ fun f(i: i64) {
     print_int(i);
 }
 // TODO: fix this, this isn't supposed to be allowed. Only things like functions and types should be forward refable
-let i:i64 = j;
-let j: i64 = 5;
+let i: i64 = j;
+const j: i64 = 5;
+j = 6;
 f(i);
 fun print_int(i:i64) = @extern("print_int");
+

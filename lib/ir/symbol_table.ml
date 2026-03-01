@@ -2,7 +2,7 @@ open Core
 
 type 'a t = {
     parent : 'a t option;
-    symbols : (string, 'a) Hashtbl.t;
+    symbols : (string, 'a Variable.t) Hashtbl.t;
   }
 [@@deriving sexp_of]
 
@@ -13,7 +13,10 @@ let show t f =
         let indent = String.make (depth * 2) ' ' in
         let current_scope =
             Hashtbl.fold t.symbols ~init:"" ~f:(fun ~key ~data acc ->
-                acc ^ Printf.sprintf "%s%s : %s\n" indent key (f data))
+                acc
+                ^ Printf.sprintf "%s%s : %s%s\n" indent key
+                    (if data.is_const then "const " else "")
+                    (f data.node))
         in
         match t.parent with
         | None -> current_scope
@@ -38,17 +41,19 @@ let rec find_symbol t s =
         | Some p -> find_symbol p s
         | None -> None)
 
-let rec reassign_symbol t sym value =
-    if Hashtbl.mem t.symbols sym then
-      Hashtbl.set t.symbols ~key:sym ~data:value
-    else
-      match
-        t.parent
-      with
-      | Some p -> reassign_symbol p sym value
-      | None -> failwith "Symbol not found"
+let rec reassign_symbol t sym node =
+    match Hashtbl.find t.symbols sym with
+    | Some old_variable ->
+        if old_variable.is_const && not old_variable.is_forward_ref then
+          failwithf "Trying to mutate const variable %s" sym ()
+        else
+          Hashtbl.set t.symbols ~key:sym ~data:{ old_variable with node; is_forward_ref = false }
+    | None -> (
+        match t.parent with
+        | Some p -> reassign_symbol p sym node
+        | None -> failwith "Symbol not found")
 
-let add_symbol t name value = Hashtbl.set t.symbols ~key:name ~data:value
+let add_symbol t name variable = Hashtbl.set t.symbols ~key:name ~data:variable
 
 let iter t f =
     let rec aux t d acc =

@@ -12,6 +12,7 @@ let set_type g (n : Node.t) new_type =
         type or keep it same types should always drop downwards in the lattice, we
         start from top (Any) and drop types as more constraints on them get discovered
         *)
+    (* [%log.debug "%a : %s -> %s" Node.pp n (Types.show n.typ) (Types.show new_type)]; *)
     assert (Types.is_a n.typ new_type);
     n.typ <- new_type;
     Graph.get_dependants g n

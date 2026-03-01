@@ -4,9 +4,9 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
     let loc = s.loc in
     match s.node with
     | Ast.ExprStatement e -> do_expr g e scope cur_ret_node linker |> ignore
-    | Ast.Declaration_assign (name, _typ, e) ->
+    | Ast.Declaration_assign (name, _typ, e, qualifier) ->
         let n = do_expr g e scope cur_ret_node linker |> Option.value_exn in
-        Scope_node.define g scope name n
+        Scope_node.define g scope name n (Poly.equal qualifier Ast.Const)
     | Ast.Declaration (name, typ) -> (
         match typ with
         | Type "i64" ->
@@ -14,7 +14,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
                 do_expr g { loc = s.loc; node = Int 0 } scope cur_ret_node linker
                 |> Option.value_exn
             in
-            Scope_node.define g scope name default_init
+            Scope_node.define g scope name default_init false
         | Array (t, count) ->
             let element_type = Types.of_ast_type t in
             let ctrl = Scope_node.get_ctrl g scope in
@@ -28,7 +28,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
             let ptr = Proj_node.create g loc n 1 in
             let offset = Types.get_offset arr_type "len" |> Const_node.create_int g loc in
             let store = Mem_nodes.create_store g loc ~mem ~ptr ~offset "len" ~value:count in
-            Scope_node.define g scope name ptr;
+            Scope_node.define g scope name ptr false;
             Scope_node.set_mem g scope store
         | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type typ) ())
     | Ast.While (cond, body) ->
@@ -63,7 +63,8 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
         | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx })
         | _ -> assert false);
         let fun_ptr = Const_node.create_fun_ptr g loc fun_node fun_idx in
-        Scope_node.define g scope name fun_ptr;
+        (*TODO fun ptr can be non const too but need parser modification *)
+        Scope_node.define g scope name fun_ptr true;
         Scope_node.push scope;
         let old_ctrl = Scope_node.get_ctrl g scope in
         Scope_node.set_ctrl g scope fun_node;
@@ -71,7 +72,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
         |> List.iteri ~f:(fun i (typ, pname) ->
             let param_type = Types.of_ast_type typ in
             let param_node = Fun_node.create_param g loc fun_node param_type i in
-            Scope_node.define g scope pname param_node);
+            Scope_node.define g scope pname param_node false);
         let body_n =
             do_expr g body scope (Some ret_node) linker
             |> Option.value ~default:(Const_node.create_from_type g body.loc Types.Void)
@@ -102,6 +103,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
         |> Graph.add_dependencies g ret_val;
         Fun_node.add_return g ret_node ~ctrl:fun_node ~val_n:ret_val;
         Scope_node.define g scope name fun_ptr
+          true (*TODO fun ptr can be non const too but need parser modification *)
 
 and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
     let loc = e.loc in

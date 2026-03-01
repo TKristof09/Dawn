@@ -20,7 +20,7 @@ endif
 syntax keyword esoTodos TODO XXX FIXME NOTE
 
 " Language keywords
-syntax keyword eosKeywords if else while let fun
+syntax keyword eosKeywords if else while let fun const
 " Type names the compiler recognizes
 syntax keyword eosTypeNames i64 i32 i16 i8 u64 u32 u16 u8 f64 f32 bool str
 

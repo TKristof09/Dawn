@@ -59,6 +59,7 @@
 
 %token ASSIGN
 %token LET
+%token CONST
 %token FUN
 %token ARROW
 %token EXTERN
@@ -83,10 +84,12 @@
 
 let prog := terminated(statement*, EOF)
 
+
 let statement :=
     | expr_statement
     | while_loop
-    | LET; id = IDENTIFIER; COLON; t = IDENTIFIER; ASSIGN; e = terminated(expr, SEMICOLON); {  Declaration_assign (id, Type t, e) |> make_node $sloc }
+    | LET; id = IDENTIFIER; COLON; t = IDENTIFIER; ASSIGN; e = terminated(expr, SEMICOLON); {  Declaration_assign (id, Type t, e, Mutable) |> make_node $sloc }
+    | CONST; id = IDENTIFIER; COLON; t = IDENTIFIER; ASSIGN; e = terminated(expr, SEMICOLON); {  Declaration_assign (id, Type t, e, Const) |> make_node $sloc }
     | LET; id = IDENTIFIER; COLON; t = IDENTIFIER; n = delimited(LBRACKET, expr, RBRACKET); SEMICOLON; {  Declaration (id, Array (Type t, n)) |> make_node $sloc }
     | LET; id = IDENTIFIER; COLON; t = IDENTIFIER; SEMICOLON; {  Declaration (id, Type t) |> make_node $sloc }
     | FUN; id = IDENTIFIER; params = delimited(LPAREN, separated_list(COMMA, param), RPAREN); ret_t = option(preceded(ARROW, IDENTIFIER)); body = block; 

@@ -1,5 +1,5 @@
 val create : unit -> Node.t
-val define : (Node.t, Graph.readwrite) Graph.t -> Node.t -> string -> Node.t -> unit
+val define : (Node.t, Graph.readwrite) Graph.t -> Node.t -> string -> Node.t -> bool -> unit
 val assign : (Node.t, Graph.readwrite) Graph.t -> Node.t -> string -> Node.t -> unit
 val get : (Node.t, Graph.readwrite) Graph.t -> Node.t -> string -> Node.t
 val push : Node.t -> unit

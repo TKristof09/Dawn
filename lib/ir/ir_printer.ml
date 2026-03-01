@@ -122,7 +122,7 @@ let pp_dot fmt g =
                 | Some symbol ->
                     Format.fprintf fmt "  sym_%d_%s -> %s [style=dotted,arrowhead=none];@\n" node.id
                       (String.hash name |> Int.to_string)
-                      (node_to_dot_id symbol.id)
+                      (node_to_dot_id symbol.node.id)
                 | None -> ())
         | _ -> ());
 

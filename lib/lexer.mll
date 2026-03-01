@@ -17,7 +17,9 @@
                 (* (   "break",    BREAK); *)
                 (* ("continue", CONTINUE); *)
                 (     "let",      LET);
+                (   "const",    CONST);
                 (     "fun",      FUN);
+                (* (     "struct",      STRUCT); *)
                 (     "@extern",      EXTERN);
             ]
     

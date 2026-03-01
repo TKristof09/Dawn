@@ -6,6 +6,10 @@ type loc = {
     col : int;
   }
 
+and qualifier =
+    | Const
+    | Mutable
+
 and 'a node = {
     node : 'a;
     loc : loc;
@@ -27,7 +31,7 @@ and program = statement node list
 
 and statement =
     | Declaration of name * var_type
-    | Declaration_assign of name * var_type * expr node
+    | Declaration_assign of name * var_type * expr node * qualifier
     | FnDeclaration of name * var_type * name list * expr node
     | ExternalFnDeclaration of name * var_type * name list * string
     | ExprStatement of expr node
