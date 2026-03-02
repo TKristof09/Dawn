@@ -1,4 +1,4 @@
-fun print(s: str) = @extern("print");
+const print = fun(s: str) = @extern("print");
 
 let s: str = "Hello, World!";
 print(s);

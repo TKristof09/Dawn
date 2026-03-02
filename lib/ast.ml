@@ -22,7 +22,7 @@ and var_type =
     | Fn of var_type * var_type list
         [@printer
             fun fmt (ret, params) ->
-              fprintf fmt "(%s) -> %s"
+              fprintf fmt "((%s) -> %s)"
                 (String.concat ", " (List.map show_var_type params))
                 (show_var_type ret)]
 

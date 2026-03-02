@@ -1,5 +1,5 @@
-fun print(c:str) = @extern("print");
-fun testFn(x: i64, y: i64) -> bool
+const print = fun(c:str) = @extern("print");
+const testFn = fun(x: i64, y: i64) -> bool
 {
     if(x == 0)
     {
@@ -12,7 +12,7 @@ fun testFn(x: i64, y: i64) -> bool
         x = x - 1;
         testFn(x, y);
     }
-}
+};
 
 let y:bool = 5; // TODO: this shouldn't be allowed but we don't detect types at variable declaration yet
 let x:i64 = 69;

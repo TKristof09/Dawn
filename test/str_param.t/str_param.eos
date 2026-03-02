@@ -1,9 +1,9 @@
-fun print(s: str) = @extern("print");
-fun dprint(s:str, s2:str) 
+const print = fun(s: str) = @extern("print");
+const dprint = fun(s:str, s2:str) 
 {
     print(s);
     print(s2);
-}
+};
 let s:str = "Hello, World!";
 let s2:str = "Hello, Eos!";
 dprint(s, s2);

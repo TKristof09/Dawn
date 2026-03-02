@@ -14,7 +14,7 @@ prog: WHILE WHILE
 ##
 ## Ends in an error in state: 1.
 ##
-## while_loop -> WHILE . LPAREN expr RPAREN block_statement [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## while_loop -> WHILE . LPAREN expr RPAREN block_statement [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
 ## The known suffix of the stack is as follows:
 ## WHILE
@@ -26,7 +26,7 @@ prog: WHILE LPAREN WHILE
 ##
 ## Ends in an error in state: 2.
 ##
-## while_loop -> WHILE LPAREN . expr RPAREN block_statement [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## while_loop -> WHILE LPAREN . expr RPAREN block_statement [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
 ## The known suffix of the stack is as follows:
 ## WHILE LPAREN
@@ -86,9 +86,8 @@ prog: LET WHILE
 ##
 ## Ends in an error in state: 10.
 ##
-## statement -> LET . IDENTIFIER COLON IDENTIFIER ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-## statement -> LET . IDENTIFIER COLON IDENTIFIER LBRACKET expr RBRACKET SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-## statement -> LET . IDENTIFIER COLON IDENTIFIER SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## statement -> LET . IDENTIFIER option(preceded(COLON,type_name)) ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
+## statement -> LET . IDENTIFIER option(preceded(COLON,type_name)) SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
 ## The known suffix of the stack is as follows:
 ## LET
@@ -100,9 +99,8 @@ prog: LET IDENTIFIER WHILE
 ##
 ## Ends in an error in state: 11.
 ##
-## statement -> LET IDENTIFIER . COLON IDENTIFIER ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-## statement -> LET IDENTIFIER . COLON IDENTIFIER LBRACKET expr RBRACKET SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-## statement -> LET IDENTIFIER . COLON IDENTIFIER SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## statement -> LET IDENTIFIER . option(preceded(COLON,type_name)) ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
+## statement -> LET IDENTIFIER . option(preceded(COLON,type_name)) SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
 ## The known suffix of the stack is as follows:
 ## LET IDENTIFIER
@@ -114,45 +112,153 @@ prog: LET IDENTIFIER COLON WHILE
 ##
 ## Ends in an error in state: 12.
 ##
-## statement -> LET IDENTIFIER COLON . IDENTIFIER ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-## statement -> LET IDENTIFIER COLON . IDENTIFIER LBRACKET expr RBRACKET SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-## statement -> LET IDENTIFIER COLON . IDENTIFIER SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## option(preceded(COLON,type_name)) -> COLON . type_name [ SEMICOLON ASSIGN ]
 ##
 ## The known suffix of the stack is as follows:
-## LET IDENTIFIER COLON
+## COLON
 ##
 
 Expected type after `:` in let statement.
 
-prog: LET IDENTIFIER COLON IDENTIFIER WHILE
+prog: CONST IDENTIFIER COLON LPAREN WHILE
 ##
 ## Ends in an error in state: 13.
 ##
-## statement -> LET IDENTIFIER COLON IDENTIFIER . ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-## statement -> LET IDENTIFIER COLON IDENTIFIER . LBRACKET expr RBRACKET SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-## statement -> LET IDENTIFIER COLON IDENTIFIER . SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## paren_types -> LPAREN . RPAREN [ SEMICOLON RPAREN LBRACKET LBRACE COMMA ASSIGN ARROW ]
+## paren_types -> LPAREN . type_name RPAREN [ SEMICOLON RPAREN LBRACKET LBRACE COMMA ASSIGN ARROW ]
+## paren_types -> LPAREN . type_name COMMA loption(separated_nonempty_list(COMMA,type_name)) RPAREN [ SEMICOLON RPAREN LBRACKET LBRACE COMMA ASSIGN ARROW ]
 ##
 ## The known suffix of the stack is as follows:
-## LET IDENTIFIER COLON IDENTIFIER
+## LPAREN
 ##
 
-Expected `[` or `;` after base type in let statement.
+Expected type name or `)` after `(` in parenthesized type list.
+
+
+prog: CONST IDENTIFIER COLON LPAREN IDENTIFIER SEMICOLON
+##
+## Ends in an error in state: 16.
+##
+## paren_types -> LPAREN type_name . RPAREN [ SEMICOLON RPAREN LBRACKET LBRACE COMMA ASSIGN ARROW ]
+## paren_types -> LPAREN type_name . COMMA loption(separated_nonempty_list(COMMA,type_name)) RPAREN [ SEMICOLON RPAREN LBRACKET LBRACE COMMA ASSIGN ARROW ]
+##
+## The known suffix of the stack is as follows:
+## LPAREN type_name
+##
+## WARNING: This example involves spurious reductions.
+## This implies that, although the LR(1) items shown above provide an
+## accurate view of the past (what has been recognized so far), they
+## may provide an INCOMPLETE view of the future (what was expected next).
+## In state 38, spurious reduction of production atomic_type -> non_paren_atomic_type
+## In state 41, spurious reduction of production type_name -> atomic_type
+##
+
+Expected `,` or `)` after type in parenthesized type list.
+
+
+prog: CONST IDENTIFIER COLON LPAREN IDENTIFIER COMMA WHILE
+##
+## Ends in an error in state: 18.
+##
+## paren_types -> LPAREN type_name COMMA . loption(separated_nonempty_list(COMMA,type_name)) RPAREN [ SEMICOLON RPAREN LBRACKET LBRACE COMMA ASSIGN ARROW ]
+##
+## The known suffix of the stack is as follows:
+## LPAREN type_name COMMA
+##
+
+Expected another type after `,` in parenthesized type list.
+
+
+prog: CONST IDENTIFIER COLON LPAREN IDENTIFIER COMMA IDENTIFIER SEMICOLON
+##
+## Ends in an error in state: 19.
+##
+## separated_nonempty_list(COMMA,type_name) -> type_name . [ RPAREN ]
+## separated_nonempty_list(COMMA,type_name) -> type_name . COMMA separated_nonempty_list(COMMA,type_name) [ RPAREN ]
+##
+## The known suffix of the stack is as follows:
+## type_name
+##
+## WARNING: This example involves spurious reductions.
+## This implies that, although the LR(1) items shown above provide an
+## accurate view of the past (what has been recognized so far), they
+## may provide an INCOMPLETE view of the future (what was expected next).
+## In state 38, spurious reduction of production atomic_type -> non_paren_atomic_type
+## In state 41, spurious reduction of production type_name -> atomic_type
+##
+
+Expected `,` or `)` after type in parenthesized type list.
+
+
+prog: CONST IDENTIFIER COLON LPAREN IDENTIFIER COMMA IDENTIFIER COMMA WHILE
+##
+## Ends in an error in state: 20.
+##
+## separated_nonempty_list(COMMA,type_name) -> type_name COMMA . separated_nonempty_list(COMMA,type_name) [ RPAREN ]
+##
+## The known suffix of the stack is as follows:
+## type_name COMMA
+##
+
+Expected another type after `,` in parenthesized type list.
+
+
+prog: CONST IDENTIFIER COLON LPAREN RPAREN WHILE
+##
+## Ends in an error in state: 22.
+##
+## atomic_type -> paren_types . [ SEMICOLON RPAREN LBRACKET LBRACE COMMA ASSIGN ]
+## type_name -> paren_types . ARROW atomic_type [ SEMICOLON RPAREN LBRACE COMMA ASSIGN ]
+##
+## The known suffix of the stack is as follows:
+## paren_types
+##
+
+Unexpected token after parenthesized type; expected `->` or a type delimiter.
+
+
+prog: CONST IDENTIFIER COLON LPAREN RPAREN ARROW WHILE
+##
+## Ends in an error in state: 23.
+##
+## type_name -> paren_types ARROW . atomic_type [ SEMICOLON RPAREN LBRACE COMMA ASSIGN ]
+##
+## The known suffix of the stack is as follows:
+## paren_types ARROW
+##
+
+Expected return type after `->` in function type.
+
+
+prog: CONST IDENTIFIER COLON LPAREN RPAREN ARROW IDENTIFIER WHILE
+##
+## Ends in an error in state: 26.
+##
+## non_paren_atomic_type -> atomic_type . LBRACKET expr RBRACKET [ SEMICOLON RPAREN LBRACKET LBRACE COMMA ASSIGN ]
+## type_name -> paren_types ARROW atomic_type . [ SEMICOLON RPAREN LBRACE COMMA ASSIGN ]
+##
+## The known suffix of the stack is as follows:
+## paren_types ARROW atomic_type
+##
+
+Unexpected token after type; expected array suffix `[ ... ]` or a type delimiter.
+
 
 prog: LET IDENTIFIER COLON IDENTIFIER LBRACKET WHILE
 ##
-## Ends in an error in state: 15.
+## Ends in an error in state: 27.
 ##
-## statement -> LET IDENTIFIER COLON IDENTIFIER LBRACKET . expr RBRACKET SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## non_paren_atomic_type -> atomic_type LBRACKET . expr RBRACKET [ SEMICOLON RPAREN LBRACKET LBRACE COMMA ASSIGN ARROW ]
 ##
 ## The known suffix of the stack is as follows:
-## LET IDENTIFIER COLON IDENTIFIER LBRACKET
+## atomic_type LBRACKET
 ##
 
 Expected expression for array size after `[`.
 
 prog: LPAREN IF WHILE
 ##
-## Ends in an error in state: 17.
+## Ends in an error in state: 29.
 ##
 ## ifelse_expr -> IF . LPAREN expr RPAREN block_expr option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
@@ -162,9 +268,9 @@ prog: LPAREN IF WHILE
 
 Expected `(` after `if` keyword.
 
-prog: LPAREN IF LPAREN WHILE
+prog: NOT IF LPAREN WHILE
 ##
-## Ends in an error in state: 18.
+## Ends in an error in state: 30.
 ##
 ## ifelse_expr -> IF LPAREN . expr RPAREN block_expr option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
@@ -172,11 +278,12 @@ prog: LPAREN IF LPAREN WHILE
 ## IF LPAREN
 ##
 
-Expected expression after `(`.
+Expected expression for the if condition.
+
 
 prog: IDENTIFIER WHILE
 ##
-## Ends in an error in state: 19.
+## Ends in an error in state: 31.
 ##
 ## expr_without_block -> IDENTIFIER . ASSIGN expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## expr_without_block -> IDENTIFIER . LBRACKET expr RBRACKET ASSIGN expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -186,11 +293,12 @@ prog: IDENTIFIER WHILE
 ## IDENTIFIER
 ##
 
-Unexpected token after identifier
+Unexpected token after identifier; expected `=`, `[`, an operator, `(`, or `;`.
+
 
 prog: IDENTIFIER LBRACKET WHILE
 ##
-## Ends in an error in state: 20.
+## Ends in an error in state: 32.
 ##
 ## expr_without_block -> IDENTIFIER LBRACKET . expr RBRACKET ASSIGN expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## option(delimited(LBRACKET,expr,RBRACKET)) -> LBRACKET . expr RBRACKET [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -199,105 +307,189 @@ prog: IDENTIFIER LBRACKET WHILE
 ## IDENTIFIER LBRACKET
 ##
 
-Expected expression inside `[]`.
+Expected expression after `[` in array indexing.
 
 
-
-
-prog: IDENTIFIER LBRACKET FALSE WHILE
-##
-## Ends in an error in state: 26.
-##
-## bin_expr -> expr . PLUS expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . MINUS expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . MUL expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . DIV expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LSH expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . RSH expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . BAND expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . BOR expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . GT expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . GEQ expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LT expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LEQ expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . EQUAL expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . NOT_EQUAL expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LAND expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LOR expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## expr_without_block -> IDENTIFIER LBRACKET expr . RBRACKET ASSIGN expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## expr_without_block -> expr . LPAREN arg_list RPAREN [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## option(delimited(LBRACKET,expr,RBRACKET)) -> LBRACKET expr . RBRACKET [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## IDENTIFIER LBRACKET expr
-##
-
-Expected `]` to close the `[`.
-
-
-prog: IDENTIFIER PLUS WHILE
-##
-## Ends in an error in state: 29.
-##
-## bin_expr -> expr PLUS . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## expr PLUS
-##
-
-Expected expression after `+` operator.
-
-prog: IDENTIFIER PLUS FALSE WHILE
-##
-## Ends in an error in state: 30.
-##
-## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr PLUS expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . BOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## expr PLUS expr
-##
-
-Unexpected token after expression.
-
-
-
-
-
-prog: IDENTIFIER LPAREN WHILE
+prog: FUN WHILE
 ##
 ## Ends in an error in state: 33.
 ##
-## expr_without_block -> expr LPAREN . arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr -> FUN . LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) block [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr -> FUN . LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) ASSIGN EXTERN LPAREN STRING RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## expr LPAREN
+## FUN
 ##
 
-Expected comma separated argument list or `()`.
+
+Expected `(` after `fun` keyword.
 
 
+prog: FUN LPAREN WHILE
+##
+## Ends in an error in state: 34.
+##
+## expr -> FUN LPAREN . loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) block [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr -> FUN LPAREN . loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) ASSIGN EXTERN LPAREN STRING RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## FUN LPAREN
+##
+
+Expected parameter list after `(`.
+
+prog: FUN LPAREN IDENTIFIER WHILE
+##
+## Ends in an error in state: 35.
+##
+## param -> IDENTIFIER . COLON type_name [ RPAREN COMMA ]
+##
+## The known suffix of the stack is as follows:
+## IDENTIFIER
+##
+
+Expected type identifier after parameter name (parameters should be specified by `name : type`).
+
+prog: FUN LPAREN IDENTIFIER COLON WHILE
+##
+## Ends in an error in state: 36.
+##
+## param -> IDENTIFIER COLON . type_name [ RPAREN COMMA ]
+##
+## The known suffix of the stack is as follows:
+## IDENTIFIER COLON
+##
+
+Expected type identifier after parameter name (parameters should be specified by `name : type`).
+
+
+prog: CONST IDENTIFIER COLON IDENTIFIER WHILE
+##
+## Ends in an error in state: 38.
+##
+## atomic_type -> non_paren_atomic_type . [ SEMICOLON RPAREN LBRACKET LBRACE COMMA ASSIGN ]
+## type_name -> non_paren_atomic_type . ARROW atomic_type [ SEMICOLON RPAREN LBRACE COMMA ASSIGN ]
+##
+## The known suffix of the stack is as follows:
+## non_paren_atomic_type
+##
+
+Unexpected token after type; expected `->`, array suffix `[ ... ]`, or a type delimiter.
+
+
+prog: CONST IDENTIFIER COLON IDENTIFIER ARROW WHILE
+##
+## Ends in an error in state: 39.
+##
+## type_name -> non_paren_atomic_type ARROW . atomic_type [ SEMICOLON RPAREN LBRACE COMMA ASSIGN ]
+##
+## The known suffix of the stack is as follows:
+## non_paren_atomic_type ARROW
+##
+
+Expected return type after `->` in function type.
+
+
+prog: CONST IDENTIFIER COLON IDENTIFIER ARROW IDENTIFIER WHILE
+##
+## Ends in an error in state: 40.
+##
+## non_paren_atomic_type -> atomic_type . LBRACKET expr RBRACKET [ SEMICOLON RPAREN LBRACKET LBRACE COMMA ASSIGN ]
+## type_name -> non_paren_atomic_type ARROW atomic_type . [ SEMICOLON RPAREN LBRACE COMMA ASSIGN ]
+##
+## The known suffix of the stack is as follows:
+## non_paren_atomic_type ARROW atomic_type
+##
+
+Unexpected token after type; expected array suffix `[ ... ]` or a type delimiter.
+
+
+prog: FUN LPAREN IDENTIFIER COLON IDENTIFIER SEMICOLON
+##
+## Ends in an error in state: 43.
+##
+## separated_nonempty_list(COMMA,param) -> param . [ RPAREN ]
+## separated_nonempty_list(COMMA,param) -> param . COMMA separated_nonempty_list(COMMA,param) [ RPAREN ]
+##
+## The known suffix of the stack is as follows:
+## param
+##
+## WARNING: This example involves spurious reductions.
+## This implies that, although the LR(1) items shown above provide an
+## accurate view of the past (what has been recognized so far), they
+## may provide an INCOMPLETE view of the future (what was expected next).
+## In state 38, spurious reduction of production atomic_type -> non_paren_atomic_type
+## In state 41, spurious reduction of production type_name -> atomic_type
+## In state 37, spurious reduction of production param -> IDENTIFIER COLON type_name
+##
+
+Expected `,` or `)` after parameter declaration.
+
+
+prog: FUN LPAREN IDENTIFIER COLON IDENTIFIER COMMA WHILE
+##
+## Ends in an error in state: 44.
+##
+## separated_nonempty_list(COMMA,param) -> param COMMA . separated_nonempty_list(COMMA,param) [ RPAREN ]
+##
+## The known suffix of the stack is as follows:
+## param COMMA
+##
+
+Expected parameter declaration after `,` (use `name : type`).
+
+
+prog: FUN LPAREN RPAREN WHILE
+##
+## Ends in an error in state: 47.
+##
+## expr -> FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN . option(preceded(ARROW,type_name)) block [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr -> FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN . option(preceded(ARROW,type_name)) ASSIGN EXTERN LPAREN STRING RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN
+##
+
+Expected `{` to start the function body.
+
+prog: FUN LPAREN RPAREN ARROW WHILE
+##
+## Ends in an error in state: 48.
+##
+## option(preceded(ARROW,type_name)) -> ARROW . type_name [ LBRACE ASSIGN ]
+##
+## The known suffix of the stack is as follows:
+## ARROW
+##
+
+Expected function return type after `->`.
+
+
+prog: FUN LPAREN RPAREN ARROW IDENTIFIER SEMICOLON
+##
+## Ends in an error in state: 50.
+##
+## expr -> FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) . block [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr -> FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) . ASSIGN EXTERN LPAREN STRING RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name))
+##
+## WARNING: This example involves spurious reductions.
+## This implies that, although the LR(1) items shown above provide an
+## accurate view of the past (what has been recognized so far), they
+## may provide an INCOMPLETE view of the future (what was expected next).
+## In state 38, spurious reduction of production atomic_type -> non_paren_atomic_type
+## In state 41, spurious reduction of production type_name -> atomic_type
+## In state 49, spurious reduction of production option(preceded(ARROW,type_name)) -> ARROW type_name
+##
+
+Expected function body block `{ ... }` or `= extern("...")` after function signature.
 
 
 prog: LBRACE SEMICOLON
 ##
-## Ends in an error in state: 35.
+## Ends in an error in state: 51.
 ##
 ## block_expr -> LBRACE . block_expr_inside RBRACE [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL ELSE DIV COMMA BOR BAND ]
 ## block_statement -> LBRACE . list(statement) RBRACE [ WHILE TRUE STRING SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NULLPTR NOT_EQUAL NOT MUL MINUS LT LSH LPAREN LOR LET LEQ LBRACE LAND INT IF IDENTIFIER GT GEQ FUN FALSE EQUAL EOF ELSE DIV CONST COMMA BOR BAND ]
@@ -311,7 +503,7 @@ Unexpected `;`.
 
 prog: IF WHILE
 ##
-## Ends in an error in state: 36.
+## Ends in an error in state: 52.
 ##
 ## ifelse_expr -> IF . LPAREN expr RPAREN block_expr option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ## ifelse_statement -> IF . LPAREN expr RPAREN block_statement option(preceded(ELSE,block_statement)) [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
@@ -325,7 +517,7 @@ Expected `(` after `if` keyword.
 
 prog: IF LPAREN WHILE
 ##
-## Ends in an error in state: 37.
+## Ends in an error in state: 53.
 ##
 ## ifelse_expr -> IF LPAREN . expr RPAREN block_expr option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ## ifelse_statement -> IF LPAREN . expr RPAREN block_statement option(preceded(ELSE,block_statement)) [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
@@ -337,122 +529,39 @@ prog: IF LPAREN WHILE
 Expected expression for the if condition.
 
 
-prog: IDENTIFIER NOT_EQUAL FALSE WHILE
+prog: IF LPAREN FALSE WHILE
 ##
-## Ends in an error in state: 38.
+## Ends in an error in state: 59.
 ##
-## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . BOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr NOT_EQUAL expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## expr NOT_EQUAL expr
-##
-
-Unexpected token after expression.
-
-prog: IDENTIFIER MINUS WHILE
-##
-## Ends in an error in state: 39.
-##
-## bin_expr -> expr MINUS . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . PLUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . MINUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . MUL expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . DIV expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LSH expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . RSH expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . BAND expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . BOR expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . GT expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . GEQ expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LT expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LEQ expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . EQUAL expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . NOT_EQUAL expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LAND expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LOR expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## expr_without_block -> expr . LPAREN arg_list RPAREN [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## ifelse_expr -> IF LPAREN expr . RPAREN block_expr option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## ifelse_statement -> IF LPAREN expr . RPAREN block_statement option(preceded(ELSE,block_statement)) [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
 ## The known suffix of the stack is as follows:
-## expr MINUS
+## IF LPAREN expr
 ##
 
-Expected expression after `-`.
-
-prog: IDENTIFIER MINUS FALSE WHILE
-##
-## Ends in an error in state: 40.
-##
-## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr MINUS expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . BOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## expr MINUS expr
-##
-
-Unexpected token after expression.
-
-prog: IDENTIFIER DIV WHILE
-##
-## Ends in an error in state: 41.
-##
-## bin_expr -> expr DIV . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## expr DIV
-##
-
-Expected expression after `/`.
-
-prog: IDENTIFIER DIV FALSE WHILE
-##
-## Ends in an error in state: 42.
-##
-## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr DIV expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . BOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## expr DIV expr
-##
-
-Unexpected keyword after expression.
-
-
+Expected closing `)` after if condition.
 
 prog: IDENTIFIER RSH WHILE
 ##
-## Ends in an error in state: 44.
+## Ends in an error in state: 60.
 ##
 ## bin_expr -> expr RSH . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
@@ -465,7 +574,7 @@ Expected expression after binary operator.
 
 prog: IDENTIFIER RSH FALSE WHILE
 ##
-## Ends in an error in state: 45.
+## Ends in an error in state: 61.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -493,11 +602,24 @@ prog: IDENTIFIER RSH FALSE WHILE
 Expected `;` after expression.
 
 
-prog: IDENTIFIER LT FALSE WHILE
+prog: IDENTIFIER PLUS WHILE
 ##
-## Ends in an error in state: 46.
+## Ends in an error in state: 62.
+##
+## bin_expr -> expr PLUS . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## expr PLUS
+##
+
+Expected expression after `+` operator.
+
+prog: IDENTIFIER PLUS FALSE WHILE
+##
+## Ends in an error in state: 63.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr PLUS expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -508,7 +630,6 @@ prog: IDENTIFIER LT FALSE WHILE
 ## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr LT expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -517,29 +638,15 @@ prog: IDENTIFIER LT FALSE WHILE
 ## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## expr LT expr
+## expr PLUS expr
 ##
 
-Unexpected token after expression.
-
-prog: IDENTIFIER LSH WHILE
-##
-## Ends in an error in state: 47.
-##
-## bin_expr -> expr LSH . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## expr LSH
-##
-
-Expected expression after `<<`.
-
-
+Expected `;` after expression.
 
 
 prog: IDENTIFIER MUL WHILE
 ##
-## Ends in an error in state: 48.
+## Ends in an error in state: 64.
 ##
 ## bin_expr -> expr MUL . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
@@ -552,7 +659,7 @@ Expected expression after binary operator.
 
 prog: IDENTIFIER MUL FALSE WHILE
 ##
-## Ends in an error in state: 49.
+## Ends in an error in state: 65.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -580,79 +687,22 @@ prog: IDENTIFIER MUL FALSE WHILE
 Expected `;` after expression.
 
 
-prog: IDENTIFIER LEQ FALSE WHILE
+prog: IDENTIFIER LPAREN WHILE
 ##
-## Ends in an error in state: 50.
+## Ends in an error in state: 66.
 ##
-## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . BOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr LEQ expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr_without_block -> expr LPAREN . arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## expr LEQ expr
+## expr LPAREN
 ##
 
-Unexpected token after expression.
+Expected argument expression or `)` in function call.
 
-prog: IDENTIFIER GT WHILE
-##
-## Ends in an error in state: 51.
-##
-## bin_expr -> expr GT . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## expr GT
-##
-
-Expected expression after `>`.
-
-prog: IDENTIFIER GT FALSE WHILE
-##
-## Ends in an error in state: 52.
-##
-## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . BOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr GT expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## expr GT expr
-##
-
-Unexpected token after expression.
 
 prog: IDENTIFIER LPAREN IDENTIFIER SEMICOLON
 ##
-## Ends in an error in state: 53.
+## Ends in an error in state: 69.
 ##
 ## bin_expr -> expr . PLUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -681,9 +731,9 @@ prog: IDENTIFIER LPAREN IDENTIFIER SEMICOLON
 ## This implies that, although the LR(1) items shown above provide an
 ## accurate view of the past (what has been recognized so far), they
 ## may provide an INCOMPLETE view of the future (what was expected next).
-## In state 19, spurious reduction of production option(delimited(LBRACKET,expr,RBRACKET)) ->
-## In state 136, spurious reduction of production expr_without_block -> IDENTIFIER option(delimited(LBRACKET,expr,RBRACKET))
-## In state 41, spurious reduction of production expr -> expr_without_block
+## In state 31, spurious reduction of production option(delimited(LBRACKET,expr,RBRACKET)) ->
+## In state 150, spurious reduction of production expr_without_block -> IDENTIFIER option(delimited(LBRACKET,expr,RBRACKET))
+## In state 57, spurious reduction of production expr -> expr_without_block
 ##
 
 Expected closing `)`.
@@ -691,7 +741,7 @@ Expected closing `)`.
 
 prog: IDENTIFIER NOT_EQUAL WHILE
 ##
-## Ends in an error in state: 54.
+## Ends in an error in state: 70.
 ##
 ## bin_expr -> expr NOT_EQUAL . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
@@ -702,21 +752,9 @@ prog: IDENTIFIER NOT_EQUAL WHILE
 Expected expression after binary operator.
 
 
-prog: IDENTIFIER LOR WHILE
+prog: IDENTIFIER NOT_EQUAL FALSE WHILE
 ##
-## Ends in an error in state: 55.
-##
-## bin_expr -> expr LOR . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## expr LOR
-##
-
-Expected expression after `||`.
-
-prog: IDENTIFIER LOR FALSE WHILE
-##
-## Ends in an error in state: 56.
+## Ends in an error in state: 71.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -732,35 +770,38 @@ prog: IDENTIFIER LOR FALSE WHILE
 ## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr NOT_EQUAL expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr LOR expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## expr LOR expr
+## expr NOT_EQUAL expr
 ##
 
 Unexpected token after expression.
 
-prog: IDENTIFIER LAND WHILE
+
+prog: IDENTIFIER MINUS WHILE
 ##
-## Ends in an error in state: 57.
+## Ends in an error in state: 72.
 ##
-## bin_expr -> expr LAND . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr MINUS . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## expr LAND
+## expr MINUS
 ##
 
-Expected expression after `&&`.
+Expected expression after `-` operator.
 
-prog: IDENTIFIER LAND FALSE WHILE
+
+prog: IDENTIFIER MINUS FALSE WHILE
 ##
-## Ends in an error in state: 58.
+## Ends in an error in state: 73.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr MINUS expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -774,36 +815,37 @@ prog: IDENTIFIER LAND FALSE WHILE
 ## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr LAND expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## expr LAND expr
+## expr MINUS expr
 ##
 
-Unexpected token after expression.
+Expected `;` after expression.
 
-prog: IDENTIFIER EQUAL WHILE
+
+prog: IDENTIFIER DIV WHILE
 ##
-## Ends in an error in state: 59.
+## Ends in an error in state: 74.
 ##
-## bin_expr -> expr EQUAL . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr DIV . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## expr EQUAL
+## expr DIV
 ##
 
-Expected expression after `==`.
+Expected expression after `/`.
 
-prog: IDENTIFIER EQUAL FALSE WHILE
+prog: IDENTIFIER DIV FALSE WHILE
 ##
-## Ends in an error in state: 60.
+## Ends in an error in state: 75.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr DIV expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -813,33 +855,22 @@ prog: IDENTIFIER EQUAL FALSE WHILE
 ## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr EQUAL expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## expr EQUAL expr
+## expr DIV expr
 ##
 
-Unexpected token after expression.
+Unexpected keyword after expression.
 
-prog: IDENTIFIER BOR WHILE
-##
-## Ends in an error in state: 61.
-##
-## bin_expr -> expr BOR . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## expr BOR
-##
 
-Expected expression after `|`.
 
 prog: IDENTIFIER LT WHILE
 ##
-## Ends in an error in state: 62.
+## Ends in an error in state: 78.
 ##
 ## bin_expr -> expr LT . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
@@ -850,21 +881,9 @@ prog: IDENTIFIER LT WHILE
 Expected expression after binary operator.
 
 
-prog: IDENTIFIER BAND WHILE
+prog: IDENTIFIER LT FALSE WHILE
 ##
-## Ends in an error in state: 63.
-##
-## bin_expr -> expr BAND . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## expr BAND
-##
-
-Expected expression after `&`.
-
-prog: IDENTIFIER BAND FALSE WHILE
-##
-## Ends in an error in state: 64.
+## Ends in an error in state: 79.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -873,11 +892,11 @@ prog: IDENTIFIER BAND FALSE WHILE
 ## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## bin_expr -> expr BAND expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . BOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr LT expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -886,16 +905,29 @@ prog: IDENTIFIER BAND FALSE WHILE
 ## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## expr BAND expr
+## expr LT expr
 ##
 
 Unexpected token after expression.
+
+prog: IDENTIFIER LSH WHILE
+##
+## Ends in an error in state: 80.
+##
+## bin_expr -> expr LSH . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## expr LSH
+##
+
+Expected expression after `<<`.
+
 
 
 
 prog: IDENTIFIER LSH FALSE WHILE
 ##
-## Ends in an error in state: 65.
+## Ends in an error in state: 81.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -925,7 +957,7 @@ Expected `;` after expression.
 
 prog: IDENTIFIER LEQ WHILE
 ##
-## Ends in an error in state: 66.
+## Ends in an error in state: 82.
 ##
 ## bin_expr -> expr LEQ . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
@@ -936,22 +968,80 @@ prog: IDENTIFIER LEQ WHILE
 Expected expression after binary operator.
 
 
-prog: IDENTIFIER LBRACKET IDENTIFIER RBRACKET WHILE
+prog: IDENTIFIER LEQ FALSE WHILE
 ##
-## Ends in an error in state: 69.
+## Ends in an error in state: 83.
 ##
-## expr_without_block -> IDENTIFIER LBRACKET expr RBRACKET . ASSIGN expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## option(delimited(LBRACKET,expr,RBRACKET)) -> LBRACKET expr RBRACKET . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . BOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr LEQ expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## IDENTIFIER LBRACKET expr RBRACKET
+## expr LEQ expr
 ##
 
-Expected expression, `=` or `;` after `]`.
+Expected `;` after expression.
+
+
+prog: IDENTIFIER GT WHILE
+##
+## Ends in an error in state: 84.
+##
+## bin_expr -> expr GT . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## expr GT
+##
+
+Expected expression after `>`.
+
+prog: IDENTIFIER GT FALSE WHILE
+##
+## Ends in an error in state: 85.
+##
+## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . BOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr GT expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## expr GT expr
+##
+
+Unexpected token after expression.
 
 prog: IDENTIFIER GEQ WHILE
 ##
-## Ends in an error in state: 70.
+## Ends in an error in state: 86.
 ##
 ## bin_expr -> expr GEQ . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
@@ -964,7 +1054,7 @@ Expected expression after binary operator.
 
 prog: IDENTIFIER GEQ FALSE WHILE
 ##
-## Ends in an error in state: 71.
+## Ends in an error in state: 87.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -992,21 +1082,21 @@ prog: IDENTIFIER GEQ FALSE WHILE
 Expected `;` after expression.
 
 
-prog: IDENTIFIER ASSIGN WHILE
+prog: IDENTIFIER LOR WHILE
 ##
-## Ends in an error in state: 72.
+## Ends in an error in state: 88.
 ##
-## expr_without_block -> IDENTIFIER ASSIGN . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr LOR . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## IDENTIFIER ASSIGN
+## expr LOR
 ##
 
-Expected expression on the right hand side of assignment.
+Expected expression after `||`.
 
-prog: IDENTIFIER ASSIGN FALSE WHILE
+prog: IDENTIFIER LOR FALSE WHILE
 ##
-## Ends in an error in state: 73.
+## Ends in an error in state: 89.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -1024,83 +1114,112 @@ prog: IDENTIFIER ASSIGN FALSE WHILE
 ## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-## expr_without_block -> IDENTIFIER ASSIGN expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr LOR expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## IDENTIFIER ASSIGN expr
+## expr LOR expr
 ##
 
-Expected `;` or binary operator after assignment.
+Unexpected token after expression.
 
-prog: LPAREN IF LPAREN FALSE WHILE
+prog: IDENTIFIER LAND WHILE
 ##
-## Ends in an error in state: 75.
+## Ends in an error in state: 90.
 ##
-## bin_expr -> expr . PLUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . MINUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . MUL expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . DIV expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LSH expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . RSH expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . BAND expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . BOR expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . GT expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . GEQ expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LT expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LEQ expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . EQUAL expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . NOT_EQUAL expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LAND expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LOR expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## expr_without_block -> expr . LPAREN arg_list RPAREN [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## ifelse_expr -> IF LPAREN expr . RPAREN block_expr option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr LAND . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## IF LPAREN expr
+## expr LAND
 ##
 
-Expected closing `)` after if condition.
+Expected expression after `&&`.
 
-prog: LPAREN IF LPAREN IDENTIFIER RPAREN WHILE
+prog: IDENTIFIER LAND FALSE WHILE
 ##
-## Ends in an error in state: 76.
+## Ends in an error in state: 91.
 ##
-## ifelse_expr -> IF LPAREN expr RPAREN . block_expr option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . BOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr LAND expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## IF LPAREN expr RPAREN
+## expr LAND expr
 ##
 
-Expected opening `{` after if condition.
+Unexpected token after expression.
 
-prog: IF LPAREN IDENTIFIER RPAREN LBRACE IDENTIFIER RBRACE WHILE
+prog: IDENTIFIER EQUAL WHILE
 ##
-## Ends in an error in state: 77.
+## Ends in an error in state: 92.
 ##
-## ifelse_expr -> IF LPAREN expr RPAREN block_expr . option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr EQUAL . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## IF LPAREN expr RPAREN block_expr
+## expr EQUAL
 ##
 
-Expected `else`, `;` or binary operator after if expression.
+Expected expression after `==`.
 
-prog: IF LPAREN IDENTIFIER RPAREN LBRACE IDENTIFIER RBRACE ELSE WHILE
+prog: IDENTIFIER EQUAL FALSE WHILE
 ##
-## Ends in an error in state: 78.
+## Ends in an error in state: 93.
 ##
-## option(preceded(ELSE,block_expr)) -> ELSE . block_expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . BOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr EQUAL expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## ELSE
+## expr EQUAL expr
 ##
 
-Expected opening `{` after `else`.
+Unexpected token after expression.
+
+prog: IDENTIFIER BOR WHILE
+##
+## Ends in an error in state: 94.
+##
+## bin_expr -> expr BOR . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## expr BOR
+##
+
+Expected expression after `|`.
 
 prog: IDENTIFIER BOR FALSE WHILE
 ##
-## Ends in an error in state: 79.
+## Ends in an error in state: 95.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -1128,38 +1247,53 @@ prog: IDENTIFIER BOR FALSE WHILE
 Expected `;` after expression.
 
 
-prog: LET IDENTIFIER COLON IDENTIFIER LBRACKET FALSE WHILE
+prog: IDENTIFIER BAND WHILE
 ##
-## Ends in an error in state: 81.
+## Ends in an error in state: 96.
 ##
-## bin_expr -> expr . PLUS expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . MINUS expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . MUL expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . DIV expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LSH expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . RSH expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . BAND expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . BOR expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . GT expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . GEQ expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LT expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LEQ expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . EQUAL expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . NOT_EQUAL expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LAND expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LOR expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## expr_without_block -> expr . LPAREN arg_list RPAREN [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## statement -> LET IDENTIFIER COLON IDENTIFIER LBRACKET expr . RBRACKET SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## bin_expr -> expr BAND . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## LET IDENTIFIER COLON IDENTIFIER LBRACKET expr
+## expr BAND
 ##
 
-Expected `]` to close `[`.
+Expected expression after `&`.
+
+
+prog: IDENTIFIER BAND FALSE WHILE
+##
+## Ends in an error in state: 97.
+##
+## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr BAND expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . BOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## expr BAND expr
+##
+
+Unexpected token after expression.
+
+
 
 prog: IDENTIFIER LPAREN IDENTIFIER COMMA WHILE
 ##
-## Ends in an error in state: 82.
+## Ends in an error in state: 98.
 ##
 ## separated_nonempty_list(COMMA,expr) -> expr COMMA . separated_nonempty_list(COMMA,expr) [ RPAREN ]
 ##
@@ -1170,50 +1304,25 @@ prog: IDENTIFIER LPAREN IDENTIFIER COMMA WHILE
 Expected closing `)`.
 
 
-prog: LET IDENTIFIER COLON IDENTIFIER ASSIGN WHILE
+prog: IF LPAREN IDENTIFIER RPAREN WHILE
 ##
-## Ends in an error in state: 84.
+## Ends in an error in state: 102.
 ##
-## statement -> LET IDENTIFIER COLON IDENTIFIER ASSIGN . expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-##
-## The known suffix of the stack is as follows:
-## LET IDENTIFIER COLON IDENTIFIER ASSIGN
-##
-
-Expected expression after `=`.
-
-prog: LET IDENTIFIER COLON IDENTIFIER ASSIGN FALSE WHILE
-##
-## Ends in an error in state: 85.
-##
-## bin_expr -> expr . PLUS expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . MINUS expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . MUL expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . DIV expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LSH expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . RSH expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . BAND expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . BOR expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . GT expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . GEQ expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LT expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LEQ expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LAND expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LOR expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## statement -> LET IDENTIFIER COLON IDENTIFIER ASSIGN expr . SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## ifelse_expr -> IF LPAREN expr RPAREN . block_expr option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## ifelse_statement -> IF LPAREN expr RPAREN . block_statement option(preceded(ELSE,block_statement)) [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
 ## The known suffix of the stack is as follows:
-## LET IDENTIFIER COLON IDENTIFIER ASSIGN expr
+## IF LPAREN expr RPAREN
 ##
 
-Expected `;` after variable declaration.
+Expected `{` after if condition.
+
+
+
 
 prog: IF LPAREN IDENTIFIER RPAREN LBRACE RBRACE SEMICOLON
 ##
-## Ends in an error in state: 87.
+## Ends in an error in state: 103.
 ##
 ## ifelse_statement -> IF LPAREN expr RPAREN block_statement . option(preceded(ELSE,block_statement)) [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
@@ -1221,12 +1330,13 @@ prog: IF LPAREN IDENTIFIER RPAREN LBRACE RBRACE SEMICOLON
 ## IF LPAREN expr RPAREN block_statement
 ##
 
-Unexpected token after if statement body.
+
+Unexpected `;` after `if` statement.
 
 
 prog: IF LPAREN IDENTIFIER RPAREN LBRACE RBRACE ELSE WHILE
 ##
-## Ends in an error in state: 88.
+## Ends in an error in state: 104.
 ##
 ## option(preceded(ELSE,block_statement)) -> ELSE . block_statement [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
@@ -1239,7 +1349,7 @@ Expected `{` after else statement.
 
 prog: WHILE LPAREN IDENTIFIER RPAREN LBRACE SEMICOLON
 ##
-## Ends in an error in state: 89.
+## Ends in an error in state: 105.
 ##
 ## block_statement -> LBRACE . list(statement) RBRACE [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
@@ -1250,94 +1360,70 @@ prog: WHILE LPAREN IDENTIFIER RPAREN LBRACE SEMICOLON
 Unexpected `;`.
 
 
-prog: IF LPAREN FALSE WHILE
+prog: CONST WHILE
 ##
-## Ends in an error in state: 90.
+## Ends in an error in state: 106.
 ##
-## bin_expr -> expr . PLUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . MINUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . MUL expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . DIV expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LSH expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . RSH expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . BAND expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . BOR expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . GT expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . GEQ expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LT expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LEQ expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . EQUAL expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . NOT_EQUAL expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LAND expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## bin_expr -> expr . LOR expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## expr_without_block -> expr . LPAREN arg_list RPAREN [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## ifelse_expr -> IF LPAREN expr . RPAREN block_expr option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## ifelse_statement -> IF LPAREN expr . RPAREN block_statement option(preceded(ELSE,block_statement)) [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## statement -> CONST . IDENTIFIER option(preceded(COLON,type_name)) ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
 ## The known suffix of the stack is as follows:
-## IF LPAREN expr
+## CONST
 ##
 
-Expected closing `)` after if condition.
+Expected identifier after `const` keyword.
 
-prog: IF LPAREN IDENTIFIER RPAREN WHILE
+
+prog: CONST IDENTIFIER WHILE
 ##
-## Ends in an error in state: 91.
+## Ends in an error in state: 107.
 ##
-## ifelse_expr -> IF LPAREN expr RPAREN . block_expr option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## ifelse_statement -> IF LPAREN expr RPAREN . block_statement option(preceded(ELSE,block_statement)) [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## statement -> CONST IDENTIFIER . option(preceded(COLON,type_name)) ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
 ## The known suffix of the stack is as follows:
-## IF LPAREN expr RPAREN
+## CONST IDENTIFIER
 ##
 
-Expected `{` after if condition.
+Expected declaration after `const` keyword.
 
 
 
-
-prog: CONST IDENTIFIER COLON WHILE
+prog: CONST IDENTIFIER COLON IDENTIFIER SEMICOLON
 ##
-## Ends in an error in state: 92.
+## Ends in an error in state: 108.
 ##
-## statement -> CONST IDENTIFIER COLON . IDENTIFIER ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
+## statement -> CONST IDENTIFIER option(preceded(COLON,type_name)) . ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
 ## The known suffix of the stack is as follows:
-## CONST IDENTIFIER COLON
+## CONST IDENTIFIER option(preceded(COLON,type_name))
+##
+## WARNING: This example involves spurious reductions.
+## This implies that, although the LR(1) items shown above provide an
+## accurate view of the past (what has been recognized so far), they
+## may provide an INCOMPLETE view of the future (what was expected next).
+## In state 38, spurious reduction of production atomic_type -> non_paren_atomic_type
+## In state 41, spurious reduction of production type_name -> atomic_type
+## In state 158, spurious reduction of production option(preceded(COLON,type_name)) -> COLON type_name
 ##
 
-Expected typename after `:`.
+Expected `=` after `const` declaration (constants must be initialized).
 
 
-prog: CONST IDENTIFIER COLON IDENTIFIER WHILE
+prog: CONST IDENTIFIER ASSIGN WHILE
 ##
-## Ends in an error in state: 93.
+## Ends in an error in state: 109.
 ##
-## statement -> CONST IDENTIFIER COLON IDENTIFIER . ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
+## statement -> CONST IDENTIFIER option(preceded(COLON,type_name)) ASSIGN . expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
 ## The known suffix of the stack is as follows:
-## CONST IDENTIFIER COLON IDENTIFIER
+## CONST IDENTIFIER option(preceded(COLON,type_name)) ASSIGN
 ##
 
-Expected `=` after typename.
-
-
-prog: CONST IDENTIFIER COLON IDENTIFIER ASSIGN WHILE
-##
-## Ends in an error in state: 94.
-##
-## statement -> CONST IDENTIFIER COLON IDENTIFIER ASSIGN . expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
-##
-## The known suffix of the stack is as follows:
-## CONST IDENTIFIER COLON IDENTIFIER ASSIGN
-##
-
-Expected expression after `=`.
+Expected expression after `=` in `const` declaration.
 
 
 prog: CONST IDENTIFIER COLON IDENTIFIER ASSIGN IDENTIFIER RPAREN
 ##
-## Ends in an error in state: 95.
+## Ends in an error in state: 110.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
@@ -1356,175 +1442,113 @@ prog: CONST IDENTIFIER COLON IDENTIFIER ASSIGN IDENTIFIER RPAREN
 ## bin_expr -> expr . LAND expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ## bin_expr -> expr . LOR expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## statement -> CONST IDENTIFIER COLON IDENTIFIER ASSIGN expr . SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
+## statement -> CONST IDENTIFIER option(preceded(COLON,type_name)) ASSIGN expr . SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
 ## The known suffix of the stack is as follows:
-## CONST IDENTIFIER COLON IDENTIFIER ASSIGN expr
+## CONST IDENTIFIER option(preceded(COLON,type_name)) ASSIGN expr
 ##
 ## WARNING: This example involves spurious reductions.
 ## This implies that, although the LR(1) items shown above provide an
 ## accurate view of the past (what has been recognized so far), they
 ## may provide an INCOMPLETE view of the future (what was expected next).
-## In state 19, spurious reduction of production option(delimited(LBRACKET,expr,RBRACKET)) ->
-## In state 136, spurious reduction of production expr_without_block -> IDENTIFIER option(delimited(LBRACKET,expr,RBRACKET))
-## In state 41, spurious reduction of production expr -> expr_without_block
+## In state 31, spurious reduction of production option(delimited(LBRACKET,expr,RBRACKET)) ->
+## In state 150, spurious reduction of production expr_without_block -> IDENTIFIER option(delimited(LBRACKET,expr,RBRACKET))
+## In state 57, spurious reduction of production expr -> expr_without_block
 ##
 
 Expected `;` after variable declaration.
 
 
-prog: FUN WHILE
+prog: LBRACE RBRACE SEMICOLON
 ##
-## Ends in an error in state: 96.
+## Ends in an error in state: 113.
 ##
-## statement -> FUN IDENTIFIER . LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) block [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-##
-## The known suffix of the stack is as follows:
-## FUN IDENTIFIER
-##
-
-Expected `(` after function name.
-
-prog: FUN LPAREN WHILE
-##
-## Ends in an error in state: 97.
-##
-## statement -> FUN IDENTIFIER LPAREN . loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) block [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## list(statement) -> statement . list(statement) [ RBRACE EOF ]
 ##
 ## The known suffix of the stack is as follows:
-## FUN IDENTIFIER LPAREN
+## statement
 ##
 
-Expected parameter list after `(`.
+Unexpected `;`.
 
-prog: FUN LPAREN IDENTIFIER WHILE
+
+prog: FUN LPAREN RPAREN ASSIGN EXTERN LPAREN STRING RPAREN WHILE
 ##
-## Ends in an error in state: 98.
+## Ends in an error in state: 117.
 ##
-## param -> IDENTIFIER . COLON IDENTIFIER [ RPAREN COMMA ]
+## bin_expr -> expr . PLUS expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . MINUS expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . MUL expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . DIV expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LSH expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . RSH expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . BAND expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . BOR expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . GT expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . GEQ expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LT expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LEQ expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LAND expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LOR expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## expr_statement -> expr . SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
+## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## IDENTIFIER
+## expr
 ##
 
-Expected type identifier after parameter name (parameters should be specified by `name : type`).
+Expected ';' after '@extern' declaration.
 
-prog: FUN LPAREN IDENTIFIER COLON WHILE
+
+prog: WHILE LPAREN IDENTIFIER RPAREN LBRACE LBRACE RBRACE EOF
 ##
-## Ends in an error in state: 99.
+## Ends in an error in state: 120.
 ##
-## param -> IDENTIFIER COLON . IDENTIFIER [ RPAREN COMMA ]
+## block_statement -> LBRACE list(statement) . RBRACE [ WHILE TRUE STRING SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NULLPTR NOT_EQUAL NOT MUL MINUS LT LSH LPAREN LOR LET LEQ LBRACE LAND INT IF IDENTIFIER GT GEQ FUN FALSE EQUAL EOF ELSE DIV CONST COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## IDENTIFIER COLON
+## LBRACE list(statement)
+##
+## WARNING: This example involves spurious reductions.
+## This implies that, although the LR(1) items shown above provide an
+## accurate view of the past (what has been recognized so far), they
+## may provide an INCOMPLETE view of the future (what was expected next).
+## In state 113, spurious reduction of production list(statement) ->
+## In state 114, spurious reduction of production list(statement) -> statement list(statement)
 ##
 
-Expected type identifier after parameter name (parameters should be specified by `name : type`).
+Unclosed block at end of file.
 
-prog: FUN LPAREN IDENTIFIER COLON IDENTIFIER WHILE
+
+prog: IF LPAREN IDENTIFIER RPAREN LBRACE IDENTIFIER RBRACE WHILE
 ##
-## Ends in an error in state: 102.
+## Ends in an error in state: 124.
 ##
-## separated_nonempty_list(COMMA,param) -> param . [ RPAREN ]
-## separated_nonempty_list(COMMA,param) -> param . COMMA separated_nonempty_list(COMMA,param) [ RPAREN ]
+## ifelse_expr -> IF LPAREN expr RPAREN block_expr . option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## param
+## IF LPAREN expr RPAREN block_expr
 ##
 
-Expected `)` to close parameter list.
+Expected `else`, `;` or binary operator after if expression.
 
-prog: FUN LPAREN IDENTIFIER COLON IDENTIFIER COMMA WHILE
+prog: IF LPAREN IDENTIFIER RPAREN LBRACE IDENTIFIER RBRACE ELSE WHILE
 ##
-## Ends in an error in state: 103.
+## Ends in an error in state: 125.
 ##
-## separated_nonempty_list(COMMA,param) -> param COMMA . separated_nonempty_list(COMMA,param) [ RPAREN ]
+## option(preceded(ELSE,block_expr)) -> ELSE . block_expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## param COMMA
+## ELSE
 ##
 
-Expected parameter definition.
-
-prog: FUN LPAREN RPAREN WHILE
-##
-## Ends in an error in state: 106.
-##
-## statement -> FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN . option(preceded(ARROW,IDENTIFIER)) block [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-##
-## The known suffix of the stack is as follows:
-## FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN
-##
-
-Expected `{` to start the function body.
-
-prog: FUN LPAREN RPAREN ARROW WHILE
-##
-## Ends in an error in state: 107.
-##
-## option(preceded(ARROW,IDENTIFIER)) -> ARROW . IDENTIFIER [ LBRACE ]
-##
-## The known suffix of the stack is as follows:
-## ARROW
-##
-
-Expected function return type after `->`.
-
-prog: FUN LPAREN RPAREN ARROW IDENTIFIER WHILE
-##
-## Ends in an error in state: 109.
-##
-## statement -> FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) . block [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-##
-## The known suffix of the stack is as follows:
-## FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER))
-##
-
-Expected block for function body after return type.
-
-prog: FUN LPAREN RPAREN ASSIGN WHILE
-##
-## Ends in an error in state: 110.
-##
-## statement -> FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN . EXTERN LPAREN STRING RPAREN [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-##
-## The known suffix of the stack is as follows:
-## FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN
-##
-
-Expected '@extern' keyword after '=' in external function declaration.
-
-
-prog: FUN LPAREN RPAREN ASSIGN EXTERN WHILE
-##
-## Ends in an error in state: 111.
-##
-## statement -> FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN . LPAREN STRING RPAREN [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-##
-## The known suffix of the stack is as follows:
-## FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN
-##
-
-Expected '(' after '@extern' keyword.
-
-
-prog: FUN LPAREN RPAREN ASSIGN EXTERN LPAREN WHILE
-##
-## Ends in an error in state: 112.
-##
-## statement -> FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN LPAREN . STRING RPAREN [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
-##
-## The known suffix of the stack is as follows:
-## FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN LPAREN
-##
-
-Expected string literal with external library/function name in '@extern()' declaration.
-
-
+Expected opening `{` after `else`.
 
 prog: LBRACE LBRACE RBRACE EOF
 ##
-## Ends in an error in state: 113.
+## Ends in an error in state: 128.
 ##
 ## block_expr_inside -> statement . block_expr_inside_rest [ RBRACE ]
 ## list(statement) -> statement . list(statement) [ RBRACE ]
@@ -1536,22 +1560,22 @@ prog: LBRACE LBRACE RBRACE EOF
 Unclosed block at end of file.
 
 
-prog: FUN LPAREN RPAREN ASSIGN EXTERN LPAREN STRING RPAREN WHILE
+prog: LBRACE LBRACE RBRACE LBRACE RBRACE SEMICOLON
 ##
-## Ends in an error in state: 114.
+## Ends in an error in state: 129.
 ##
-## statement -> FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN LPAREN STRING RPAREN . SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## block_expr_inside_rest -> statement . block_expr_inside_rest [ RBRACE ]
+## list(statement) -> statement . list(statement) [ RBRACE ]
 ##
 ## The known suffix of the stack is as follows:
-## FUN IDENTIFIER LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN LPAREN STRING RPAREN
+## statement
 ##
 
-Expected ';' after '@extern' declaration.
-
+Unexpected `;`.
 
 prog: LBRACE LBRACE RBRACE IDENTIFIER RPAREN
 ##
-## Ends in an error in state: 115.
+## Ends in an error in state: 130.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
@@ -1580,83 +1604,17 @@ prog: LBRACE LBRACE RBRACE IDENTIFIER RPAREN
 ## This implies that, although the LR(1) items shown above provide an
 ## accurate view of the past (what has been recognized so far), they
 ## may provide an INCOMPLETE view of the future (what was expected next).
-## In state 19, spurious reduction of production option(delimited(LBRACKET,expr,RBRACKET)) ->
-## In state 136, spurious reduction of production expr_without_block -> IDENTIFIER option(delimited(LBRACKET,expr,RBRACKET))
-## In state 41, spurious reduction of production expr -> expr_without_block
+## In state 31, spurious reduction of production option(delimited(LBRACKET,expr,RBRACKET)) ->
+## In state 150, spurious reduction of production expr_without_block -> IDENTIFIER option(delimited(LBRACKET,expr,RBRACKET))
+## In state 57, spurious reduction of production expr -> expr_without_block
 ##
 
 Expected `;` after expression.
 
 
-prog: CONST WHILE
-##
-## Ends in an error in state: 119.
-##
-## statement -> CONST . IDENTIFIER COLON IDENTIFIER ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
-##
-## The known suffix of the stack is as follows:
-## CONST
-##
-
-Expected identifier after `const` keyword.
-
-
-prog: CONST IDENTIFIER WHILE
-##
-## Ends in an error in state: 120.
-##
-## statement -> CONST IDENTIFIER . COLON IDENTIFIER ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
-##
-## The known suffix of the stack is as follows:
-## CONST IDENTIFIER
-##
-
-Expected declaration after `const` keyword.
-
-
-
-prog: FUN LPAREN RPAREN ASSIGN EXTERN LPAREN STRING WHILE
-##
-## Ends in an error in state: 124.
-##
-## expr -> FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN LPAREN STRING . RPAREN SEMICOLON [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
-##
-## The known suffix of the stack is as follows:
-## FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,IDENTIFIER)) ASSIGN EXTERN LPAREN STRING
-##
-
-Unexpected token in `@extern` declaration. Expected closing `)`.
-
-
-prog: LBRACE LBRACE RBRACE LBRACE RBRACE SEMICOLON
-##
-## Ends in an error in state: 126.
-##
-## block_expr_inside_rest -> statement . block_expr_inside_rest [ RBRACE ]
-## list(statement) -> statement . list(statement) [ RBRACE ]
-##
-## The known suffix of the stack is as follows:
-## statement
-##
-
-Unexpected `;`.
-
-prog: LBRACE RBRACE SEMICOLON
-##
-## Ends in an error in state: 127.
-##
-## list(statement) -> statement . list(statement) [ RBRACE EOF ]
-##
-## The known suffix of the stack is as follows:
-## statement
-##
-
-Unexpected `;`.
-
-
 prog: LBRACE FALSE WHILE
 ##
-## Ends in an error in state: 130.
+## Ends in an error in state: 133.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
@@ -1675,7 +1633,7 @@ prog: LBRACE FALSE WHILE
 ## bin_expr -> expr . LAND expr [ SEMICOLON RSH RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ## bin_expr -> expr . LOR expr [ SEMICOLON RSH RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ## block_expr_inside -> expr . [ RBRACE ]
-## expr_statement -> expr . SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE ]
+## expr_statement -> expr . SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE CONST ]
 ## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
@@ -1684,9 +1642,114 @@ prog: LBRACE FALSE WHILE
 
 Expected `;` or `}` after expression.
 
+prog: FUN LPAREN RPAREN ASSIGN WHILE
+##
+## Ends in an error in state: 136.
+##
+## expr -> FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) ASSIGN . EXTERN LPAREN STRING RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) ASSIGN
+##
+
+Expected '@extern' keyword after '=' in external function declaration.
+
+
+prog: FUN LPAREN RPAREN ASSIGN EXTERN WHILE
+##
+## Ends in an error in state: 137.
+##
+## expr -> FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) ASSIGN EXTERN . LPAREN STRING RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) ASSIGN EXTERN
+##
+
+Expected '(' after '@extern' keyword.
+
+
+prog: FUN LPAREN RPAREN ASSIGN EXTERN LPAREN WHILE
+##
+## Ends in an error in state: 138.
+##
+## expr -> FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) ASSIGN EXTERN LPAREN . STRING RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) ASSIGN EXTERN LPAREN
+##
+
+Expected string literal with external library/function name in '@extern()' declaration.
+
+
+
+prog: FUN LPAREN RPAREN ASSIGN EXTERN LPAREN STRING WHILE
+##
+## Ends in an error in state: 139.
+##
+## expr -> FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) ASSIGN EXTERN LPAREN STRING . RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## FUN LPAREN loption(separated_nonempty_list(COMMA,param)) RPAREN option(preceded(ARROW,type_name)) ASSIGN EXTERN LPAREN STRING
+##
+
+Unexpected token in `@extern` declaration. Expected closing `)`.
+
+
+prog: IDENTIFIER LBRACKET IDENTIFIER SEMICOLON
+##
+## Ends in an error in state: 144.
+##
+## bin_expr -> expr . PLUS expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . MINUS expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . MUL expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . DIV expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LSH expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . RSH expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . BAND expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . BOR expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . GT expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . GEQ expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LT expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LEQ expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . EQUAL expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . NOT_EQUAL expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LAND expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LOR expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## expr_without_block -> IDENTIFIER LBRACKET expr . RBRACKET ASSIGN expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr_without_block -> expr . LPAREN arg_list RPAREN [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## option(delimited(LBRACKET,expr,RBRACKET)) -> LBRACKET expr . RBRACKET [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## IDENTIFIER LBRACKET expr
+##
+## WARNING: This example involves spurious reductions.
+## This implies that, although the LR(1) items shown above provide an
+## accurate view of the past (what has been recognized so far), they
+## may provide an INCOMPLETE view of the future (what was expected next).
+## In state 31, spurious reduction of production option(delimited(LBRACKET,expr,RBRACKET)) ->
+## In state 150, spurious reduction of production expr_without_block -> IDENTIFIER option(delimited(LBRACKET,expr,RBRACKET))
+## In state 57, spurious reduction of production expr -> expr_without_block
+##
+
+Expected `]` to close array index.
+
+
+prog: IDENTIFIER LBRACKET IDENTIFIER RBRACKET WHILE
+##
+## Ends in an error in state: 145.
+##
+## expr_without_block -> IDENTIFIER LBRACKET expr RBRACKET . ASSIGN expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## option(delimited(LBRACKET,expr,RBRACKET)) -> LBRACKET expr RBRACKET . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## IDENTIFIER LBRACKET expr RBRACKET
+##
+
+Expected expression, `=` or `;` after `]`.
+
 prog: IDENTIFIER LBRACKET IDENTIFIER RBRACKET ASSIGN WHILE
 ##
-## Ends in an error in state: 132.
+## Ends in an error in state: 146.
 ##
 ## expr_without_block -> IDENTIFIER LBRACKET expr RBRACKET ASSIGN . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
@@ -1699,7 +1762,7 @@ Expected expression for variable assignment.
 
 prog: IDENTIFIER LBRACKET IDENTIFIER RBRACKET ASSIGN FALSE WHILE
 ##
-## Ends in an error in state: 133.
+## Ends in an error in state: 147.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -1727,29 +1790,212 @@ prog: IDENTIFIER LBRACKET IDENTIFIER RBRACKET ASSIGN FALSE WHILE
 Expected `;` after variable assignment.
 
 
-prog: WHILE LPAREN IDENTIFIER RPAREN LBRACE LBRACE RBRACE EOF
+prog: IDENTIFIER ASSIGN WHILE
 ##
-## Ends in an error in state: 134.
+## Ends in an error in state: 148.
 ##
-## block_statement -> LBRACE list(statement) . RBRACE [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ELSE CONST ]
+## expr_without_block -> IDENTIFIER ASSIGN . expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ##
 ## The known suffix of the stack is as follows:
-## LBRACE list(statement)
+## IDENTIFIER ASSIGN
+##
+
+Expected expression for variable assignment.
+
+
+prog: IDENTIFIER ASSIGN FALSE WHILE
+##
+## Ends in an error in state: 149.
+##
+## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . MUL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . DIV expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . RSH expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . BAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . BOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . GT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . GEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LT expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LEQ expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LAND expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## bin_expr -> expr . LOR expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr_without_block -> IDENTIFIER ASSIGN expr . [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## IDENTIFIER ASSIGN expr
+##
+
+Expected `;` after variable assignment.
+
+
+prog: LPAREN IF LPAREN FALSE WHILE
+##
+## Ends in an error in state: 151.
+##
+## bin_expr -> expr . PLUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . MINUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . MUL expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . DIV expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LSH expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . RSH expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . BAND expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . BOR expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . GT expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . GEQ expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LT expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LEQ expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . EQUAL expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . NOT_EQUAL expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LAND expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LOR expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## expr_without_block -> expr . LPAREN arg_list RPAREN [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## ifelse_expr -> IF LPAREN expr . RPAREN block_expr option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## IF LPAREN expr
+##
+
+Expected closing `)` after if condition.
+
+prog: LPAREN IF LPAREN IDENTIFIER RPAREN WHILE
+##
+## Ends in an error in state: 152.
+##
+## ifelse_expr -> IF LPAREN expr RPAREN . block_expr option(preceded(ELSE,block_expr)) [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
+##
+## The known suffix of the stack is as follows:
+## IF LPAREN expr RPAREN
+##
+
+Expected opening `{` after if condition.
+
+prog: LET IDENTIFIER COLON IDENTIFIER LBRACKET FALSE WHILE
+##
+## Ends in an error in state: 153.
+##
+## bin_expr -> expr . PLUS expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . MINUS expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . MUL expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . DIV expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LSH expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . RSH expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . BAND expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . BOR expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . GT expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . GEQ expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LT expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LEQ expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . EQUAL expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . NOT_EQUAL expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LAND expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LOR expr [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## expr_without_block -> expr . LPAREN arg_list RPAREN [ RSH RBRACKET PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## non_paren_atomic_type -> atomic_type LBRACKET expr . RBRACKET [ SEMICOLON RPAREN LBRACKET LBRACE COMMA ASSIGN ARROW ]
+##
+## The known suffix of the stack is as follows:
+## atomic_type LBRACKET expr
+##
+
+Expected `]` to close `[`.
+
+prog: LET IDENTIFIER COLON IDENTIFIER RPAREN
+##
+## Ends in an error in state: 159.
+##
+## statement -> LET IDENTIFIER option(preceded(COLON,type_name)) . ASSIGN expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
+## statement -> LET IDENTIFIER option(preceded(COLON,type_name)) . SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
+##
+## The known suffix of the stack is as follows:
+## LET IDENTIFIER option(preceded(COLON,type_name))
 ##
 ## WARNING: This example involves spurious reductions.
 ## This implies that, although the LR(1) items shown above provide an
 ## accurate view of the past (what has been recognized so far), they
 ## may provide an INCOMPLETE view of the future (what was expected next).
-## In state 127, spurious reduction of production list(statement) ->
-## In state 128, spurious reduction of production list(statement) -> statement list(statement)
+## In state 38, spurious reduction of production atomic_type -> non_paren_atomic_type
+## In state 41, spurious reduction of production type_name -> atomic_type
+## In state 158, spurious reduction of production option(preceded(COLON,type_name)) -> COLON type_name
 ##
 
-Unclosed block at end of file.
+Expected `=` with initializer or `;` after `let` declaration.
+
+
+
+prog: LET IDENTIFIER COLON IDENTIFIER ASSIGN WHILE
+##
+## Ends in an error in state: 161.
+##
+## statement -> LET IDENTIFIER option(preceded(COLON,type_name)) ASSIGN . expr SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
+##
+## The known suffix of the stack is as follows:
+## LET IDENTIFIER option(preceded(COLON,type_name)) ASSIGN
+##
+
+Expected expression after `=`.
+
+prog: LET IDENTIFIER COLON IDENTIFIER ASSIGN FALSE WHILE
+##
+## Ends in an error in state: 162.
+##
+## bin_expr -> expr . PLUS expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . MINUS expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . MUL expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . DIV expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LSH expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . RSH expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . BAND expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . BOR expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . GT expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . GEQ expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LT expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LEQ expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . EQUAL expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . NOT_EQUAL expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LAND expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## bin_expr -> expr . LOR expr [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## expr_without_block -> expr . LPAREN arg_list RPAREN [ SEMICOLON RSH PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
+## statement -> LET IDENTIFIER option(preceded(COLON,type_name)) ASSIGN expr . SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
+##
+## The known suffix of the stack is as follows:
+## LET IDENTIFIER option(preceded(COLON,type_name)) ASSIGN expr
+##
+
+Expected `;` after variable declaration.
+
+prog: NOT LBRACE LBRACE RBRACE RBRACE
+##
+## Ends in an error in state: 164.
+##
+## block_expr_inside -> statement . block_expr_inside_rest [ RBRACE ]
+##
+## The known suffix of the stack is as follows:
+## statement
+##
+
+Expected expression inside block.
+
+
+prog: NOT LBRACE LBRACE RBRACE LBRACE RBRACE RBRACE
+##
+## Ends in an error in state: 165.
+##
+## block_expr_inside_rest -> statement . block_expr_inside_rest [ RBRACE ]
+##
+## The known suffix of the stack is as follows:
+## statement
+##
+
+Unexpected token inside block. Expected statement or closing `}`.
 
 
 prog: LPAREN FALSE WHILE
 ##
-## Ends in an error in state: 135.
+## Ends in an error in state: 166.
 ##
 ## bin_expr -> expr . PLUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
@@ -1778,7 +2024,7 @@ Expected closing `)` after expression.
 
 prog: MINUS FALSE WHILE
 ##
-## Ends in an error in state: 137.
+## Ends in an error in state: 168.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -1808,7 +2054,7 @@ Unexpected keyword after expression.
 
 prog: NOT FALSE WHILE
 ##
-## Ends in an error in state: 138.
+## Ends in an error in state: 169.
 ##
 ## bin_expr -> expr . PLUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ SEMICOLON RSH RPAREN RBRACKET RBRACE PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV COMMA BOR BAND ]
@@ -1838,7 +2084,7 @@ Unexpected keyword after expression.
 
 prog: WHILE LPAREN FALSE WHILE
 ##
-## Ends in an error in state: 139.
+## Ends in an error in state: 170.
 ##
 ## bin_expr -> expr . PLUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ## bin_expr -> expr . MINUS expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
@@ -1857,7 +2103,7 @@ prog: WHILE LPAREN FALSE WHILE
 ## bin_expr -> expr . LAND expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ## bin_expr -> expr . LOR expr [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
 ## expr_without_block -> expr . LPAREN arg_list RPAREN [ RSH RPAREN PLUS NOT_EQUAL MUL MINUS LT LSH LPAREN LOR LEQ LAND GT GEQ EQUAL DIV BOR BAND ]
-## while_loop -> WHILE LPAREN expr . RPAREN block_statement [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF ]
+## while_loop -> WHILE LPAREN expr . RPAREN block_statement [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
 ## The known suffix of the stack is as follows:
 ## WHILE LPAREN expr
@@ -1865,67 +2111,10 @@ prog: WHILE LPAREN FALSE WHILE
 
 Expected closing `)` after condition.
 
-prog: LET IDENTIFIER COLON IDENTIFIER LBRACKET IDENTIFIER RBRACKET WHILE
-##
-## Ends in an error in state: 140.
-##
-## statement -> LET IDENTIFIER COLON IDENTIFIER LBRACKET expr RBRACKET . SEMICOLON [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
-##
-## The known suffix of the stack is as follows:
-## LET IDENTIFIER COLON IDENTIFIER LBRACKET expr RBRACKET
-##
-
-Expected `;` after variable declaration.
-
-
-prog: LBRACE RBRACE RBRACE
-##
-## Ends in an error in state: 143.
-##
-## prog -> list(statement) . EOF [ # ]
-##
-## The known suffix of the stack is as follows:
-## list(statement)
-##
-## WARNING: This example involves spurious reductions.
-## This implies that, although the LR(1) items shown above provide an
-## accurate view of the past (what has been recognized so far), they
-## may provide an INCOMPLETE view of the future (what was expected next).
-## In state 114, spurious reduction of production list(statement) ->
-## In state 115, spurious reduction of production list(statement) -> statement list(statement)
-##
-
-Expected end of file.
-
-prog: NOT LBRACE LBRACE RBRACE RBRACE
-##
-## Ends in an error in state: 145.
-##
-## block_expr_inside -> statement . block_expr_inside_rest [ RBRACE ]
-##
-## The known suffix of the stack is as follows:
-## statement
-##
-
-Expected expression inside block.
-
-
-prog: NOT LBRACE LBRACE RBRACE LBRACE RBRACE RBRACE
-##
-## Ends in an error in state: 147.
-##
-## block_expr_inside_rest -> statement . block_expr_inside_rest [ RBRACE ]
-##
-## The known suffix of the stack is as follows:
-## statement
-##
-
-Unexpected token inside block. Expected statement or closing `}`.
-
 
 prog: WHILE LPAREN IDENTIFIER RPAREN WHILE
 ##
-## Ends in an error in state: 153.
+## Ends in an error in state: 171.
 ##
 ## while_loop -> WHILE LPAREN expr RPAREN . block_statement [ WHILE TRUE STRING RBRACE NULLPTR NOT MINUS LPAREN LET LBRACE INT IF IDENTIFIER FUN FALSE EOF CONST ]
 ##
@@ -1945,3 +2134,22 @@ Expected `{` to start the loop body.
 
 
 
+
+prog: LBRACE RBRACE RBRACE
+##
+## Ends in an error in state: 174.
+##
+## prog -> list(statement) . EOF [ # ]
+##
+## The known suffix of the stack is as follows:
+## list(statement)
+##
+## WARNING: This example involves spurious reductions.
+## This implies that, although the LR(1) items shown above provide an
+## accurate view of the past (what has been recognized so far), they
+## may provide an INCOMPLETE view of the future (what was expected next).
+## In state 113, spurious reduction of production list(statement) ->
+## In state 114, spurious reduction of production list(statement) -> statement list(statement)
+##
+
+Expected end of file.

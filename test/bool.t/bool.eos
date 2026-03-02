@@ -1,5 +1,5 @@
-fun print(c:str)  = @extern("print");
-fun dprint(s:str, s2:str, c:bool) 
+const print = fun(c:str)  = @extern("print");
+const dprint = fun(s:str, s2:str, c:bool) 
 {
     if(c) {
         print(s);
@@ -7,7 +7,7 @@ fun dprint(s:str, s2:str, c:bool)
     else{
         print(s2);
     }
-}
+};
 let s:str = "Hello, World!";
 let s2:str = "Hello, Eos!";
 let b:bool = false;

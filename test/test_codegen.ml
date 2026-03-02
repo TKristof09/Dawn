@@ -557,9 +557,9 @@ let%expect_test "binops" =
 let%expect_test "function call" =
     let test_str =
         {|
-    fun f(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64) -> i64 {
+    const f = fun(a: i64, b: i64, c: i64, d: i64, e: i64, f: i64) -> i64 {
         69 - a + b + c + d + e + f
-    }
+    };
 
     let i: i64 = f(1,2,3,4,5,6) + 69;
     if(i==0) {}

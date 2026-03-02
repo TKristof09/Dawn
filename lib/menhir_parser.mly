@@ -88,29 +88,35 @@ let prog := terminated(statement*, EOF)
 let statement :=
     | expr_statement
     | while_loop
-    | LET; id = IDENTIFIER; t = option(preceded(COLON, IDENTIFIER)); ASSIGN; e = terminated(expr, SEMICOLON); 
+    | LET; id = IDENTIFIER; t = option(preceded(COLON, type_name)); ASSIGN; e = terminated(expr, SEMICOLON); 
         {  
             match t with
             | None -> 
                 (* TODO *)
                 Declaration_assign (id, Type "", e, Mutable) |> make_node $sloc
             | Some t ->
-                Declaration_assign (id, Type t, e, Mutable) |> make_node $sloc
+                Declaration_assign (id, t, e, Mutable) |> make_node $sloc
         }
-    | CONST; id = IDENTIFIER; t = option(preceded(COLON, IDENTIFIER)); ASSIGN; e = terminated(expr, SEMICOLON); 
+    | CONST; id = IDENTIFIER; t = option(preceded(COLON, type_name)); ASSIGN; e = terminated(expr, SEMICOLON); 
         {  
             match t with
             | None -> 
                 (* TODO *)
                 Declaration_assign (id, Type "", e, Const) |> make_node $sloc
             | Some t ->
-                Declaration_assign (id, Type t, e, Const) |> make_node $sloc
+                Declaration_assign (id, t, e, Const) |> make_node $sloc
         }
-    | LET; id = IDENTIFIER; COLON; t = IDENTIFIER; n = delimited(LBRACKET, expr, RBRACKET); SEMICOLON; {  Declaration (id, Array (Type t, n)) |> make_node $sloc }
-    | LET; id = IDENTIFIER; COLON; t = IDENTIFIER; SEMICOLON; {  Declaration (id, Type t) |> make_node $sloc }
+    | LET; id = IDENTIFIER; t = option(preceded(COLON, type_name)); SEMICOLON; 
+        {  
+            match t with
+            | None ->
+                Declaration (id, Type "") |> make_node $sloc 
+            | Some t -> 
+                Declaration (id, t) |> make_node $sloc 
+        }
 
 
-let param := id = IDENTIFIER; COLON; typ = IDENTIFIER; { (id, typ) }
+let param := id = IDENTIFIER; COLON; typ = type_name; { (id, typ) }
 
 let expr_statement := 
     | e = terminated(expr, SEMICOLON); { ExprStatement e |> make_node $sloc }
@@ -120,26 +126,26 @@ let expr_statement :=
 let expr := 
     | expr_without_block
     | expr_with_block
-    | FUN; params = delimited(LPAREN, separated_list(COMMA, param), RPAREN); ret_t = option(preceded(ARROW, IDENTIFIER)); body = block; 
+    | FUN; params = delimited(LPAREN, separated_list(COMMA, param), RPAREN); ret_t = option(preceded(ARROW, type_name)); body = block; 
         { 
-            let param_types = List.map (fun (_,p) -> Type p) params in
-            let param_names = List.map (fun (id, _) -> id) params in
+            let param_types = List.map (snd) params in
+            let param_names = List.map (fst) params in
             let ret_typ = 
                 match ret_t with
                     | None -> Type "void"
-                    | Some t -> Type t
+                    | Some t -> t
             in
             let typ = Fn (ret_typ, param_types) in
             FnDeclaration (typ, param_names, body) |> make_node $sloc 
         }
-    | FUN; params = delimited(LPAREN, separated_list(COMMA, param), RPAREN); ret_t = option(preceded(ARROW, IDENTIFIER)); ASSIGN; EXTERN; LPAREN; external_name = STRING; RPAREN; 
+    | FUN; params = delimited(LPAREN, separated_list(COMMA, param), RPAREN); ret_t = option(preceded(ARROW, type_name)); ASSIGN; EXTERN; LPAREN; external_name = STRING; RPAREN; 
         { 
-            let param_types = List.map (fun (_,p) -> Type p) params in
-            let param_names = List.map (fun (id, _) -> id) params in
+            let param_types = List.map (snd) params in
+            let param_names = List.map (fst) params in
             let ret_typ = 
                 match ret_t with
                     | None -> Type "void"
-                    | Some t -> Type t
+                    | Some t -> t
             in
             let typ = Fn (ret_typ, param_types) in
             ExternalFnDeclaration (typ, param_names, external_name) |> make_node $sloc 
@@ -230,3 +236,38 @@ let binop ==
     | LEQ; {  fun (e,e') -> LEq (e,e') |> make_node $sloc }
     | EQUAL; {  fun (e,e') -> Eq (e,e') |> make_node $sloc }
     | NOT_EQUAL; {  fun (e,e') -> NEq (e,e') |> make_node $sloc }
+
+
+(* let type_name :=  *)
+(*     | LPAREN; LPAREN; params = separated_list(COMMA, type_name); RPAREN; ARROW; ret = type_name; RPAREN; { Fn(ret, params) } *)
+(*     | name = IDENTIFIER; { Type name } *)
+(*     | t = type_name; n = delimited(LBRACKET, expr, RBRACKET); { Array (t, n) } *)
+
+
+(* 1. Parses anything inside parentheses into a list of types *)
+let paren_types :=
+  | LPAREN; RPAREN; {[] }
+  | LPAREN; t = type_name; RPAREN; { [t] }
+  | LPAREN; t = type_name; COMMA; ts = separated_list(COMMA, type_name); RPAREN; { t :: ts }
+
+(* 2. NEW: Atomic types that do NOT start with an open parenthesis (Identifiers, Arrays) *)
+let non_paren_atomic_type :=
+  | name = IDENTIFIER; { Type name }
+  | t = atomic_type; n = delimited(LBRACKET, expr, RBRACKET); { Array (t, n) }
+
+(* 3. General atomic type: either a non-paren type or a paren type *)
+let atomic_type :=
+  | t = non_paren_atomic_type; { t }
+  | ts = paren_types; 
+    { 
+      match ts with
+      | [single] -> single
+      |[] -> failwith "Unit type () not supported yet"
+      | _ -> failwith "Tuple types not supported yet"
+    }
+
+(* 4. Top-level type: Allow either a paren list OR a single non-paren type before ARROW *)
+let type_name :=
+  | params = paren_types; ARROW; ret = atomic_type; { Fn(ret, params) }
+  | param = non_paren_atomic_type; ARROW; ret = atomic_type; { Fn(ret,[param]) }
+  | t = atomic_type; { t }

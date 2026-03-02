@@ -1,4 +1,4 @@
-fun print(c:str) -> i64 = @extern("print");
+const print = fun(c:str) = @extern("print");
 
 
 let board_size: i64 = 30;
