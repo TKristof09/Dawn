@@ -12,14 +12,8 @@ let pp_sub_lattice pp_a fmt = function
     | Value v -> pp_a fmt v
 
 let pp_fun_indices fmt = function
-    | `Include set ->
-        Format.fprintf fmt "`Include %a"
-          (Format.pp_print_list Format.pp_print_int)
-          (Set.to_list set)
-    | `Exclude set ->
-        Format.fprintf fmt "`Exclude %a"
-          (Format.pp_print_list Format.pp_print_int)
-          (Set.to_list set)
+    | `Include set -> Format.fprintf fmt "`Include %s" ([%derive.show: int list] (Set.to_list set))
+    | `Exclude set -> Format.fprintf fmt "`Exclude %s" ([%derive.show: int list] (Set.to_list set))
 
 type fun_ptr = {
     params : t list;
@@ -59,7 +53,8 @@ let make_fun_ptr ?idx params ret =
         match t with
         | Integer _
         | Bool _
-        | Ptr _ ->
+        | Ptr _
+        | FunPtr _ ->
             true
         | _ -> false
     in
@@ -68,6 +63,7 @@ let make_fun_ptr ?idx params ret =
         | Integer _
         | Bool _
         | Ptr _
+        | FunPtr _
         | Void ->
             true
         | _ -> false
@@ -77,7 +73,7 @@ let make_fun_ptr ?idx params ret =
     let fun_indices =
         match idx with
         | Some idx -> `Include (Int.Set.singleton idx)
-        | None -> `Include Int.Set.empty
+        | None -> `Exclude Int.Set.empty
     in
     FunPtr (Value { params; ret; fun_indices })
 
@@ -133,13 +129,17 @@ let make_string s =
     let el_type = ConstArray (Value contents) in
     make_array_inner "str" el_type (Integer (Value len))
 
-let of_ast_type (ast_type : Ast.var_type) : t =
+let rec of_ast_type (ast_type : Ast.var_type) : t =
     (* FIXME actually implement *)
     match ast_type with
     | Type "i64" -> Integer All
     | Type "str" -> Ptr (make_array_inner "str" (ConstArray All) (Integer All))
     | Type "bool" -> Bool All
     | Type "void" -> Void
+    | Fn (ret, params) ->
+        let ret = of_ast_type ret in
+        let params = List.map params ~f:of_ast_type in
+        make_fun_ptr params ret
     | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type ast_type) ()
 
 let rec meet t t' =
@@ -352,13 +352,21 @@ let rec is_constant t =
 
 let get_fun_idx t =
     match t with
-    | FunPtr (Value ({ params = _; ret = _; fun_indices } as fun_ptr)) -> (
+    | FunPtr (Value { params = _; ret = _; fun_indices }) -> (
         match fun_indices with
-        | `Include s when Set.length s = 1 -> Set.choose_exn s
+        | `Include s when Set.length s = 1 -> Some (Set.choose_exn s)
         | `Include _
         | `Exclude _ ->
-            failwithf "Function idx couldn't be determined %s" (show_fun_ptr fun_ptr) ())
-    | _ -> assert false
+            None)
+    | _ -> failwithf "Invalid arg: %s" (show t) ()
+
+let iter_fun_indices t ~f =
+    match t with
+    | FunPtr (Value { params = _; ret = _; fun_indices }) -> (
+        match fun_indices with
+        | `Include s -> Set.iter s ~f
+        | `Exclude _ -> failwithf "Can't iterate unbound function indices %s" (show t) ())
+    | _ -> failwithf "Invalid arg: %s" (show t) ()
 
 let is_const_array t =
     match t with

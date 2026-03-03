@@ -579,7 +579,7 @@ let%expect_test "function call" =
         #R8    (%14 ): (Int 5)                                                       (Ideal IR: #29)
         #RSI   (%11 ): (Int 2)                                                       (Ideal IR: #26)
         #RDI   (%10 ): (Int 1)                                                       (Ideal IR: #25)
-               (%8  ): (FunctionCall 1) [ #RDI (%10), #RSI (%11), #RDX (%12), #RCX (%13), #R8 (%14), #R9 (%15) ] (Ideal IR: #31)
+               (%8  ): (FunctionCall (Some 1)) [ #RDI (%10), #RSI (%11), #RDX (%12), #RCX (%13), #R8 (%14), #R9 (%15) ] (Ideal IR: #31)
 
       Block #7 (FunctionCallEnd): -> [#6]
         #RAX   (%25 ):   |-(DProj 1)                                                 (Ideal IR: #34)

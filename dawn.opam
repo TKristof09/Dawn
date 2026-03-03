@@ -11,10 +11,11 @@ doc: "https://url/to/documentation"
 bug-reports: "https://github.com/username/reponame/issues"
 depends: [
   "ocaml"
-  "dune" {>= "3.16"}
+  "dune" {>= "3.21"}
   "ppx_deriving"
   "menhir"
   "core"
+  "core_kernel"
   "lrgrep"
   "odoc" {with-doc}
 ]
@@ -33,6 +34,4 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/username/reponame.git"
-pin-depends: [
-  ["lrgrep.dev" "git+https://github.com/TKristof09/lrgrep"]
-]
+x-maintenance-intent: ["(latest)"]

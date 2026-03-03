@@ -35,7 +35,7 @@ let compile filename =
         if not (List.is_empty type_errors) then
           List.iter type_errors ~f:(fun err -> [%log.error err])
         else (
-          [%log.debug "\n%a" Ir_printer.pp_dot son];
+          [%log.debug "\n%s" (Ir_printer.to_dot son)];
           let schedules = Scheduler.schedule son in
           (* only do code gen on non external functions *)
           let functions =

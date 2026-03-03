@@ -1,10 +1,14 @@
 //let f : (i64, str -> (i64, i64 -> void)) = _;
 //let f : ((i64 -> void), str) -> (() -> void) = _;
-const f = fun(i: i64) {
-    print_int(i);
+const f = fun(p: (i64 -> void), i: i64) {
+    p(i);
 };
 //// TODO: fix this, this isn't supposed to be allowed. Only things like functions and types should be forward refable
 let i: i64 = j;
 const j: i64 = 5;
-f(i);
+f(g, i);
+f(print_int, i);
 const print_int = fun(i:i64) = @extern("print_int");
+const g = fun(i:i64) {
+    print_int(10 + i);
+};

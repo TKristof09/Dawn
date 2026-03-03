@@ -112,6 +112,8 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             let ptr_addr =
                 match n.ir_node.typ with
                 | Ptr p when Types.is_const_array p -> Printf.sprintf "C_%d" n.ir_node.id
+                | FunPtr (Value _) ->
+                    Linker.get_name linker (Types.get_fun_idx n.ir_node.typ |> Option.value_exn)
                 | _ -> failwith "idk"
             in
             Printf.sprintf "\t%s %s, [%s]" op_str (asm_of_loc reg) ptr_addr
@@ -227,10 +229,15 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             Printf.sprintf "%s:\n\tpush rbp\n\tmov rbp, rsp" target
         | Return -> Printf.sprintf "\tleave\n\t%s" (asm_of_op n.kind)
         | Param _ -> ""
-        | FunctionCall i ->
+        | FunctionCall (Some i) ->
             let op = asm_of_op n.kind in
             let target = Linker.get_name linker i in
             Printf.sprintf "\t%s %s" op target
+        | FunctionCall None ->
+            let op = asm_of_op n.kind in
+            let target = Graph.get_dependency g n 1 |> Option.value_exn in
+            let target_reg = Hashtbl.find_exn reg_assoc target in
+            Printf.sprintf "\t%s %s" op (asm_of_loc target_reg)
         | FunctionCallEnd -> ""
         | CalleeSave _ -> ""
         | New ->

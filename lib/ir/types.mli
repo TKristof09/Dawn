@@ -44,7 +44,8 @@ val of_ast_type : Ast.var_type -> t
 val meet : t -> t -> t
 val join : t -> t -> t
 val is_constant : t -> bool
-val get_fun_idx : t -> Core.Int.Set.Elt.t
+val get_fun_idx : t -> int option
+val iter_fun_indices : t -> f:(int -> unit) -> unit
 val get_string : t -> string option
 val is_const_array : t -> bool
 val get_offset : t -> string -> int

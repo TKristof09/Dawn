@@ -41,6 +41,11 @@ module RangeSet = struct
   let pp fmt s = Format.fprintf fmt "%s" (show s)
 end
 
+type allocation_failure = {
+    failed_ranges : Range.t list;
+    self_conflicts : (Range.t, NodeSet.t) Hashtbl.t;
+  }
+
 let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node.t list) =
     let ranges = Hashtbl.create (module Machine_node) in
     List.iter program ~f:(fun n ->
@@ -80,6 +85,7 @@ let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node
           |> List.iter ~f:(fun proj ->
               Hashtbl.add ranges ~key:proj ~data:(NodeSet.singleton proj) |> ignore));
     let node_to_lrg = Hashtbl.create (module Machine_node) in
+    let failed_ranges = Hash_set.create (module Range) in
     Hashtbl.iter ranges ~f:(fun r ->
         (* def side constraints *)
         let reg_mask =
@@ -92,7 +98,7 @@ let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node
                       |> Option.value ~default:Registers.Mask.empty))
         in
         (* use side constraints *)
-        if not (Registers.Mask.is_empty reg_mask) then
+        if not (Registers.Mask.is_empty reg_mask) then (
           let reg_mask, single_reg_uses =
               Set.fold r ~init:(reg_mask, NodeSet.empty)
                 ~f:(fun (reg_mask, single_reg_use_count) n ->
@@ -123,8 +129,17 @@ let build_live_ranges (g : (Machine_node.t, 'a) Graph.t) (program : Machine_node
                       | None -> (reg_mask, single_reg_uses)))
           in
           let lrg : Range.t = { reg_mask; nodes = r; single_reg_uses } in
-          Set.iter r ~f:(fun n -> Hashtbl.set node_to_lrg ~key:n ~data:lrg));
-    node_to_lrg
+          if Registers.Mask.is_empty lrg.reg_mask then
+            Hash_set.add failed_ranges lrg;
+          Set.iter r ~f:(fun n -> Hashtbl.set node_to_lrg ~key:n ~data:lrg)));
+    if Hash_set.is_empty failed_ranges then
+      Ok node_to_lrg
+    else
+      Error
+        {
+          failed_ranges = Hash_set.to_list failed_ranges;
+          self_conflicts = Hashtbl.create (module Range);
+        }
 
 let pp_lrgs fmt node_to_lrg =
     Format.fprintf fmt "%a" RangeSet.pp (Hashtbl.data node_to_lrg |> RangeSet.of_list)
@@ -135,11 +150,6 @@ type basic_block = {
   }
 
 type reg_assignment = (Range.t, Registers.loc) Hashtbl.t
-
-type allocation_failure = {
-    failed_ranges : Range.t list;
-    self_conflicts : (Range.t, NodeSet.t) Hashtbl.t;
-  }
 
 module InterferenceGraph : sig
   type t
@@ -403,13 +413,11 @@ end = struct
       let risky_score g (r : Range.t) =
           (* if the range has not many neighbours it has an easier chance of "accidentally" getting colored despite being non trivial *)
           let base_score =
-              match Set.choose r.nodes with
-              | None -> 1000
-              | Some n -> (
-                  match n.kind with
-                  (* prefer callee save for risky pick as they cover big area (entire function) *)
-                  | Machine_node.CalleeSave _ -> 100000 - 1
-                  | _ -> 1000)
+              let n = Set.choose_exn r.nodes in
+              match n.kind with
+              (* prefer callee save for risky pick as they cover big area (entire function) *)
+              | Machine_node.CalleeSave _ -> 100000 - 1
+              | _ -> 1000
               (*- (Hashtbl.find_exn ifg r |> Set.length)*)
           in
           if Set.length r.nodes = 1 && Machine_node.is_cheap_to_clone (Set.choose_exn r.nodes) then
@@ -919,10 +927,10 @@ let allocate g program =
         [%log.debug "\n\n ================= ROUND %d ======================\n\n" round];
         let attempt g program =
             [%log.debug "\n%a" Ir_printer.pp_machine_linear (g, program)];
-            let node_to_lrg = build_live_ranges g program in
-            [%log.debug "%a" pp_lrgs node_to_lrg];
+            let* node_to_lrg = build_live_ranges g program in
+            [%log.debug "Build liver ranges:\n%a" pp_lrgs node_to_lrg];
             let* ifg = InterferenceGraph.build g program node_to_lrg in
-            [%log.debug "\n%a" InterferenceGraph.pp ifg];
+            [%log.debug "Interference Graph:\n%a" InterferenceGraph.pp ifg];
             let* coloring = InterferenceGraph.color ifg g in
             Ok coloring
         in

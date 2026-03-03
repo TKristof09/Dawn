@@ -10,8 +10,16 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
         | Data Constant -> (
             match n.typ with
             | Types.FunPtr (Value _) ->
-                let fun_idx = Types.get_fun_idx n.typ in
-                Linker.set_name linker fun_idx name
+                let fun_idx = Types.get_fun_idx n.typ |> Option.value_exn in
+                (* HACK: only rename function if it is still the default name.
+                   This is to prevent renaming when assigning an existing
+                   function to a variable *)
+                if
+                  String.equal
+                    (Printf.sprintf "Anon_fn_%d" (fun_idx - 1))
+                    (Linker.get_name linker fun_idx)
+                then
+                  Linker.set_name linker fun_idx name
             | _ -> ())
         | _ -> ());
         Scope_node.define g scope name n (Poly.equal qualifier Ast.Const)

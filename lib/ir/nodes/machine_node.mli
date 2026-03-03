@@ -44,7 +44,7 @@ type machine_node_kind =
     | DProj of int
     | FunctionProlog of int
     | Return
-    | FunctionCall of int
+    | FunctionCall of int option
     | FunctionCallEnd
     | Param of int
     | CalleeSave of Registers.reg

@@ -17,7 +17,7 @@ let set_type g (n : Node.t) new_type =
     n.typ <- new_type;
     Graph.get_dependants g n
 
-let work extra_node_deps (g : (Node.t, Graph.readwrite) Graph.t) (n : Node.t) ~type_fn =
+let work linker extra_node_deps (g : (Node.t, Graph.readwrite) Graph.t) (n : Node.t) ~type_fn =
     let ~new_type, ~extra_deps = type_fn (Graph.readonly g) n in
     List.iter extra_deps ~f:(fun d ->
         Hashtbl.update extra_node_deps d ~f:(function
@@ -27,55 +27,78 @@ let work extra_node_deps (g : (Node.t, Graph.readwrite) Graph.t) (n : Node.t) ~t
         if Types.equal new_type n.typ then
           []
         else
+          let new_work = set_type g n new_type in
+          let new_fun_links =
+              match new_type with
+              | FunPtr _ ->
+                  Graph.get_dependants g n
+                  |> List.filter ~f:(fun dep ->
+                      match dep.kind with
+                      | Ctrl FunctionCall -> Node.equal (Fun_node.get_call_fun_ptr g dep) n
+                      | _ -> false)
+                  |> List.fold ~init:[] ~f:(fun acc dep ->
+                      let fun_nodes = Linker.link linker g dep in
+                      List.fold fun_nodes ~init:acc ~f:(fun acc fun_node ->
+                          let params =
+                              Graph.get_dependants g fun_node
+                              |> List.filter ~f:(fun n ->
+                                  match n.kind with
+                                  | Data (Param _) -> true
+                                  | _ -> false)
+                          in
+                          (fun_node :: params) @ acc))
+              | _ -> []
+          in
           let extras = Hashtbl.find extra_node_deps n |> Option.value ~default:NodeSet.empty in
-          Set.to_list extras @ set_type g n new_type
+          new_fun_links @ Set.to_list extras @ new_work
     in
     new_work
 
-let do_data_node extra_node_deps g n (k : Node.data_kind) =
+let do_data_node linker extra_node_deps g n (k : Node.data_kind) =
     match k with
     | Constant -> (* constant stays the same as it was *) []
     | Add
     | Sub
     | Mul
     | Div ->
-        work extra_node_deps g n ~type_fn:Arithmetic_nodes.compute_type
+        work linker extra_node_deps g n ~type_fn:Arithmetic_nodes.compute_type
     | Lsh
     | Rsh
     | BAnd
     | BOr ->
-        work extra_node_deps g n ~type_fn:Bitop_nodes.compute_type
-    | Proj _ -> work extra_node_deps g n ~type_fn:Proj_node.compute_type
+        work linker extra_node_deps g n ~type_fn:Bitop_nodes.compute_type
+    | Proj _ -> work linker extra_node_deps g n ~type_fn:Proj_node.compute_type
     | Eq
     | NEq
     | Lt
     | LEq
     | Gt
     | GEq ->
-        work extra_node_deps g n ~type_fn:Bool_nodes.compute_type
-    | Phi -> work extra_node_deps g n ~type_fn:Phi_node.compute_type
+        work linker extra_node_deps g n ~type_fn:Bool_nodes.compute_type
+    | Phi -> work linker extra_node_deps g n ~type_fn:Phi_node.compute_type
     | Param _ ->
         (* params are just fancy phi nodes so this should work the same *)
-        work extra_node_deps g n ~type_fn:Phi_node.compute_type
+        work linker extra_node_deps g n ~type_fn:Phi_node.compute_type
     | External _ -> (* this is just like a constant *) []
 
-let do_ctrl_node extra_node_deps g linker n (c : Node.ctrl_kind) =
+let do_ctrl_node linker extra_node_deps g n (c : Node.ctrl_kind) =
     match c with
     | Start ->
-        work extra_node_deps g n ~type_fn:(fun _ _ ->
+        work linker extra_node_deps g n ~type_fn:(fun _ _ ->
             (~new_type:(Types.Tuple (Value [ Control; Memory ])), ~extra_deps:[]))
     | Stop ->
-        work extra_node_deps g n ~type_fn:(fun _ _ -> (~new_type:Types.Control, ~extra_deps:[]))
-    | Proj _ -> work extra_node_deps g n ~type_fn:Proj_node.compute_type
-    | If -> work extra_node_deps g n ~type_fn:If_node.compute_type
-    | Region -> work extra_node_deps g n ~type_fn:Region_node.compute_type
+        work linker extra_node_deps g n ~type_fn:(fun _ _ ->
+            (~new_type:Types.Control, ~extra_deps:[]))
+    | Proj _ -> work linker extra_node_deps g n ~type_fn:Proj_node.compute_type
+    | If -> work linker extra_node_deps g n ~type_fn:If_node.compute_type
+    | Region -> work linker extra_node_deps g n ~type_fn:Region_node.compute_type
     | Loop ->
-        work extra_node_deps g n ~type_fn:(fun g n ->
+        work linker extra_node_deps g n ~type_fn:(fun g n ->
             let entry = Loop_node.get_entry_edge g n in
             (~new_type:entry.typ, ~extra_deps:[]))
-    | Function _ -> work extra_node_deps g n ~type_fn:Fun_node.compute_fun_node_type
+    | Function _ -> work linker extra_node_deps g n ~type_fn:Fun_node.compute_fun_node_type
     | Return ->
-        work extra_node_deps g n ~type_fn:(fun g n ->
+        work linker extra_node_deps g n ~type_fn:(fun g n ->
             let ctrl = Graph.get_dependency g n 0 |> Option.value_exn in
             let data = Graph.get_dependency g n 1 |> Option.value_exn in
             let new_type = Types.Tuple (Value [ ctrl.typ; data.typ ]) in
@@ -86,16 +109,36 @@ let do_ctrl_node extra_node_deps g linker n (c : Node.ctrl_kind) =
             let ctrl = Graph.get_dependency g n 0 |> Option.value_exn in
             ctrl.typ
         in
+        let fun_ptr = Graph.get_dependency g n 1 |> Option.value_exn in
         (* link calls to function when it just became reachable *)
-        if (not (Types.equal old_type Control)) && Types.equal new_type Control then
-          Linker.link linker g n;
-        work extra_node_deps g n ~type_fn:(fun _ _ -> (~new_type, ~extra_deps:[]))
-    | FunctionCallEnd -> work extra_node_deps g n ~type_fn:Fun_node.compute_call_end_type
+        let param_work =
+            if
+              (not (Types.equal old_type Control))
+              && Types.equal new_type Control
+              && (not (Types.equal fun_ptr.typ ANY))
+              && Types.is_a fun_ptr.typ (FunPtr All)
+            then
+              let fun_nodes = Linker.link linker g n in
+              List.fold fun_nodes ~init:[] ~f:(fun acc fun_node ->
+                  let params =
+                      Graph.get_dependants g fun_node
+                      |> List.filter ~f:(fun n ->
+                          match n.kind with
+                          | Data (Param _) -> true
+                          | _ -> false)
+                  in
+                  (fun_node :: params) @ acc)
+            else
+              []
+        in
+        param_work
+        @ work linker extra_node_deps g n ~type_fn:(fun _ _ -> (~new_type, ~extra_deps:[]))
+    | FunctionCallEnd -> work linker extra_node_deps g n ~type_fn:Fun_node.compute_call_end_type
 
-let do_mem_node extra_node_deps g n (m : Node.mem_kind) =
+let do_mem_node linker extra_node_deps g n (m : Node.mem_kind) =
     match m with
     | Load field ->
-        work extra_node_deps g n ~type_fn:(fun g n ->
+        work linker extra_node_deps g n ~type_fn:(fun g n ->
             let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
             match ptr.typ with
             | Ptr (Struct (Value { name = _; fields })) -> (
@@ -112,15 +155,16 @@ let do_mem_node extra_node_deps g n (m : Node.mem_kind) =
             | ANY -> (~new_type:ANY, ~extra_deps:[])
             | ALL -> (~new_type:ALL, ~extra_deps:[])
             | _ -> assert false)
-    | Store _ -> work extra_node_deps g n ~type_fn:(fun _ _ -> (~new_type:Memory, ~extra_deps:[]))
+    | Store _ ->
+        work linker extra_node_deps g n ~type_fn:(fun _ _ -> (~new_type:Memory, ~extra_deps:[]))
     | New -> []
 
 let do_node extra_node_deps (g : (Node.t, Graph.readwrite) Graph.t) linker (n : Node.t) =
     match n.kind with
-    | Data d -> do_data_node extra_node_deps g n d
-    | Ctrl c -> do_ctrl_node extra_node_deps g linker n c
+    | Data d -> do_data_node linker extra_node_deps g n d
+    | Ctrl c -> do_ctrl_node linker extra_node_deps g n c
     | Scope _ -> []
-    | Mem m -> do_mem_node extra_node_deps g n m
+    | Mem m -> do_mem_node linker extra_node_deps g n m
     | ForwardRef _ ->
         (* ignore these, they will produce an error in type checking *)
         []

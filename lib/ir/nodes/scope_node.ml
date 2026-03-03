@@ -18,7 +18,8 @@ let rec define g (n : Node.t) name node is_const =
             Graph.add_dependencies g n [ Some node ]
         | Some sym -> (
             match sym.node.kind with
-            | ForwardRef _ ->
+            | ForwardRef fref_name ->
+                assert (String.equal fref_name name);
                 if not is_const then
                   Core.failwithf "Forward ref only allowed for const symbols, %s is not const" name
                     ()
@@ -61,7 +62,7 @@ and assign g (n : Node.t) name (node : Node.t) =
         | None -> Graph.add_dependencies g n [ Some node ]
         | Some idx -> Graph.set_dependency g n (Some node) idx);
         match symbol.kind with
-        | ForwardRef _ ->
+        | ForwardRef fref_name when String.equal fref_name name ->
             (* update uses of the forward ref to point to the actual thing *)
             (* TODO: this is kind of awful having to iterate through the entire
                symbol table to update names that point to the forward ref *)
@@ -84,7 +85,7 @@ and get g (n : Node.t) name =
         match symbol with
         | None ->
             let fref = Node.create_forward_ref name in
-            define g n name fref true;
+            define g n name fref false;
             fref
         | Some symbol -> (
             match symbol.node.kind with

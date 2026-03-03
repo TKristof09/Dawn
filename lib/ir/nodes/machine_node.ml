@@ -54,7 +54,7 @@ type machine_node_kind =
     | DProj of int
     | FunctionProlog of int
     | Return
-    | FunctionCall of int
+    | FunctionCall of int option
     | FunctionCallEnd
     | Param of int
     | CalleeSave of Registers.reg
@@ -253,12 +253,27 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
         Some Registers.Mask.all_and_stack
     | FunctionProlog _ -> None
     | Return ->
+        let is_void =
+            match n.ir_node.typ with
+            | Tuple (Value [ _; t ]) -> Types.equal t Void
+            | _ -> false
+        in
         if i = 0 then
-          Some Registers.Mask.rax (* retutrn value *)
+          if is_void then
+            None
+          else
+            Some Registers.Mask.rax (* retutrn value *)
         else
           let calle_saved = Registers.Mask.callee_save |> Registers.Mask.to_list in
           Some (Registers.Mask.of_list [ List.nth_exn calle_saved (i - 1) ])
-    | FunctionCall _ -> Some (Registers.Mask.x64_systemv i)
+    | FunctionCall (Some _) -> Some (Registers.Mask.x64_systemv i)
+    | FunctionCall None ->
+        (* When the call target is not compile time known the first input to
+           the FunctionCall node is the function ptr and arguments come after *)
+        if i = 0 then
+          Some Registers.Mask.general_w
+        else
+          Some (Registers.Mask.x64_systemv (i - 1))
     | FunctionCallEnd -> None
     | Param _ -> None
     | CalleeSave _ -> None
@@ -336,7 +351,12 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     | CalleeSave reg -> Some (Registers.Mask.of_list [ Reg reg ])
     | Return ->
         assert (i = 0);
-        if i = 0 then Some Registers.Mask.rax else None
+        let is_void =
+            match n.ir_node.typ with
+            | Tuple (Value [ _; t ]) -> Types.equal t Void
+            | _ -> false
+        in
+        if i = 0 && not is_void then Some Registers.Mask.rax else None
     | New -> if i = 1 then Some Registers.Mask.rax else None
     | Store -> None
     | Load -> Some Registers.Mask.general_w
@@ -409,6 +429,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
             match n.typ with
             | Integer (Value i) -> Int i
             | Ptr _ -> Ptr
+            | FunPtr _ -> Ptr
             | Void -> Noop
             | Bool (Value b) -> Int (Bool.to_int b)
             | _ -> assert false
@@ -601,7 +622,10 @@ and of_ctrl_node g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
             |> List.filter_map ~f:(function
               | None -> Some None
               | Some n ->
-                  if Node.equal n fun_ptr then None else Some (Some (convert_node g machine_g n)))
+                  if Option.is_some fun_idx && Node.equal n fun_ptr then
+                    None
+                  else
+                    Some (Some (convert_node g machine_g n)))
         in
         Graph.add_dependencies machine_g node deps;
         node

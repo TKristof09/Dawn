@@ -2,4 +2,5 @@ Test:
   $ dawn function.eos
   $ fasm function.asm > /dev/null
   $ ./function
-  21
+  15
+  Other fn: 25
