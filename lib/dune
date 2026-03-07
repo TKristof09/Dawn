@@ -1,3 +1,9 @@
+; define a build profile that doesnt compile/use menhir messages to use when
+; working on new syntax since having to write error messages while
+; experimenting got annoying
+(env
+  (no-menhir-messages (flags ())))
+
 (library
  (name ppx_logger)
  (kind ppx_rewriter)
@@ -46,13 +52,21 @@
 
 
 (rule
+  (enabled_if (<> %{profile} no-menhir-messages))
   (targets parser_messages.ml)
   (deps 
     (:messages parser.messages)
     (:grammar menhir_parser.mly))
   (action  (with-stdout-to %{targets} (run menhir --compile-errors %{messages} %{grammar}))))
 
+; generate dummy parser_messages file
 (rule
+  (enabled_if (= %{profile} no-menhir-messages))
+  (targets parser_messages.ml)
+  (action (with-stdout-to %{targets} (echo "let message _ = \"<compiled without message>\""))))
+
+(rule
+  (enabled_if (<> %{profile} no-menhir-messages))
   (targets parser.messages.updated)
   (deps
     (:messages parser.messages)
@@ -62,11 +76,13 @@
       %{targets}
       (run menhir %{grammar} --update-errors %{messages}))))
 (rule 
+  (enabled_if (<> %{profile} no-menhir-messages))
   (alias update-errors)
   (action (diff parser.messages parser.messages.updated)))
 
 ;; Check message file is complete, and do this as part of tests.
 (rule
+  (enabled_if (<> %{profile} no-menhir-messages))
   (targets messages_complete.txt)
   (deps menhir_parser.mly)
   (action
@@ -75,7 +91,8 @@
       (run menhir --list-errors %{deps}))))
 
 (rule
-  (alias check-parser-errors)
+  (enabled_if (<> %{profile} no-menhir-messages))
+  (alias check-errors)
   (deps
     (:grammar menhir_parser.mly)
     (:complete messages_complete.txt)
@@ -90,6 +107,7 @@
       %{grammar})))
 
 (rule 
+  (enabled_if (<> %{profile} no-menhir-messages))
   (targets parser.messages.merged)
   (deps
     (:complete messages_complete.txt)
@@ -104,15 +122,18 @@
 
 
 (rule 
+  (enabled_if (<> %{profile} no-menhir-messages))
   (alias merge-errors)
   (deps parser.messages.merged)
   (action (diff parser.messages parser.messages.merged)))
 
 (alias 
+  (enabled_if (<> %{profile} no-menhir-messages))
   (name build)
   (deps 
     (alias merge-errors)))
 (alias
+  (enabled_if (<> %{profile} no-menhir-messages))
   (name runtest)
    (deps
-     (alias check-parser-errors)))
+     (alias check-errors)))

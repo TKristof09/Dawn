@@ -19,8 +19,8 @@
                 (     "let",      LET);
                 (   "const",    CONST);
                 (     "fun",      FUN);
-                (* (     "struct",      STRUCT); *)
-                (     "@extern",      EXTERN);
+                (    "type",     TYPE);
+                ( "@extern",   EXTERN);
             ]
     
     exception SyntaxError of (int * int) option * string
@@ -55,6 +55,7 @@ rule read = parse
         }
     | digit+ as num { INT (int_of_string num) }
     | '"' { read_string (Buffer.create 16) lexbuf }
+    | "." { DOT }
     | "+" { PLUS }
     | "-" { MINUS }
     | "*" { MUL }

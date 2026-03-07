@@ -22,9 +22,17 @@ and var_type =
     | Fn of var_type * var_type list
         [@printer
             fun fmt (ret, params) ->
-              fprintf fmt "((%s) -> %s)"
+              fprintf fmt "fun((%s) -> %s)"
                 (String.concat ", " (List.map show_var_type params))
                 (show_var_type ret)]
+    | Struct of (string * var_type) list
+        [@printer
+            fun fmt fields ->
+              fprintf fmt "struct {%a}"
+                (Format.pp_print_list
+                   ~pp_sep:(fun fmt () -> fprintf fmt "; ")
+                   (fun fmt (name, typ) -> fprintf fmt "%s : %s" name (show_var_type typ)))
+                fields]
 
 and name = string
 and program = statement node list
@@ -63,4 +71,14 @@ and expr =
     | FnCall of expr node * expr node list
     | FnDeclaration of var_type * name list * expr node
     | ExternalFnDeclaration of var_type * name list * string
+    | TypeDeclaration of var_type
+    | TypeInstantiation of name * (name option * expr node) list
+        [@equal
+            fun (type_name, l) (type_name', l') ->
+              name_equal type_name type_name'
+              && List.equal
+                   (fun (field_name, value) (field_name', value') ->
+                     Option.equal name_equal field_name field_name' && node_equal value value')
+                   l l']
+    | FieldAccess of expr node * name
 [@@deriving show { with_path = false }, eq, sexp_of]

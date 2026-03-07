@@ -48,6 +48,7 @@
 %token COMMA
 %token COLON
 %token SEMICOLON
+%token DOT
 
 %token IF
 %token ELSE
@@ -61,6 +62,7 @@
 %token LET
 %token CONST
 %token FUN
+%token TYPE
 %token ARROW
 %token EXTERN
 %token EOF
@@ -76,6 +78,7 @@
 %left PLUS MINUS
 %left MUL DIV
 %nonassoc UMINUS NOT
+%left DOT
 %nonassoc LPAREN
 
 %start <program> prog
@@ -150,6 +153,19 @@ let expr :=
             let typ = Fn (ret_typ, param_types) in
             ExternalFnDeclaration (typ, param_names, external_name) |> make_node $sloc 
         }
+    | TYPE; t = type_name; 
+        { 
+            TypeDeclaration t |> make_node $sloc
+        }
+    | id = IDENTIFIER; LBRACE; field_values = field_initialiser_list; RBRACE; 
+        {
+            TypeInstantiation(id, field_values) |> make_node $sloc
+        }
+
+let field_initialiser_list := 
+    |  { [] }
+    | field_values = separated_nonempty_list(COMMA, separated_pair(preceded(DOT, IDENTIFIER), ASSIGN, expr)); { List.map (fun (s,e) -> (Some s, e)) field_values }
+    | field_values = separated_nonempty_list(COMMA, expr); { List.map (fun e -> (None, e)) field_values }
 
 let expr_without_block := 
     | id = IDENTIFIER; ASSIGN; rhs = expr; {  VarAssign (id, rhs) |> make_node $sloc }
@@ -160,6 +176,7 @@ let expr_without_block :=
     | literal
     | delimited(LPAREN, expr, RPAREN)
     | id = IDENTIFIER; n = option(delimited(LBRACKET, expr, RBRACKET)); { Variable (id, n) |> make_node $sloc }
+    | base = expr; DOT; field = IDENTIFIER; { FieldAccess (base, field) |> make_node $sloc }
 
 let bin_expr := 
     | lhs = expr; op = binop; rhs = expr; {  op (lhs,rhs) }
@@ -237,20 +254,13 @@ let binop ==
     | EQUAL; {  fun (e,e') -> Eq (e,e') |> make_node $sloc }
     | NOT_EQUAL; {  fun (e,e') -> NEq (e,e') |> make_node $sloc }
 
-
-(* let type_name :=  *)
-(*     | LPAREN; LPAREN; params = separated_list(COMMA, type_name); RPAREN; ARROW; ret = type_name; RPAREN; { Fn(ret, params) } *)
-(*     | name = IDENTIFIER; { Type name } *)
-(*     | t = type_name; n = delimited(LBRACKET, expr, RBRACKET); { Array (t, n) } *)
-
-
 (* 1. Parses anything inside parentheses into a list of types *)
 let paren_types :=
   | LPAREN; RPAREN; {[] }
   | LPAREN; t = type_name; RPAREN; { [t] }
   | LPAREN; t = type_name; COMMA; ts = separated_list(COMMA, type_name); RPAREN; { t :: ts }
 
-(* 2. NEW: Atomic types that do NOT start with an open parenthesis (Identifiers, Arrays) *)
+(* 2. Atomic types that do NOT start with an open parenthesis (Identifiers, Arrays) *)
 let non_paren_atomic_type :=
   | name = IDENTIFIER; { Type name }
   | t = atomic_type; n = delimited(LBRACKET, expr, RBRACKET); { Array (t, n) }
@@ -266,8 +276,17 @@ let atomic_type :=
       | _ -> failwith "Tuple types not supported yet"
     }
 
-(* 4. Top-level type: Allow either a paren list OR a single non-paren type before ARROW *)
 let type_name :=
+  | t = fun_type_expression; { t }
+  | t = atomic_type; { t }
+  | t = struct_type_expression; { t }
+
+let fun_type_expression := 
   | params = paren_types; ARROW; ret = atomic_type; { Fn(ret, params) }
   | param = non_paren_atomic_type; ARROW; ret = atomic_type; { Fn(ret,[param]) }
-  | t = atomic_type; { t }
+
+let struct_type_expression := 
+  | LBRACE; l = separated_list(COMMA, separated_pair(IDENTIFIER, COLON, type_name)); RBRACE; 
+    { 
+        Struct l
+    }
