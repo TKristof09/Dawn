@@ -42,7 +42,9 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
             let n = Mem_nodes.create_new g loc ~ctrl ~mem ~size arr_type in
             let mem = Proj_node.create g loc n 0 in
             let ptr = Proj_node.create g loc n 1 in
-            let offset = Types.get_offset arr_type "len" |> Const_node.create_int g loc in
+            let offset =
+                Types.get_offset arr_type "len" |> Option.value_exn |> Const_node.create_int g loc
+            in
             let store = Mem_nodes.create_store g loc ~mem ~ptr ~offset "len" ~value:count in
             Scope_node.define g scope name ptr false;
             Scope_node.set_mem g scope store
@@ -88,15 +90,16 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
             let el_size = Const_node.create_int g loc (Int.ceil_log2 8) in
             let base =
                 match ptr.typ with
-                | Ptr (Struct _ as s) -> Types.get_offset s "[]"
+                | Ptr (Struct _ as s) -> Types.get_offset s "[]" |> Option.value ~default:(-1)
                 | _ -> assert false
             in
+            let el_typ = Types.get_field_type ptr.typ "[]" |> Option.value ~default:ALL in
             let offset =
                 Arithmetic_nodes.create_add g loc
                   (Const_node.create_int g loc base)
                   (Bitop_nodes.create_lsh g loc index el_size)
             in
-            let load = Mem_nodes.create_load g loc ~mem ~ptr "[]" ~offset in
+            let load = Mem_nodes.create_load g loc ~mem ~ptr "[]" ~offset el_typ in
             Some load)
     | Ast.VarAssign (name, expr) ->
         let n = do_expr g expr scope cur_ret_node linker |> Option.value_exn in
@@ -111,7 +114,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         let el_size = Const_node.create_int g loc (Int.ceil_log2 8) in
         let base =
             match ptr.typ with
-            | Ptr (Struct _ as s) -> Types.get_offset s "[]"
+            | Ptr (Struct _ as s) -> Types.get_offset s "[]" |> Option.value ~default:(-1)
             | _ -> failwithf "Invalid ptr type: %s for %s" (Node.show ptr) name ()
         in
         let offset =
@@ -236,6 +239,72 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         |> Graph.add_dependencies g ret_val;
         Fun_node.add_return g ret_node ~ctrl:fun_node ~val_n:ret_val;
         Some fun_ptr
+    | TypeDeclaration t ->
+        let typ = Types.of_ast_type t in
+        let c = Const_node.create_from_type g loc (Type (Value typ)) in
+        Some c
+    | TypeInstantiation (type_name, fields) ->
+        let typ_constant = Scope_node.get g scope type_name in
+        let typ =
+            match typ_constant.typ with
+            | Type (Value t) -> t
+            | _ -> assert false
+        in
+        let ctrl = Scope_node.get_ctrl g scope in
+        let mem = Scope_node.get_mem g scope in
+        let type_size = Types.get_size typ in
+        let size = Const_node.create_int g loc type_size in
+        let n = Mem_nodes.create_new g loc ~ctrl ~mem ~size typ in
+        let mem = Proj_node.create g loc n 0 in
+        Scope_node.set_mem g scope mem;
+        let ptr = Proj_node.create g loc n 1 in
+        let field_names =
+            match typ with
+            | Struct (Value { name = _; fields }) -> List.map fields ~f:fst |> String.Set.of_list
+            | _ ->
+                (* TODO: this should also be allowed for primitives (e.g. i64{5}) *)
+                assert false
+        in
+        let remaining_field_names =
+            List.fold fields ~init:field_names ~f:(fun remaining_field_names (name, e) ->
+                match name with
+                | None -> failwith "todo anonymous field init"
+                | Some name ->
+                    if not (Set.mem remaining_field_names name) then
+                      if Set.mem field_names name then
+                        failwithf "%s:%d: Field %s is initialised multiple times" loc.filename
+                          loc.line name ()
+                      else
+                        failwithf "%s:%d: Field %s is not part of type %s" loc.filename loc.line
+                          name type_name ()
+                    else
+                      let value = do_expr g e scope cur_ret_node linker |> Option.value_exn in
+                      let offset =
+                          Types.get_offset typ name
+                          |> Option.value_exn
+                          |> Const_node.create_int g loc
+                      in
+                      let mem = Scope_node.get_mem g scope in
+                      let store = Mem_nodes.create_store g loc ~mem ~ptr ~offset name ~value in
+                      Scope_node.set_mem g scope store;
+                      Set.remove remaining_field_names name)
+        in
+        if not (Set.is_empty remaining_field_names) then
+          failwithf "%s:%d: Following fields were not initialised: %s" loc.filename loc.line
+            (Set.to_list remaining_field_names |> String.concat ~sep:", ")
+            ();
+        Some ptr
+    | FieldAccess (e, field_name) ->
+        let base = do_expr g e scope cur_ret_node linker |> Option.value_exn in
+        let offset =
+            Types.get_offset base.typ field_name
+            |> Option.value ~default:(-1)
+            |> Const_node.create_int g loc
+        in
+        let mem = Scope_node.get_mem g scope in
+        let field_typ = Types.get_field_type base.typ field_name |> Option.value ~default:ALL in
+        let load = Mem_nodes.create_load g loc ~mem ~ptr:base field_name ~offset field_typ in
+        Some load
     | _ -> failwithf "TODO: unimplemented %s" (Ast.show_expr e.node) ()
 
 let of_ast ast linker =

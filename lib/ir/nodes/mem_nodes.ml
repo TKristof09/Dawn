@@ -10,7 +10,7 @@ let create_store (g : (Node.t, Graph.readwrite) Graph.t) loc ~mem ~(ptr : Node.t
     Graph.add_dependencies g n [ None; Some mem; Some ptr; Some offset; Some value ];
     Graph.finalize_node g n
 
-let create_load g loc ~mem ~(ptr : Node.t) field_name ~offset =
-    let n = Node.create_mem loc ptr.typ (Load field_name) in
+let create_load g loc ~mem ~(ptr : Node.t) field_name ~offset field_typ =
+    let n = Node.create_mem loc field_typ (Load field_name) in
     Graph.add_dependencies g n [ None; Some mem; Some ptr; Some offset ];
     Graph.finalize_node g n

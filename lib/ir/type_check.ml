@@ -134,7 +134,7 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
               Printf.sprintf "%s:%d: Expected integer got %s" n.loc.filename n.loc.line
                 (Types.human_readable size.typ);
             ]
-    | Store name ->
+    | Store name -> (
         let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
         let offset = Graph.get_dependency g n 3 |> Option.value_exn in
         let value = Graph.get_dependency g n 4 |> Option.value_exn in
@@ -145,23 +145,54 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
             | _ -> assert false
         in
         let field_type = Types.get_field_type pointed_to_type name in
-        let expected = [ field_type; Integer All ] in
-        expect_types n.loc ~expected ~inputs:[ value.typ; offset.typ ]
-    | Load _ -> (
+        match field_type with
+        | None ->
+            if String.equal name "[]" then
+              Some
+                [
+                  Printf.sprintf "%s:%d: %s is not an array, can't index into it" n.loc.filename
+                    n.loc.line
+                    (Types.human_readable pointed_to_type);
+                ]
+            else
+              Some
+                [
+                  Printf.sprintf "%s:%d: Field %s is not part of type %s" n.loc.filename n.loc.line
+                    name
+                    (Types.human_readable pointed_to_type);
+                ]
+        | Some field_type ->
+            let expected = [ field_type; Integer All ] in
+            expect_types n.loc ~expected ~inputs:[ value.typ; offset.typ ])
+    | Load name -> (
         let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
         let offset = Graph.get_dependency g n 3 |> Option.value_exn in
-        let ptr_error =
-            match ptr.typ with
-            | Ptr _ -> []
-            | _ ->
-                [
-                  Printf.sprintf "%s:%d: Expected pointer, got %s" n.loc.filename n.loc.line
-                    (Types.human_readable ptr.typ);
-                ]
-        in
-        match expect_types n.loc ~expected:[ Integer All ] ~inputs:[ offset.typ ] with
-        | None -> if List.is_empty ptr_error then None else Some ptr_error
-        | Some errors -> Some (ptr_error @ errors))
+        match ptr.typ with
+        | Ptr pointed_to_type ->
+            let field_type = Types.get_field_type pointed_to_type name in
+            if Option.is_none field_type then
+              if String.equal name "[]" then
+                Some
+                  [
+                    Printf.sprintf "%s:%d: %s is not an array, can't index into it" n.loc.filename
+                      n.loc.line
+                      (Types.human_readable pointed_to_type);
+                  ]
+              else
+                Some
+                  [
+                    Printf.sprintf "%s:%d: Field %s is not part of type %s" n.loc.filename
+                      n.loc.line name
+                      (Types.human_readable pointed_to_type);
+                  ]
+            else
+              expect_types n.loc ~expected:[ Integer All ] ~inputs:[ offset.typ ]
+        | _ ->
+            Some
+              [
+                Printf.sprintf "%s:%d: Expected pointer, got %s" n.loc.filename n.loc.line
+                  (Types.human_readable ptr.typ);
+              ])
 
 let type_check_node g (n : Node.t) =
     match n.kind with

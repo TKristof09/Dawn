@@ -24,4 +24,5 @@ val create_load :
   ptr:Node.t ->
   string ->
   offset:Node.t ->
+  Types.t ->
   Node.t

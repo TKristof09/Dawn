@@ -28,6 +28,7 @@ and t =
     | Ptr of t
     | Struct of struct_type sub_lattice
     | ConstArray of const_array sub_lattice
+    | Type of t sub_lattice
     | Void
     | Memory
     | Control
@@ -45,11 +46,11 @@ val meet : t -> t -> t
 val join : t -> t -> t
 val is_constant : t -> bool
 val get_fun_idx : t -> int option
-val iter_fun_indices : t -> f:(int -> unit) -> unit
+val iter_fun_indices : t -> Core.Int.Set.t -> f:(int -> unit) -> unit
 val get_string : t -> string option
 val is_const_array : t -> bool
-val get_offset : t -> string -> int
+val get_offset : t -> string -> int option
 val is_a : t -> t -> bool
-val get_fun_param_type : t -> int -> t
-val get_field_type : t -> string -> t
+val get_field_type : t -> string -> t option
 val human_readable : t -> string
+val get_size : t -> int

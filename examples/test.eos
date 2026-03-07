@@ -1,11 +1,10 @@
 const S : { b: i64 } = type {
     a: i64,
-    f: (i64 -> str)
+    f: (i64 -> void)
 };
 
-const print = fun(i: i64) -> str { "hello" };
-const instance = S{ 5,  print};
-const instance = S{ .a = 5,  .f = print};
-instance.f(5);
-(instance + instance.a).f(5);
-const x = i64{5};
+const print_int = fun(i: i64) -> void = @extern("print_int");
+//TODO: const instance = S{ 5,  print};
+const instance = S{ .a = 5,  .f = print_int};
+instance.f(instance.a + instance.a);
+//TODO: const x = i64{5};

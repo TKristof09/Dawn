@@ -41,6 +41,7 @@ and t =
     | Ptr of t
     | Struct of struct_type sub_lattice
     | ConstArray of const_array sub_lattice
+    | Type of t sub_lattice
     | Void
     | Memory
     | Control
@@ -83,7 +84,8 @@ let make_struct name fields =
         | Integer _
         | Bool _
         | Ptr _
-        | ConstArray _ ->
+        | ConstArray _
+        | FunPtr _ ->
             true
         | _ -> false
     in
@@ -140,6 +142,7 @@ let rec of_ast_type (ast_type : Ast.var_type) : t =
         let ret = of_ast_type ret in
         let params = List.map params ~f:of_ast_type in
         make_fun_ptr params ret
+    | Struct fields -> make_struct "" (List.map fields ~f:(fun (n, t) -> (n, of_ast_type t)))
     | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type ast_type) ()
 
 let rec meet t t' =
@@ -204,6 +207,15 @@ let rec meet t t' =
                 | List.Or_unequal_lengths.Unequal_lengths -> All)
         in
         ConstArray l
+    | Type t, Type t' ->
+        let l =
+            meet_sub_lattice t t' ~f:(fun t t' ->
+                match meet t t' with
+                | ALL -> All
+                | ANY -> Any
+                | x -> Value x)
+        in
+        Type l
     | Control, Control -> Control
     | Control, DeadControl -> Control
     | DeadControl, Control -> Control
@@ -225,6 +237,7 @@ let rec meet t t' =
     | DeadControl, _
     | Memory, _
     | ConstArray _, _
+    | Type _, _
     | Void, _ ->
         ALL
 
@@ -293,6 +306,15 @@ let rec join t t' =
                 | Unequal_lengths -> Any)
         in
         ConstArray l
+    | Type t, Type t' ->
+        let l =
+            join_sub_lattice t t' ~f:(fun t t' ->
+                match join t t' with
+                | ALL -> All
+                | ANY -> Any
+                | x -> Value x)
+        in
+        Type l
     | Control, Control -> Control
     | Control, DeadControl -> DeadControl
     | DeadControl, Control -> DeadControl
@@ -314,6 +336,7 @@ let rec join t t' =
     | DeadControl, _
     | Memory, _
     | ConstArray _, _
+    | Type _, _
     | Void, _ ->
         ANY
 
@@ -348,6 +371,7 @@ let rec is_constant t =
         | Value s -> List.for_all s.fields ~f:(fun (_, t) -> is_constant t))
     | Ptr p -> is_constant p
     | ConstArray x -> is_constant_lattice x
+    | Type x -> is_constant_lattice x
     | Void -> true
 
 let get_fun_idx t =
@@ -360,12 +384,15 @@ let get_fun_idx t =
             None)
     | _ -> failwithf "Invalid arg: %s" (show t) ()
 
-let iter_fun_indices t ~f =
+let iter_fun_indices t universe ~f =
     match t with
-    | FunPtr (Value { params = _; ret = _; fun_indices }) -> (
-        match fun_indices with
-        | `Include s -> Set.iter s ~f
-        | `Exclude _ -> failwithf "Can't iterate unbound function indices %s" (show t) ())
+    | FunPtr (Value { params = _; ret = _; fun_indices }) ->
+        let indices =
+            match fun_indices with
+            | `Include s -> Set.inter universe s
+            | `Exclude s -> Set.diff universe s
+        in
+        Set.iter indices ~f
     | _ -> failwithf "Invalid arg: %s" (show t) ()
 
 let is_const_array t =
@@ -408,35 +435,33 @@ let get_string t =
             | _ -> None))
     | _ -> None
 
-let get_offset t field =
+let rec get_offset t field =
     match t with
     | Struct (Value { name = _; fields }) ->
         List.fold_until fields ~init:0
           ~f:(fun acc (name, t) ->
+            (* TODO: use t's size *)
             ignore t;
             if String.equal name field then
-              Stop acc
+              Stop (Some acc)
             else
               Continue (acc + 8))
-          ~finish:(fun _ -> assert false)
-    | _ -> assert false
+          ~finish:(fun _ -> None)
+    | Ptr (Struct _ as s) -> get_offset s field
+    | _ -> None
 
 let is_a lhs rhs = equal (meet lhs rhs) rhs
 
-let get_fun_param_type fun_type i =
-    match fun_type with
-    | FunPtr (Value { params; ret = _; fun_indices = _ }) -> List.nth_exn params i
-    | _ -> assert false
-
-let get_field_type t field_name =
+let rec get_field_type t field_name =
     match t with
     | Struct (Value { name = _; fields }) ->
-        List.find_map_exn fields ~f:(fun (name, t) ->
+        List.find_map fields ~f:(fun (name, t) ->
             if String.equal name field_name then
               Some t
             else
               None)
-    | _ -> assert false
+    | Ptr (Struct _ as s) -> get_field_type s field_name
+    | _ -> None
 
 let rec human_readable t =
     match t with
@@ -453,4 +478,33 @@ let rec human_readable t =
         human_readable s
     | Ptr p -> "*" ^ human_readable p
     | Void -> "void"
-    | _ -> assert false
+    | FunPtr (Value { params; ret; fun_indices }) ->
+        Printf.sprintf "fun((%s) -> %s)"
+          (String.concat ~sep:", " (List.map params ~f:human_readable))
+          (human_readable ret)
+    | Type (Value t) -> Printf.sprintf "type %s" (human_readable t)
+    | Type Any
+    | Type All ->
+        "type"
+    | ANY -> "unknown type"
+    | ALL -> "invalid type"
+    | _ -> failwithf "No human readable label for %s" (show t) ()
+
+let rec get_size t =
+    (* TODO: actual sizes for ints and bools *)
+    match t with
+    | Integer _ -> 8
+    | Bool _ -> 8
+    | Struct (Value s) ->
+        List.sum
+          (module Int)
+          s.fields
+          ~f:(fun (name, t) ->
+            if String.equal name "[]" then
+              failwith "todo array size"
+            else
+              get_size t)
+    | Ptr _
+    | FunPtr _ ->
+        8
+    | _ -> failwithf "todo: %s" (show t) ()
