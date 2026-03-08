@@ -406,19 +406,29 @@ end = struct
         -1
       else if l <> 1 && l' = 1 then
         1
+      else if l = l' then (* make it deterministic *)
+        let id1 = (Set.min_elt_exn r.nodes).id in
+        let id2 = (Set.min_elt_exn r'.nodes).id in
+        Int.compare id1 id2
       else (* prefer large choice of registers *)
         Int.compare l l'
 
-  let compare_non_trivial_lrgs g (r : Range.t) (r' : Range.t) =
-      let risky_score g (r : Range.t) =
-          (* if the range has not many neighbours it has an easier chance of "accidentally" getting colored despite being non trivial *)
+  let compare_non_trivial_lrgs original_ifg g (r : Range.t) (r' : Range.t) =
+      let risky_score original_ifg g (r : Range.t) =
           let base_score =
               let n = Set.choose_exn r.nodes in
               match n.kind with
               (* prefer callee save for risky pick as they cover big area (entire function) *)
               | Machine_node.CalleeSave _ -> 100000 - 1
-              | _ -> 1000
-              (*- (Hashtbl.find_exn ifg r |> Set.length)*)
+              | Mov when Set.length r.nodes = 1 ->
+                  (* don't try to split splits *)
+                  -1000
+              | _ ->
+                  (* prefer to split ranges that have a big area so they free
+                     up stuff for longer (we approximate big area by large
+                     degree in original graph but it would be better to store
+                     in the ranges where they start and where they end ) *)
+                  1000 + (Hashtbl.find_exn original_ifg r |> Set.length)
           in
           if Set.length r.nodes = 1 && Machine_node.is_cheap_to_clone (Set.choose_exn r.nodes) then
             let def = Set.choose_exn r.nodes in
@@ -434,9 +444,14 @@ end = struct
           else
             base_score
       in
-      let score_1 = risky_score g r in
-      let score_2 = risky_score g r' in
-      Int.compare score_1 score_2
+      let score_1 = risky_score original_ifg g r in
+      let score_2 = risky_score original_ifg g r' in
+      if score_1 = score_2 then (* make it deterministic *)
+        let id1 = (Set.min_elt_exn r.nodes).id in
+        let id2 = (Set.min_elt_exn r'.nodes).id in
+        Int.compare id1 id2
+      else
+        Int.compare score_1 score_2
 
   let remove_from_graph ifg r =
       let neighbours = Hashtbl.find_exn ifg r in
@@ -447,7 +462,7 @@ end = struct
       Hashtbl.remove ifg r;
       neighbours
 
-  let simplify (ifg : t) (g : (Machine_node.t, 'a) Graph.t) =
+  let simplify (original_ifg : t) (ifg : t) (g : (Machine_node.t, 'a) Graph.t) =
       let trivial_lrgs = Pairing_heap.create ~cmp:compare_trival_lrgs () in
       let non_trivial_lrgs = Hash_set.create (module Range) in
       Hashtbl.iter_keys ifg ~f:(fun (r : Range.t) ->
@@ -476,7 +491,10 @@ end = struct
               process (r :: acc)
           | None -> (
               let pop_first () =
-                  match Hash_set.max_elt non_trivial_lrgs ~compare:(compare_non_trivial_lrgs g) with
+                  match
+                    Hash_set.max_elt non_trivial_lrgs
+                      ~compare:(compare_non_trivial_lrgs original_ifg g)
+                  with
                   | None -> None
                   | Some r ->
                       Hash_set.remove non_trivial_lrgs r;
@@ -493,7 +511,7 @@ end = struct
 
   let color ifg g =
       let ifg_copy = Hashtbl.copy ifg in
-      let color_stack = simplify ifg_copy g in
+      let color_stack = simplify ifg ifg_copy g in
       let reg_assoc : reg_assignment = Hashtbl.create (module Range) in
       let failed_ranges =
           List.fold color_stack ~init:[] ~f:(fun failed_ranges r ->
@@ -928,7 +946,7 @@ let allocate g program =
         let attempt g program =
             [%log.debug "\n%a" Ir_printer.pp_machine_linear (g, program)];
             let* node_to_lrg = build_live_ranges g program in
-            [%log.debug "Build liver ranges:\n%a" pp_lrgs node_to_lrg];
+            [%log.debug "Build live ranges:\n%a" pp_lrgs node_to_lrg];
             let* ifg = InterferenceGraph.build g program node_to_lrg in
             [%log.debug "Interference Graph:\n%a" InterferenceGraph.pp ifg];
             let* coloring = InterferenceGraph.color ifg g in
