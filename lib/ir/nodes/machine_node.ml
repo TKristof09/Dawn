@@ -253,27 +253,37 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
         Some Registers.Mask.all_and_stack
     | FunctionProlog _ -> None
     | Return ->
+        (* inputs: 0: memory; 1: value; 2+: callee saved regs *)
         let is_void =
             match n.ir_node.typ with
-            | Tuple (Value [ _; t ]) -> Types.equal t Void
+            | Tuple (Value [ _; _; t ]) -> Types.equal t Void
             | _ -> false
         in
         if i = 0 then
+          None
+        else if i = 1 then
           if is_void then
             None
           else
             Some Registers.Mask.rax (* retutrn value *)
         else
           let calle_saved = Registers.Mask.callee_save |> Registers.Mask.to_list in
-          Some (Registers.Mask.of_list [ List.nth_exn calle_saved (i - 1) ])
-    | FunctionCall (Some _) -> Some (Registers.Mask.x64_systemv i)
-    | FunctionCall None ->
-        (* When the call target is not compile time known the first input to
-           the FunctionCall node is the function ptr and arguments come after *)
+          Some (Registers.Mask.of_list [ List.nth_exn calle_saved (i - 2) ])
+    | FunctionCall (Some _) ->
+        (* skip memory input, known function call so no fun_ptr as input which makes memory at index 0 *)
         if i = 0 then
-          Some Registers.Mask.general_w
+          None
         else
           Some (Registers.Mask.x64_systemv (i - 1))
+    | FunctionCall None ->
+        (* When the call target is not compile time known the first input to
+           the FunctionCall node is the function ptr then memory and arguments come after *)
+        if i = 0 then
+          Some Registers.Mask.general_w
+        else if i = 1 then
+          None
+        else
+          Some (Registers.Mask.x64_systemv (i - 2))
     | FunctionCallEnd -> None
     | Param _ -> None
     | CalleeSave _ -> None
@@ -341,19 +351,28 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     | FunctionProlog _ -> None
     | FunctionCall _ -> None
     | FunctionCallEnd ->
-        if i = 1 then
+        let is_void =
+            match n.ir_node.typ with
+            | Tuple (Value [ _; _; t ]) -> Types.equal t Void
+            | _ -> false
+        in
+        if (not is_void) && i = 2 then
           Some Registers.Mask.rax
         else
           None
     | Param idx ->
         assert (i = 0);
-        Some (Registers.Mask.x64_systemv idx)
+        (* skip memory param *)
+        if idx = 0 then
+          None
+        else
+          Some (Registers.Mask.x64_systemv (idx - 1))
     | CalleeSave reg -> Some (Registers.Mask.of_list [ Reg reg ])
     | Return ->
         assert (i = 0);
         let is_void =
             match n.ir_node.typ with
-            | Tuple (Value [ _; t ]) -> Types.equal t Void
+            | Tuple (Value [ _; _; t ]) -> Types.equal t Void
             | _ -> false
         in
         if i = 0 && not is_void then Some Registers.Mask.rax else None

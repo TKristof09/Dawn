@@ -100,8 +100,9 @@ let do_ctrl_node linker extra_node_deps g n (c : Node.ctrl_kind) =
     | Return ->
         work linker extra_node_deps g n ~type_fn:(fun g n ->
             let ctrl = Graph.get_dependency g n 0 |> Option.value_exn in
-            let data = Graph.get_dependency g n 1 |> Option.value_exn in
-            let new_type = Types.Tuple (Value [ ctrl.typ; data.typ ]) in
+            let mem = Graph.get_dependency g n 1 |> Option.value_exn in
+            let data = Graph.get_dependency g n 2 |> Option.value_exn in
+            let new_type = Types.Tuple (Value [ ctrl.typ; mem.typ; data.typ ]) in
             (~new_type, ~extra_deps:[]))
     | FunctionCall ->
         let old_type = n.typ in

@@ -65,6 +65,7 @@ let make_fun_ptr ?idx params ret =
         | Bool _
         | Ptr _
         | FunPtr _
+        | Struct _
         | Void ->
             true
         | _ -> false
@@ -75,6 +76,17 @@ let make_fun_ptr ?idx params ret =
         match idx with
         | Some idx -> `Include (Int.Set.singleton idx)
         | None -> `Exclude Int.Set.empty
+    in
+    let params =
+        List.map params ~f:(fun t ->
+            match t with
+            | Struct _ -> Ptr t
+            | _ -> t)
+    in
+    let ret =
+        match ret with
+        | Struct _ -> Ptr ret
+        | _ -> ret
     in
     FunPtr (Value { params; ret; fun_indices })
 

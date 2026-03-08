@@ -1,4 +1,5 @@
-const S : { b: i64 } = type {
+/*
+const S = type {
     a: i64,
     f: (i64 -> void)
 };
@@ -6,5 +7,25 @@ const S : { b: i64 } = type {
 const print_int = fun(i: i64) -> void = @extern("print_int");
 //TODO: const instance = S{ 5,  print};
 const instance = S{ .a = 5,  .f = print_int};
-instance.f(instance.a + instance.a);
+const s = "hello world";
+instance.f(instance.a + s.len);
 //TODO: const x = i64{5};
+*/
+
+const print = fun(s: str) -> void = @extern("print");
+
+const s = "hello";
+
+const S = type {
+    left: str,
+    right: str
+};
+const f = fun(s: str) -> S {
+    S{
+        .left = s,
+        .right = " world"
+    }
+};
+const x = f(s);
+print(x.left);
+print(x.right);

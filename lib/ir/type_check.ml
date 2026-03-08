@@ -91,7 +91,7 @@ let do_ctrl_node g (n : Node.t) (k : Node.ctrl_kind) =
         in
         let actual_ret_type =
             match ret.typ with
-            | Tuple (Value [ _; ret_type ]) -> ret_type
+            | Tuple (Value [ _; _; ret_type ]) -> ret_type
             | _ -> assert false
         in
         expect_types ret.loc ~expected:[ expected_ret_type ] ~inputs:[ actual_ret_type ]
@@ -109,6 +109,7 @@ let do_ctrl_node g (n : Node.t) (k : Node.ctrl_kind) =
             Graph.get_dependencies g n
             |> List.tl_exn (* drop control *)
             |> List.tl_exn (* drop fun ptr *)
+            |> List.tl_exn (* drop mem *)
             |> List.filter_opt
             |> List.map ~f:(fun n -> n.typ)
         in

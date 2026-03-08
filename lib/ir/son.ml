@@ -1,10 +1,27 @@
 open Core
 
+let rec get_type g scope t =
+    match t with
+    | Ast.Type s -> (
+        let n = Scope_node.get g scope s in
+        match n.typ with
+        | Type (Value t) -> t
+        | _ -> failwith "todo: i think this should be an error")
+    | Fn _ -> Types.of_ast_type t
+    | Array (t, _) ->
+        (* TODO: perhaps we want to keep the count known in the future to check
+           against it in type_check. But for now we ignore type annotations
+           anyway *)
+        Types.make_array (get_type g scope t) (Integer Any)
+    | _ -> failwith "todo"
+
 let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
     let loc = s.loc in
     match s.node with
     | Ast.ExprStatement e -> do_expr g e scope cur_ret_node linker |> ignore
-    | Ast.Declaration_assign (name, _typ, e, qualifier) ->
+    | Ast.Declaration_assign (name, typ, e, qualifier) ->
+        (* TODO: annotation should be saved somehow to use in type checking *)
+        ignore typ;
         let n = do_expr g e scope cur_ret_node linker |> Option.value_exn in
         (match n.Node.kind with
         | Data Constant -> (
@@ -32,11 +49,12 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
             in
             Scope_node.define g scope name default_init false
         | Array (t, count) ->
-            let element_type = Types.of_ast_type t in
+            let element_type = get_type g scope t in
             let ctrl = Scope_node.get_ctrl g scope in
             let count = do_expr g count scope cur_ret_node linker |> Option.value_exn in
             let el_size = Const_node.create_int g loc (Int.ceil_log2 8) in
             let size = Bitop_nodes.create_lsh g loc count el_size in
+            let size = Arithmetic_nodes.create_add g loc size (Const_node.create_int g loc 8) in
             let mem = Scope_node.get_mem g scope in
             let arr_type = Types.make_array element_type count.typ in
             let n = Mem_nodes.create_new g loc ~ctrl ~mem ~size arr_type in
@@ -176,11 +194,14 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
                 do_expr g arg scope cur_ret_node linker |> Option.value_exn)
         in
         let call_node, call_end =
-            Fun_node.add_call g loc ~ctrl:(Scope_node.get_ctrl g scope) ~fun_ptr args
+            Fun_node.add_call g loc ~ctrl:(Scope_node.get_ctrl g scope)
+              ~mem:(Scope_node.get_mem g scope) ~fun_ptr args
         in
         let ctrl = Proj_node.create g loc call_end 0 in
         Scope_node.set_ctrl g scope ctrl;
-        let return_val = Proj_node.create g loc call_end 1 in
+        let return_mem = Proj_node.create g loc call_end 1 in
+        Scope_node.set_mem g scope return_mem;
+        let return_val = Proj_node.create g loc call_end 2 in
         Some return_val
     (* | Ast.Return ->  *)
     | Ast.FnDeclaration (typ, param_names, body) ->
@@ -191,8 +212,8 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         in
         let fun_ptr_type =
             Types.make_fun_ptr
-              (List.map param_types ~f:Types.of_ast_type)
-              (Types.of_ast_type ret_type)
+              (List.map param_types ~f:(get_type g scope))
+              (get_type g scope ret_type)
         in
         let fun_node, ret_node = Fun_node.create g loc fun_ptr_type in
         let fun_idx = Linker.define linker fun_node in
@@ -202,19 +223,24 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         let fun_ptr = Const_node.create_fun_ptr g loc fun_node fun_idx in
         Scope_node.push scope;
         let old_ctrl = Scope_node.get_ctrl g scope in
+        let old_mem = Scope_node.get_mem g scope in
         Scope_node.set_ctrl g scope fun_node;
+        let mem = Fun_node.create_param g loc fun_node Memory 0 in
+        Scope_node.set_mem g scope mem;
         List.zip_exn param_types param_names
         |> List.iteri ~f:(fun i (typ, pname) ->
-            let param_type = Types.of_ast_type typ in
-            let param_node = Fun_node.create_param g loc fun_node param_type i in
+            let param_type = get_type g scope typ in
+            let param_node = Fun_node.create_param g loc fun_node param_type (i + 1) in
             Scope_node.define g scope pname param_node false);
         let body_n =
             do_expr g body scope (Some ret_node) linker
             |> Option.value ~default:(Const_node.create_from_type g body.loc Types.Void)
         in
-        Fun_node.add_return g ret_node ~ctrl:(Scope_node.get_ctrl g scope) ~val_n:body_n;
+        Fun_node.add_return g ret_node ~ctrl:(Scope_node.get_ctrl g scope)
+          ~mem:(Scope_node.get_mem g scope) ~val_n:body_n;
         Scope_node.pop g scope;
         Scope_node.set_ctrl g scope old_ctrl;
+        Scope_node.set_mem g scope old_mem;
         Some fun_ptr
     | Ast.ExternalFnDeclaration (typ, _, external_name) ->
         let ret_type, param_types =
@@ -222,9 +248,9 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
             | Ast.Fn (ret, params) -> (ret, params)
             | _ -> assert false
         in
-        let ret_type = Types.of_ast_type ret_type in
+        let ret_type = get_type g scope ret_type in
         let fun_ptr_type =
-            Types.make_fun_ptr (List.map param_types ~f:Types.of_ast_type) ret_type
+            Types.make_fun_ptr (List.map param_types ~f:(get_type g scope)) ret_type
         in
         let fun_node, ret_node = Fun_node.create g loc fun_ptr_type in
         let fun_idx = Linker.define linker fun_node in
@@ -233,11 +259,12 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         | _ -> assert false);
         let fun_ptr = Const_node.create_fun_ptr g loc fun_node fun_idx in
         let ret_val = Extern_node.create g loc ret_type external_name in
+        let mem = Fun_node.create_param g loc fun_node Memory 0 in
         List.mapi param_types ~f:(fun i typ ->
-            let param_type = Types.of_ast_type typ in
-            Some (Fun_node.create_param g loc fun_node param_type i))
+            let param_type = get_type g scope typ in
+            Some (Fun_node.create_param g loc fun_node param_type (i + 1)))
         |> Graph.add_dependencies g ret_val;
-        Fun_node.add_return g ret_node ~ctrl:fun_node ~val_n:ret_val;
+        Fun_node.add_return g ret_node ~ctrl:fun_node ~mem ~val_n:ret_val;
         Some fun_ptr
     | TypeDeclaration t ->
         let typ = Types.of_ast_type t in
@@ -307,6 +334,14 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         Some load
     | _ -> failwithf "TODO: unimplemented %s" (Ast.show_expr e.node) ()
 
+let define_builtin_type g scope t =
+    let n =
+        Const_node.create_from_type g
+          { filename = ""; line = 0; col = 0 }
+          (Type (Value (Types.of_ast_type (Ast.Type t))))
+    in
+    Scope_node.define g scope t n true
+
 let of_ast ast linker =
     let loc : Ast.loc = { filename = ""; line = 0; col = 0 } in
     let start = Start_node.create loc in
@@ -325,6 +360,8 @@ let of_ast ast linker =
     let scope = Scope_node.create () in
     Scope_node.set_ctrl g scope ctrl;
     Scope_node.set_mem g scope mem;
+    let builtin_types = [ "i64"; "bool"; "str"; "void" ] in
+    List.iter builtin_types ~f:(define_builtin_type g scope);
     Core.List.iter ast ~f:(fun s -> do_statement g s scope None linker);
     let ctrl = Scope_node.get_ctrl g scope in
     Graph.set_stop_ctrl g ctrl;
