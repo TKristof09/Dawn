@@ -152,6 +152,15 @@ let do_mem_node linker extra_node_deps g n (m : Node.mem_kind) =
                 in
                 match field_type with
                 | None -> (~new_type:ALL, ~extra_deps:[])
+                | Some (ConstArray (Value arr)) -> (
+                    let offs = Graph.get_dependency g n 3 |> Option.value_exn in
+                    match offs.typ with
+                    | Integer _ when Types.is_constant offs.typ ->
+                        let i = Types.get_integer_const_exn offs.typ in
+                        (* TODO: this only works for now because i consider everything 64 bit *)
+                        let idx = (i - 8) / Types.get_size arr.element_type in
+                        (~new_type:(List.nth_exn (arr.values :> Types.t list) idx), ~extra_deps:[])
+                    | _ -> (~new_type:(Types.get_top arr.element_type), ~extra_deps:[]))
                 | Some field_type -> (~new_type:field_type, ~extra_deps:[]))
             | ANY -> (~new_type:ANY, ~extra_deps:[])
             | ALL -> (~new_type:ALL, ~extra_deps:[])

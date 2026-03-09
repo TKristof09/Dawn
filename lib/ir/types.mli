@@ -17,11 +17,20 @@ and struct_type = private {
     fields : (string * t) list;
   }
 
-and const_array = private t list
+and const_array = {
+    element_type : t;
+    values : t list;
+  }
+
+and integer = private {
+    min : int;
+    max : int;
+    num_widens : int;
+  }
 
 and t =
     | ANY
-    | Integer of int sub_lattice
+    | Integer of integer sub_lattice
     | Bool of bool sub_lattice
     | Tuple of t list sub_lattice
     | FunPtr of fun_ptr sub_lattice
@@ -37,6 +46,8 @@ and t =
 [@@deriving show { with_path = false }, sexp_of]
 
 val equal : t -> t -> bool
+val make_int : ?num_widens:int -> int -> int -> t
+val make_int_const : int -> t
 val make_fun_ptr : ?idx:int -> t list -> t -> t
 val make_struct : string -> (string * t) list -> t
 val make_array : t -> t -> t
@@ -54,3 +65,5 @@ val is_a : t -> t -> bool
 val get_field_type : t -> string -> t option
 val human_readable : t -> string
 val get_size : t -> int
+val get_top : t -> t
+val get_integer_const_exn : t -> int

@@ -30,11 +30,23 @@ and struct_type = {
     fields : (string * t) list;
   }
 
-and const_array = t list
+and const_array = {
+    element_type : t;
+    values : t list;
+  }
+
+and integer = {
+    (* TODO: this doesn't allow us to represent all (u)int64 values. But Menhir
+       can't parse these anyway so we'd need to move to storing integer
+       literals as strings or using some bigint library *)
+    min : int;
+    max : int;
+    num_widens : int;
+  }
 
 and t =
     | ANY
-    | Integer of int sub_lattice
+    | Integer of integer sub_lattice
     | Bool of bool sub_lattice
     | Tuple of t list sub_lattice
     | FunPtr of fun_ptr sub_lattice
@@ -48,6 +60,73 @@ and t =
     | DeadControl
     | ALL
 [@@deriving show { with_path = false }, sexp_of, equal]
+
+let rec human_readable t =
+    let human_readable_int { min; max; num_widens } =
+        let bits =
+            if min >= 0 then
+              Int.ceil_log2 (max + 1)
+            else
+              let bits_neg = if min >= 0 then 0 else Int.ceil_log2 (-min) in
+              let bits_pos = if max < 0 then 0 else Int.ceil_log2 (max + 1) in
+              Int.max bits_neg bits_pos
+        in
+        Printf.sprintf "i%d" bits
+    in
+    match t with
+    | Integer (Value i) -> human_readable_int i
+    | Bool _ -> "bool"
+    | Struct (Value s) -> s.name
+    | Ptr (Struct _ as s) ->
+        (* HACK: we always represent structs as Ptr(Struct...) now so this
+           makes the pretty printer look nicer, but idk if in the future i want
+           to change this representation *)
+        human_readable s
+    | Ptr p -> "*" ^ human_readable p
+    | Void -> "void"
+    | FunPtr (Value { params; ret; fun_indices }) ->
+        Printf.sprintf "fun((%s) -> %s)"
+          (String.concat ~sep:", " (List.map params ~f:human_readable))
+          (human_readable ret)
+    | Type (Value t) -> Printf.sprintf "type %s" (human_readable t)
+    | Type Any
+    | Type All ->
+        "type"
+    | ANY -> "unknown type"
+    | ALL -> "invalid type"
+    | _ -> failwithf "No human readable label for %s" (show t) ()
+
+let get_top = function
+    | ANY -> ANY
+    | Integer _ -> Integer Any
+    | Bool _ -> Bool Any
+    | Tuple _ -> Tuple Any
+    | FunPtr _ -> FunPtr Any
+    | Ptr _ -> Ptr ANY
+    | Struct _ -> Struct Any
+    | ConstArray _ -> ConstArray Any
+    | Type _ -> Type Any
+    | Void -> Void
+    | Memory -> Memory
+    | Control -> DeadControl
+    | DeadControl -> DeadControl
+    | ALL -> ANY
+
+let make_int ?(num_widens = 0) min max =
+    if min = Int.min_value && max = Int.max_value then
+      Integer All
+    else if max = Int.min_value && min = Int.max_value then
+      Integer Any
+    else
+      Integer (Value { min; max; num_widens })
+
+let make_int_const i = Integer (Value { min = i; max = i; num_widens = 0 })
+let i32 = make_int ~num_widens:3 (-1 lsl 31) (1 lsl 31)
+let i16 = make_int ~num_widens:3 (-1 lsl 15) (1 lsl 15)
+let i8 = make_int ~num_widens:3 (-1 lsl 7) (1 lsl 7)
+let u32 = make_int ~num_widens:3 0 (1 lsl 32)
+let u16 = make_int ~num_widens:3 0 (1 lsl 16)
+let u8 = make_int ~num_widens:3 0 (1 lsl 8)
 
 let make_fun_ptr ?idx params ret =
     let is_valid_param_type t =
@@ -126,12 +205,12 @@ let make_array_inner name element_type len_type =
 let make_array element_type len_type =
     let name =
         match element_type with
-        | Integer _ -> "int_array"
+        | Integer _ -> human_readable element_type ^ "_array"
         | Bool _ -> "bool_array"
         | Ptr _ -> "ptr_array"
-        | ConstArray (Value (x :: _)) -> (
-            match x with
-            | Integer _ -> "int_array"
+        | ConstArray (Value { element_type; values = _ }) -> (
+            match element_type with
+            | Integer _ -> "const_" ^ human_readable element_type ^ "_array"
             | _ -> failwith "TODO")
         | _ -> assert false
     in
@@ -139,17 +218,35 @@ let make_array element_type len_type =
 
 let make_string s =
     let len = String.length s in
-    let contents = s |> String.to_list |> List.map ~f:(fun c -> Integer (Value (Char.to_int c))) in
-    let el_type = ConstArray (Value contents) in
-    make_array_inner "str" el_type (Integer (Value len))
+    let values = s |> String.to_list |> List.map ~f:(fun c -> make_int_const (Char.to_int c)) in
+    let typ = ConstArray (Value { element_type = u8; values }) in
+    make_array_inner "str" typ (make_int_const len)
 
 let rec of_ast_type (ast_type : Ast.var_type) : t =
+    let try_parse_int s =
+        if Char.equal s.[0] 'i' then
+          Int.of_string_opt (String.drop_prefix s 1) |> Option.map ~f:(fun bits -> `Int bits)
+        else if Char.equal s.[0] 'u' then
+          Int.of_string_opt (String.drop_prefix s 1) |> Option.map ~f:(fun bits -> `UInt bits)
+        else
+          None
+    in
     (* FIXME actually implement *)
     match ast_type with
-    | Type "i64" -> Integer All
-    | Type "str" -> Ptr (make_array_inner "str" (ConstArray All) (Integer All))
-    | Type "bool" -> Bool All
-    | Type "void" -> Void
+    | Type s -> (
+        match try_parse_int s with
+        | Some (`UInt bits) -> make_int 0 (1 lsl bits)
+        | Some (`Int bits) -> make_int (-1 lsl (bits - 1)) (1 lsl (bits - 1))
+        | None -> (
+            match s with
+            | "str" ->
+                Ptr
+                  (make_array_inner "str"
+                     (ConstArray (Value { element_type = u8; values = [] }))
+                     (Integer All))
+            | "bool" -> Bool All
+            | "void" -> Void
+            | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type ast_type) ()))
     | Fn (ret, params) ->
         let ret = of_ast_type ret in
         let params = List.map params ~f:of_ast_type in
@@ -168,7 +265,17 @@ let rec meet t t' =
     in
     match (t, t') with
     | Integer t, Integer t' ->
-        Integer (meet_sub_lattice t t' ~f:(fun i i' -> if i = i' then Value i else All))
+        Integer
+          (meet_sub_lattice t t' ~f:(fun i i' ->
+               let min_range = min i.min i'.min in
+               let max_range = max i.max i'.max in
+               if min_range = Int.min_value && max_range = Int.max_value then
+                 All
+               else if max_range = Int.min_value && min_range = Int.max_value then
+                 Any
+               else
+                 Value
+                   { min = min_range; max = max_range; num_widens = max i.num_widens i'.num_widens }))
     | Bool t, Bool t' ->
         Bool (meet_sub_lattice t t' ~f:(fun i i' -> if Bool.equal i i' then Value i else All))
     | Tuple t, Tuple t' ->
@@ -214,9 +321,15 @@ let rec meet t t' =
     | ConstArray a, ConstArray a' ->
         let l =
             meet_sub_lattice a a' ~f:(fun x x' ->
-                match List.map2 x x' ~f:meet with
-                | List.Or_unequal_lengths.Ok l -> Value l
-                | List.Or_unequal_lengths.Unequal_lengths -> All)
+                let element_type = meet x.element_type x'.element_type in
+                if equal element_type ALL then
+                  All
+                else
+                  match
+                    List.map2 x.values x'.values ~f:meet
+                  with
+                  | List.Or_unequal_lengths.Ok l -> Value { element_type; values = l }
+                  | List.Or_unequal_lengths.Unequal_lengths -> All)
         in
         ConstArray l
     | Type t, Type t' ->
@@ -253,6 +366,8 @@ let rec meet t t' =
     | Void, _ ->
         ALL
 
+let is_a lhs rhs = equal (meet lhs rhs) rhs
+
 let rec join t t' =
     let join_sub_lattice t t' ~f =
         match (t, t') with
@@ -265,8 +380,17 @@ let rec join t t' =
     in
     match (t, t') with
     | Integer t, Integer t' ->
-        let l = join_sub_lattice t t' ~f:(fun x x' -> if x = x' then Value x else Any) in
-        Integer l
+        Integer
+          (join_sub_lattice t t' ~f:(fun i i' ->
+               let min_range = max i.min i'.min in
+               let max_range = min i.max i'.max in
+               if min_range = Int.min_value && max_range = Int.max_value then
+                 All
+               else if max_range = Int.min_value && min_range = Int.max_value then
+                 Any
+               else
+                 Value
+                   { min = min_range; max = max_range; num_widens = min i.num_widens i'.num_widens }))
     | Bool t, Bool t' ->
         let l = join_sub_lattice t t' ~f:(fun x x' -> if Bool.equal x x' then Value x else Any) in
         Bool l
@@ -313,9 +437,15 @@ let rec join t t' =
     | ConstArray a, ConstArray a' ->
         let l =
             join_sub_lattice a a' ~f:(fun x x' ->
-                match List.map2 x x' ~f:join with
-                | Ok l -> Value l
-                | Unequal_lengths -> Any)
+                let element_type = join x.element_type x'.element_type in
+                if equal element_type ANY then
+                  Any
+                else
+                  match
+                    List.map2 x.values x'.values ~f:join
+                  with
+                  | List.Or_unequal_lengths.Ok l -> Value { element_type; values = l }
+                  | List.Or_unequal_lengths.Unequal_lengths -> Any)
         in
         ConstArray l
     | Type t, Type t' ->
@@ -366,7 +496,8 @@ let rec is_constant t =
     | DeadControl
     | Memory ->
         false
-    | Integer x -> is_constant_lattice x
+    | Integer (Value { min; max; num_widens = _ }) -> min = max
+    | Integer _ -> false
     | Bool x -> is_constant_lattice x
     | Tuple x -> is_constant_lattice x
     | FunPtr x -> (
@@ -436,15 +567,17 @@ let get_string t =
                 None)
         with
         | None -> None
-        | Some l -> (
-            match List.hd_exn l with
+        | Some { element_type; values } when is_a element_type u8 -> (
+            match List.hd_exn values with
             | Integer _ ->
-                List.map l ~f:(function
-                  | Integer (Value i) -> Char.of_int_exn i
+                List.map values ~f:(function
+                  | Integer (Value { min; max; num_widens = _ }) when min = max ->
+                      Char.of_int_exn min
                   | _ -> assert false)
                 |> String.of_char_list
                 |> Option.some
-            | _ -> None))
+            | _ -> None)
+        | _ -> None)
     | _ -> None
 
 let rec get_offset t field =
@@ -462,8 +595,6 @@ let rec get_offset t field =
     | Ptr (Struct _ as s) -> get_offset s field
     | _ -> None
 
-let is_a lhs rhs = equal (meet lhs rhs) rhs
-
 let rec get_field_type t field_name =
     match t with
     | Struct (Value { name = _; fields }) ->
@@ -475,38 +606,21 @@ let rec get_field_type t field_name =
     | Ptr (Struct _ as s) -> get_field_type s field_name
     | _ -> None
 
-let rec human_readable t =
-    match t with
-    | Integer _ -> "i64"
-    | Bool _ -> "bool"
-    | Struct Any
-    | Struct All ->
-        "struct"
-    | Struct (Value s) -> s.name
-    | Ptr (Struct _ as s) ->
-        (* HACK: we always represent structs as Ptr(Struct...) now so this
-           makes the pretty printer look nicer, but idk if in the future i want
-           to change this representation *)
-        human_readable s
-    | Ptr p -> "*" ^ human_readable p
-    | Void -> "void"
-    | FunPtr (Value { params; ret; fun_indices }) ->
-        Printf.sprintf "fun((%s) -> %s)"
-          (String.concat ~sep:", " (List.map params ~f:human_readable))
-          (human_readable ret)
-    | Type (Value t) -> Printf.sprintf "type %s" (human_readable t)
-    | Type Any
-    | Type All ->
-        "type"
-    | ANY -> "unknown type"
-    | ALL -> "invalid type"
-    | _ -> failwithf "No human readable label for %s" (show t) ()
-
 let rec get_size t =
-    (* TODO: actual sizes for ints and bools *)
     match t with
+    | Integer (Value { min; max; num_widens = _ }) ->
+        (* Integers get rounded oup to nearest multiple of 8bit size, so e.g. i12 would be stored as i16 *)
+        let bits =
+            if min >= 0 then
+              Int.ceil_log2 (max + 1)
+            else
+              let bits_neg = if min >= 0 then 0 else Int.ceil_log2 (-min) in
+              let bits_pos = if max < 0 then 0 else Int.ceil_log2 (max + 1) in
+              Int.max bits_neg bits_pos
+        in
+        (bits + 7) / 8
     | Integer _ -> 8
-    | Bool _ -> 8
+    | Bool _ -> 1
     | Struct (Value s) ->
         List.sum
           (module Int)
@@ -520,3 +634,11 @@ let rec get_size t =
     | FunPtr _ ->
         8
     | _ -> failwithf "todo: %s" (show t) ()
+
+let get_integer_const_exn = function
+    | Integer (Value { min; max; num_widens = _ }) ->
+        if min = max then
+          min
+        else
+          raise (Invalid_argument "Not an integer constant")
+    | _ -> raise (Invalid_argument "Not an integer constant")
