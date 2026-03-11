@@ -1,7 +1,7 @@
 open Core
 
 let create_int g loc i =
-    let n = Node.create_data loc (Types.Integer (Value i)) Constant in
+    let n = Node.create_data loc (Types.make_int_const i) Constant in
     Graph.add_dependencies g n [ Some (Graph.get_start g) ];
     Graph.finalize_node g n
 

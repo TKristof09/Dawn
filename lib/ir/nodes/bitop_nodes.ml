@@ -23,11 +23,21 @@ let compute_type g (n : Node.t) =
     let rhs = Graph.get_dependency g n 2 |> Option.value_exn in
     let new_type : Types.t =
         match (lhs.typ, rhs.typ) with
-        | Integer (Value lhs_v), Integer (Value rhs_v) -> Integer (Value (op lhs_v rhs_v))
+        | Integer _, Integer _ when Types.is_constant lhs.typ && Types.is_constant rhs.typ ->
+            let lhs_v = Types.get_integer_const_exn lhs.typ in
+            let rhs_v = Types.get_integer_const_exn rhs.typ in
+            Types.make_int_const (op lhs_v rhs_v)
+        | Integer (Value lhs), Integer _ when Types.is_constant rhs.typ -> (
+            (* TODO consider making a version for when lhs is constant but rhs isn't. That should also be doable but more complex *)
+            let rhs_v = Types.get_integer_const_exn rhs.typ in
+            match n.kind with
+            | Data Lsh
+            | Data Rsh ->
+                Types.make_int ~num_widens:lhs.num_widens (op lhs.min rhs_v) (op lhs.max rhs_v)
+            | _ -> Integer All)
         | Integer Any, Integer Any -> Integer Any
-        | Integer Any, Integer (Value _)
-        | Integer (Value _), Integer Any ->
-            Integer Any
+        | Integer Any, Integer _ when Types.is_constant rhs.typ -> Integer Any
+        | Integer _, Integer Any when Types.is_constant lhs.typ -> Integer Any
         | Integer _, Integer _ -> Integer All
         | ANY, _
         | _, ANY ->

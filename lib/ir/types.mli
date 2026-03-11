@@ -67,3 +67,10 @@ val human_readable : t -> string
 val get_size : t -> int
 val get_top : t -> t
 val get_integer_const_exn : t -> int
+val widen_int : t -> t -> t
+val i32 : t
+val i16 : t
+val i8 : t
+val u32 : t
+val u16 : t
+val u8 : t

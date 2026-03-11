@@ -51,6 +51,7 @@ and kind =
 
 and t = {
     mutable typ : Types.t;
+    mutable min_typ : Types.t option;
     mutable kind : kind;
     id : int;
     loc : Ast.loc;
@@ -91,13 +92,9 @@ let equal n1 n2 = Int.equal n1.id n2.id
 
 let semantic_equal n1 deps1 n2 deps2 =
     let is_same_kind n1 n2 =
-        let constant_same n1 n2 =
-            match (n1.typ, n2.typ) with
-            | Integer (Value v1), Integer (Value v2) -> v1 = v2
-            | _ -> false
-        in
         match (n1.kind, n2.kind) with
-        | Data Constant, Data Constant -> constant_same n1 n2
+        | Data Constant, Data Constant ->
+            Types.is_constant n1.typ && Types.is_constant n2.typ && Types.equal n1.typ n2.typ
         | _, _ -> Poly.equal n1.kind n2.kind
     in
     is_same_kind n1 n2
@@ -112,13 +109,14 @@ let semantic_equal n1 deps1 n2 deps2 =
          deps1 deps2
 
 let hash n = Int.hash n.id
-let create_data loc typ kind = { typ; kind = Data kind; id = next_id (); loc }
-let create_ctrl loc typ kind = { typ; kind = Ctrl kind; id = next_id (); loc }
-let create_mem loc typ kind = { typ; kind = Mem kind; id = next_id (); loc }
+let create_data loc typ kind = { typ; min_typ = None; kind = Data kind; id = next_id (); loc }
+let create_ctrl loc typ kind = { typ; min_typ = None; kind = Ctrl kind; id = next_id (); loc }
+let create_mem loc typ kind = { typ; min_typ = None; kind = Mem kind; id = next_id (); loc }
 
 let create_scope () =
     {
       typ = Types.ALL;
+      min_typ = None;
       kind = Scope (Symbol_table.create ());
       id = next_id ();
       loc = { filename = ""; line = 0; col = 0 };
@@ -127,6 +125,7 @@ let create_scope () =
 let create_forward_ref name =
     {
       typ = Types.ALL;
+      min_typ = None;
       kind = ForwardRef name;
       id = next_id ();
       loc = { filename = ""; line = 0; col = 0 };

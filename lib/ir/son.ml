@@ -6,7 +6,7 @@ let rec get_type g scope t =
         let n = Scope_node.get g scope s in
         match n.typ with
         | Type (Value t) -> t
-        | _ -> failwith "todo: i think this should be an error")
+        | _ -> failwithf "todo: i think this should be an error: %s" (Node.show n) ())
     | Fn _ -> Types.of_ast_type t
     | Array (t, _) ->
         (* TODO: perhaps we want to keep the count known in the future to check
@@ -42,12 +42,16 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
         Scope_node.define g scope name n (Poly.equal qualifier Ast.Const)
     | Ast.Declaration (name, typ) -> (
         match typ with
-        | Type "i64" ->
-            let default_init =
-                do_expr g { loc = s.loc; node = Int 0 } scope cur_ret_node linker
-                |> Option.value_exn
-            in
-            Scope_node.define g scope name default_init false
+        | Type _ -> (
+            let t = get_type g scope typ in
+            match t with
+            | Integer _ ->
+                let default_init =
+                    do_expr g { loc = s.loc; node = Int 0 } scope cur_ret_node linker
+                    |> Option.value_exn
+                in
+                Scope_node.define g scope name default_init false
+            | _ -> failwith "todo")
         | Array (t, count) ->
             let element_type = get_type g scope t in
             let ctrl = Scope_node.get_ctrl g scope in
@@ -360,7 +364,7 @@ let of_ast ast linker =
     let scope = Scope_node.create () in
     Scope_node.set_ctrl g scope ctrl;
     Scope_node.set_mem g scope mem;
-    let builtin_types = [ "i64"; "bool"; "str"; "void" ] in
+    let builtin_types = [ "i32"; "i64"; "bool"; "str"; "void" ] in
     List.iter builtin_types ~f:(define_builtin_type g scope);
     Core.List.iter ast ~f:(fun s -> do_statement g s scope None linker);
     let ctrl = Scope_node.get_ctrl g scope in

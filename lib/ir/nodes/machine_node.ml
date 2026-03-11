@@ -396,7 +396,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
           List.find_mapi deps ~f:(fun i n ->
               Option.bind n ~f:(fun n ->
                   match n.typ with
-                  | Integer (Value _) -> Some (i, n)
+                  | Integer _ when Types.is_constant n.typ -> Some (i, n)
                   | _ -> None))
         with
         | None ->
@@ -408,7 +408,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
         | Some (idx, cn) ->
             let value =
                 match cn.typ with
-                | Integer (Value v) -> v
+                | Integer _ when Types.is_constant cn.typ -> Types.get_integer_const_exn cn.typ
                 | _ -> assert false (* already checked in the List.find call above *)
             in
             let kind = kind_imm value in
@@ -425,7 +425,8 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
         | None -> assert false
         | Some dep -> (
             match dep.typ with
-            | Integer (Value v) ->
+            | Integer _ when Types.is_constant dep.typ ->
+                let v = Types.get_integer_const_exn dep.typ in
                 let kind = kind_imm v in
                 let node = { id = next_id (); kind; ir_node = n } in
                 Graph.add_dependencies machine_g node [];
@@ -446,7 +447,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
     | Constant ->
         let kind =
             match n.typ with
-            | Integer (Value i) -> Int i
+            | Integer _ when Types.is_constant n.typ -> Int (Types.get_integer_const_exn n.typ)
             | Ptr _ -> Ptr
             | FunPtr _ -> Ptr
             | Void -> Noop
@@ -488,7 +489,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
               List.find_mapi cmp_deps ~f:(fun i n ->
                   Option.bind n ~f:(fun n ->
                       match n.typ with
-                      | Integer (Value _) -> Some (i, n)
+                      | Integer _ when Types.is_constant n.typ -> Some (i, n)
                       | _ -> None))
             with
             | None ->
@@ -501,9 +502,8 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
                 set_node
             | Some (idx, cn) ->
                 let value =
-                    match cn.typ with
-                    | Integer (Value v) -> v
-                    | _ -> assert false (* already checked in the List.find call above *)
+                    (* already checked in the List.find call above *)
+                    Types.get_integer_const_exn cn.typ
                 in
 
                 let m_cmp =
@@ -697,8 +697,7 @@ let post_process (machine_g : (t, Graph.readwrite) Graph.t) =
         {
           id = next_id ();
           kind = Int 0;
-          ir_node =
-            { typ = ANY; kind = Data Constant; id = 0; loc = { filename = ""; line = 0; col = 0 } };
+          ir_node = Node.create_data { filename = ""; line = 0; col = 0 } Types.ANY Constant;
         }
     in
     Graph.fold machine_g ~init:[] ~f:(fun acc n ->

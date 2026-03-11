@@ -49,6 +49,7 @@ and kind =
 
 and t = {
     mutable typ : Types.t;
+    mutable min_typ : Types.t option;
     mutable kind : kind;
     id : int;
     loc : Ast.loc;

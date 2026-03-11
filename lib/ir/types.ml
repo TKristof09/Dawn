@@ -75,6 +75,7 @@ let rec human_readable t =
     in
     match t with
     | Integer (Value i) -> human_readable_int i
+    | Integer _ -> "integer"
     | Bool _ -> "bool"
     | Struct (Value s) -> s.name
     | Ptr (Struct _ as s) ->
@@ -121,12 +122,12 @@ let make_int ?(num_widens = 0) min max =
       Integer (Value { min; max; num_widens })
 
 let make_int_const i = Integer (Value { min = i; max = i; num_widens = 0 })
-let i32 = make_int ~num_widens:3 (-1 lsl 31) (1 lsl 31)
-let i16 = make_int ~num_widens:3 (-1 lsl 15) (1 lsl 15)
-let i8 = make_int ~num_widens:3 (-1 lsl 7) (1 lsl 7)
-let u32 = make_int ~num_widens:3 0 (1 lsl 32)
-let u16 = make_int ~num_widens:3 0 (1 lsl 16)
-let u8 = make_int ~num_widens:3 0 (1 lsl 8)
+let i32 = make_int ~num_widens:3 (-1 lsl 31) ((1 lsl 31) - 1)
+let i16 = make_int ~num_widens:3 (-1 lsl 15) ((1 lsl 15) - 1)
+let i8 = make_int ~num_widens:3 (-1 lsl 7) ((1 lsl 7) - 1)
+let u32 = make_int ~num_widens:3 0 ((1 lsl 32) - 1)
+let u16 = make_int ~num_widens:3 0 ((1 lsl 16) - 1)
+let u8 = make_int ~num_widens:3 0 ((1 lsl 8) - 1)
 
 let make_fun_ptr ?idx params ret =
     let is_valid_param_type t =
@@ -235,8 +236,8 @@ let rec of_ast_type (ast_type : Ast.var_type) : t =
     match ast_type with
     | Type s -> (
         match try_parse_int s with
-        | Some (`UInt bits) -> make_int 0 (1 lsl bits)
-        | Some (`Int bits) -> make_int (-1 lsl (bits - 1)) (1 lsl (bits - 1))
+        | Some (`UInt bits) -> make_int ~num_widens:3 0 (1 lsl bits)
+        | Some (`Int bits) -> make_int ~num_widens:3 (-1 lsl (bits - 1)) (1 lsl (bits - 1))
         | None -> (
             match s with
             | "str" ->
@@ -319,17 +320,20 @@ let rec meet t t' =
         Struct l
     | Ptr p, Ptr p' -> Ptr (meet p p')
     | ConstArray a, ConstArray a' ->
+        (* TODO: review this code (and the join for constarrays). Is it fine to
+           loose the values list when meeting/joining two different
+           constarrays? I think so since it will no longer be compile time
+           constant anyhow but need to think more *)
         let l =
             meet_sub_lattice a a' ~f:(fun x x' ->
-                let element_type = meet x.element_type x'.element_type in
-                if equal element_type ALL then
-                  All
+                if List.equal Poly.equal x.values x'.values then
+                  Value x
                 else
-                  match
-                    List.map2 x.values x'.values ~f:meet
-                  with
-                  | List.Or_unequal_lengths.Ok l -> Value { element_type; values = l }
-                  | List.Or_unequal_lengths.Unequal_lengths -> All)
+                  let element_type = meet x.element_type x'.element_type in
+                  if equal element_type ALL then
+                    All
+                  else
+                    Value { element_type; values = [] })
         in
         ConstArray l
     | Type t, Type t' ->
@@ -437,15 +441,14 @@ let rec join t t' =
     | ConstArray a, ConstArray a' ->
         let l =
             join_sub_lattice a a' ~f:(fun x x' ->
-                let element_type = join x.element_type x'.element_type in
-                if equal element_type ANY then
-                  Any
+                if List.equal Poly.equal x.values x'.values then
+                  Value x
                 else
-                  match
-                    List.map2 x.values x'.values ~f:join
-                  with
-                  | List.Or_unequal_lengths.Ok l -> Value { element_type; values = l }
-                  | List.Or_unequal_lengths.Unequal_lengths -> Any)
+                  let element_type = join x.element_type x'.element_type in
+                  if equal element_type ANY then
+                    Any
+                  else
+                    Value { element_type; values = [] })
         in
         ConstArray l
     | Type t, Type t' ->
@@ -642,3 +645,12 @@ let get_integer_const_exn = function
         else
           raise (Invalid_argument "Not an integer constant")
     | _ -> raise (Invalid_argument "Not an integer constant")
+
+let widen_int t min_type =
+    match t with
+    | Integer (Value { min; max; num_widens }) ->
+        if num_widens < 3 then
+          Integer (Value { min; max; num_widens = num_widens + 1 })
+        else
+          min_type
+    | _ -> assert false
