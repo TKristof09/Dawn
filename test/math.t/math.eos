@@ -1,8 +1,8 @@
 const print = fun(s: str) = @extern("print");
-const print_int = fun(i: i64) = @extern("print_int");
+const print_int = fun(i: i32) = @extern("print_int");
 
-let a: int = 10;
-let b: int = 5;
+let a: i32 = 10;
+let b: i32 = 5;
 
 print("Testing addition:\n");
 print_int(a + b);
@@ -37,8 +37,8 @@ print_int(100 - (50 / 5));
 print("\n");
 
 
-let c: int = a + b;
-let d: int = c * 2;
+let c: i32 = a + b;
+let d: i32 = c * 2;
 print("Testing variable arithmetic:\n");
 print_int(c);    
 print("\n");

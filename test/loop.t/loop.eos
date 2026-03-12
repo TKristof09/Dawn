@@ -1,5 +1,5 @@
-const print_int = fun(i: i64) = @extern("print_int");
-let i:int = 0;
+const print_int = fun(i: i32) = @extern("print_int");
+let i:i32 = 0;
 while(i < 10) {
     print_int(i);
     i = i + 1;

@@ -3,6 +3,7 @@ open Core
 let rec get_type g scope t =
     match t with
     | Ast.Type s -> (
+        assert (not (String.is_empty s));
         let n = Scope_node.get g scope s in
         match n.typ with
         | Type (Value t) -> t
@@ -20,9 +21,13 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
     match s.node with
     | Ast.ExprStatement e -> do_expr g e scope cur_ret_node linker |> ignore
     | Ast.Declaration_assign (name, typ, e, qualifier) ->
-        (* TODO: annotation should be saved somehow to use in type checking *)
-        ignore typ;
         let n = do_expr g e scope cur_ret_node linker |> Option.value_exn in
+
+        (* type annotation sets the min type. TODO: ast type should be an optional later with type inference *)
+        (if not (Ast.equal_var_type typ (Type "")) then
+           let typ = get_type g scope typ in
+           n.Node.min_typ <- Some typ);
+
         (match n.Node.kind with
         | Data Constant -> (
             match n.typ with
@@ -50,6 +55,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
                     do_expr g { loc = s.loc; node = Int 0 } scope cur_ret_node linker
                     |> Option.value_exn
                 in
+                default_init.min_typ <- Some t;
                 Scope_node.define g scope name default_init false
             | _ -> failwith "todo")
         | Array (t, count) ->
@@ -64,6 +70,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
             let n = Mem_nodes.create_new g loc ~ctrl ~mem ~size arr_type in
             let mem = Proj_node.create g loc n 0 in
             let ptr = Proj_node.create g loc n 1 in
+            ptr.min_typ <- Some (Ptr arr_type);
             let offset =
                 Types.get_offset arr_type "len" |> Option.value_exn |> Const_node.create_int g loc
             in
@@ -144,6 +151,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
               (Const_node.create_int g loc base)
               (Bitop_nodes.create_lsh g loc index el_size)
         in
+        value.min_typ <- Some (Types.get_field_type ptr.typ "[]" |> Option.value_exn);
         let store_mem = Mem_nodes.create_store g loc ~mem ~ptr ~offset "[]" ~value in
         Scope_node.set_mem g scope store_mem;
         Some value
@@ -235,11 +243,13 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         |> List.iteri ~f:(fun i (typ, pname) ->
             let param_type = get_type g scope typ in
             let param_node = Fun_node.create_param g loc fun_node param_type (i + 1) in
+            param_node.min_typ <- Some param_type;
             Scope_node.define g scope pname param_node false);
         let body_n =
             do_expr g body scope (Some ret_node) linker
             |> Option.value ~default:(Const_node.create_from_type g body.loc Types.Void)
         in
+        body_n.min_typ <- Some (get_type g scope ret_type);
         Fun_node.add_return g ret_node ~ctrl:(Scope_node.get_ctrl g scope)
           ~mem:(Scope_node.get_mem g scope) ~val_n:body_n;
         Scope_node.pop g scope;
@@ -263,10 +273,13 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         | _ -> assert false);
         let fun_ptr = Const_node.create_fun_ptr g loc fun_node fun_idx in
         let ret_val = Extern_node.create g loc ret_type external_name in
+        ret_val.min_typ <- Some ret_type;
         let mem = Fun_node.create_param g loc fun_node Memory 0 in
         List.mapi param_types ~f:(fun i typ ->
             let param_type = get_type g scope typ in
-            Some (Fun_node.create_param g loc fun_node param_type (i + 1)))
+            let param_node = Fun_node.create_param g loc fun_node param_type (i + 1) in
+            param_node.min_typ <- Some param_type;
+            Some param_node)
         |> Graph.add_dependencies g ret_val;
         Fun_node.add_return g ret_node ~ctrl:fun_node ~mem ~val_n:ret_val;
         Some fun_ptr
@@ -289,6 +302,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         let mem = Proj_node.create g loc n 0 in
         Scope_node.set_mem g scope mem;
         let ptr = Proj_node.create g loc n 1 in
+        ptr.min_typ <- Some (Ptr typ);
         let field_names =
             match typ with
             | Struct (Value { name = _; fields }) -> List.map fields ~f:fst |> String.Set.of_list
@@ -310,6 +324,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
                           name type_name ()
                     else
                       let value = do_expr g e scope cur_ret_node linker |> Option.value_exn in
+                      value.min_typ <- Some (Types.get_field_type typ name |> Option.value_exn);
                       let offset =
                           Types.get_offset typ name
                           |> Option.value_exn
@@ -335,6 +350,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         let mem = Scope_node.get_mem g scope in
         let field_typ = Types.get_field_type base.typ field_name |> Option.value ~default:ALL in
         let load = Mem_nodes.create_load g loc ~mem ~ptr:base field_name ~offset field_typ in
+        load.min_typ <- Some field_typ;
         Some load
     | _ -> failwithf "TODO: unimplemented %s" (Ast.show_expr e.node) ()
 

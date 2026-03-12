@@ -69,7 +69,7 @@ let rec human_readable t =
             else
               let bits_neg = if min >= 0 then 0 else Int.ceil_log2 (-min) in
               let bits_pos = if max < 0 then 0 else Int.ceil_log2 (max + 1) in
-              Int.max bits_neg bits_pos
+              1 + Int.max bits_neg bits_pos
         in
         Printf.sprintf "i%d" bits
     in
@@ -236,8 +236,8 @@ let rec of_ast_type (ast_type : Ast.var_type) : t =
     match ast_type with
     | Type s -> (
         match try_parse_int s with
-        | Some (`UInt bits) -> make_int ~num_widens:3 0 (1 lsl bits)
-        | Some (`Int bits) -> make_int ~num_widens:3 (-1 lsl (bits - 1)) (1 lsl (bits - 1))
+        | Some (`UInt bits) -> make_int ~num_widens:3 0 ((1 lsl bits) - 1)
+        | Some (`Int bits) -> make_int ~num_widens:3 (-1 lsl (bits - 1)) ((1 lsl (bits - 1)) - 1)
         | None -> (
             match s with
             | "str" ->

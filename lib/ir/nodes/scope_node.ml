@@ -52,6 +52,9 @@ and assign g (n : Node.t) name (node : Node.t) =
             | _ -> symbol.node
         in
         Symbol_table.reassign_symbol tbl name node;
+        (match (symbol.min_typ, node.min_typ) with
+        | Some _, None -> node.min_typ <- symbol.min_typ
+        | _ -> ());
         let idx =
             Graph.get_dependencies g n
             |> List.find_index (function

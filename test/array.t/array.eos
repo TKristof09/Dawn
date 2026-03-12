@@ -1,17 +1,17 @@
 const print = fun(s: str)  = @extern("print");
-const print_int = fun(i: i64)  = @extern("print_int");
+const print_int = fun(i: i32)  = @extern("print_int");
 
-const print_val = fun(i : i64, v : i64) {
+const print_val = fun(i : i32, v : i32) {
     print_int(i);
     print("   :   ");
     print_int(v);
     print("\n");
 };
 
-let arr: i64[20];
-let arr_size: i64 = 20;
+let arr: i32[20];
+let arr_size: i32 = 20;
 
-let i: int = 0;
+let i: i32 = 0;
 while(i < arr_size){
     print_val(i, arr[i]);
     arr[i] = i;

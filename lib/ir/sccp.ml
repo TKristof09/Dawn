@@ -17,12 +17,73 @@ let set_type g (n : Node.t) new_type =
     n.typ <- new_type;
     Graph.get_dependants g n
 
-let work linker extra_node_deps (g : (Node.t, Graph.readwrite) Graph.t) (n : Node.t) ~type_fn =
+let backwards_prop_min_integer_type min_integer_types g n min_type =
+    assert (Types.is_a min_type (Integer All));
+
+    match n.Node.kind with
+    | Data Add
+    | Data Sub
+    | Data Mul
+    | Data Div
+    | Data Phi
+    | Data (Param _) ->
+        let update n =
+            let changed = ref false in
+            Hashtbl.update min_integer_types n ~f:(function
+              | None ->
+                  changed := true;
+                  min_type
+              | Some t ->
+                  let t_new = Types.join t min_type in
+                  changed := not (Types.equal t t_new);
+                  t_new);
+            !changed
+        in
+        ignore (update n);
+        Graph.get_dependencies g n |> List.tl_exn |> List.filter_opt |> List.filter ~f:update
+    | _ -> []
+
+let work linker extra_node_deps min_integer_types (g : (Node.t, Graph.readwrite) Graph.t)
+    (n : Node.t) ~type_fn =
     let ~new_type, ~extra_deps = type_fn (Graph.readonly g) n in
+
+    let integer_min_type_changes =
+        match Hashtbl.find min_integer_types n with
+        | Some min_type -> backwards_prop_min_integer_type min_integer_types g n min_type
+        | None -> (
+            match n.min_typ with
+            | Some (Integer _ as min_type) ->
+                backwards_prop_min_integer_type min_integer_types g n min_type
+            | _ -> [])
+    in
+
     List.iter extra_deps ~f:(fun d ->
         Hashtbl.update extra_node_deps d ~f:(function
           | None -> NodeSet.singleton n
           | Some s -> Set.add s n));
+    let new_type =
+        match new_type with
+        | Types.Integer (Value new_i) -> (
+            match Hashtbl.find min_integer_types n with
+            | None -> new_type
+            | Some (Integer (Value i) as min_type) ->
+                (* If the type fits in the min_type's range then leave it alone
+                   otherwise use min_type. This is to constrain integers to
+                   some width because otherwise when a phi node at a loop head
+                   fully widens then uses of that phi can go outside the range.
+                   E.g. in (i is i32) while(i <= 10) { i+= 1} the phi fully
+                   widens to i32 range but the add still executes so it's range
+                   becomes [i32_min + 1; i32_max + 1] which is bad. *)
+                if i.min <= new_i.min && new_i.max <= i.max then
+                  new_type
+                else
+                  min_type
+            | Some (Integer All) ->
+                (* this is full i64 range *)
+                new_type
+            | Some _ -> assert false)
+        | _ -> new_type
+    in
     let new_work =
         if Types.equal new_type n.typ then
           []
@@ -52,53 +113,54 @@ let work linker extra_node_deps (g : (Node.t, Graph.readwrite) Graph.t) (n : Nod
           let extras = Hashtbl.find extra_node_deps n |> Option.value ~default:NodeSet.empty in
           new_fun_links @ Set.to_list extras @ new_work
     in
-    new_work
+    integer_min_type_changes @ new_work
 
-let do_data_node linker extra_node_deps g n (k : Node.data_kind) =
+let do_data_node linker extra_node_deps min_integer_types g n (k : Node.data_kind) =
     match k with
     | Constant -> (* constant stays the same as it was *) []
     | Add
     | Sub
     | Mul
     | Div ->
-        work linker extra_node_deps g n ~type_fn:Arithmetic_nodes.compute_type
+        work linker extra_node_deps min_integer_types g n ~type_fn:Arithmetic_nodes.compute_type
     | Lsh
     | Rsh
     | BAnd
     | BOr ->
-        work linker extra_node_deps g n ~type_fn:Bitop_nodes.compute_type
-    | Proj _ -> work linker extra_node_deps g n ~type_fn:Proj_node.compute_type
+        work linker extra_node_deps min_integer_types g n ~type_fn:Bitop_nodes.compute_type
+    | Proj _ -> work linker extra_node_deps min_integer_types g n ~type_fn:Proj_node.compute_type
     | Eq
     | NEq
     | Lt
     | LEq
     | Gt
     | GEq ->
-        work linker extra_node_deps g n ~type_fn:Bool_nodes.compute_type
-    | Phi -> work linker extra_node_deps g n ~type_fn:Phi_node.compute_type
+        work linker extra_node_deps min_integer_types g n ~type_fn:Bool_nodes.compute_type
+    | Phi -> work linker extra_node_deps min_integer_types g n ~type_fn:Phi_node.compute_type
     | Param _ ->
         (* params are just fancy phi nodes so this should work the same *)
-        work linker extra_node_deps g n ~type_fn:Phi_node.compute_type
+        work linker extra_node_deps min_integer_types g n ~type_fn:Phi_node.compute_type
     | External _ -> (* this is just like a constant *) []
 
-let do_ctrl_node linker extra_node_deps g n (c : Node.ctrl_kind) =
+let do_ctrl_node linker extra_node_deps min_integer_types g n (c : Node.ctrl_kind) =
     match c with
     | Start ->
-        work linker extra_node_deps g n ~type_fn:(fun _ _ ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun _ _ ->
             (~new_type:(Types.Tuple (Value [ Control; Memory ])), ~extra_deps:[]))
     | Stop ->
-        work linker extra_node_deps g n ~type_fn:(fun _ _ ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun _ _ ->
             (~new_type:Types.Control, ~extra_deps:[]))
-    | Proj _ -> work linker extra_node_deps g n ~type_fn:Proj_node.compute_type
-    | If -> work linker extra_node_deps g n ~type_fn:If_node.compute_type
-    | Region -> work linker extra_node_deps g n ~type_fn:Region_node.compute_type
+    | Proj _ -> work linker extra_node_deps min_integer_types g n ~type_fn:Proj_node.compute_type
+    | If -> work linker extra_node_deps min_integer_types g n ~type_fn:If_node.compute_type
+    | Region -> work linker extra_node_deps min_integer_types g n ~type_fn:Region_node.compute_type
     | Loop ->
-        work linker extra_node_deps g n ~type_fn:(fun g n ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
             let entry = Loop_node.get_entry_edge g n in
             (~new_type:entry.typ, ~extra_deps:[]))
-    | Function _ -> work linker extra_node_deps g n ~type_fn:Fun_node.compute_fun_node_type
+    | Function _ ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:Fun_node.compute_fun_node_type
     | Return ->
-        work linker extra_node_deps g n ~type_fn:(fun g n ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
             let ctrl = Graph.get_dependency g n 0 |> Option.value_exn in
             let mem = Graph.get_dependency g n 1 |> Option.value_exn in
             let data = Graph.get_dependency g n 2 |> Option.value_exn in
@@ -133,13 +195,15 @@ let do_ctrl_node linker extra_node_deps g n (c : Node.ctrl_kind) =
               []
         in
         param_work
-        @ work linker extra_node_deps g n ~type_fn:(fun _ _ -> (~new_type, ~extra_deps:[]))
-    | FunctionCallEnd -> work linker extra_node_deps g n ~type_fn:Fun_node.compute_call_end_type
+        @ work linker extra_node_deps min_integer_types g n ~type_fn:(fun _ _ ->
+            (~new_type, ~extra_deps:[]))
+    | FunctionCallEnd ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:Fun_node.compute_call_end_type
 
-let do_mem_node linker extra_node_deps g n (m : Node.mem_kind) =
+let do_mem_node linker extra_node_deps min_integer_types g n (m : Node.mem_kind) =
     match m with
     | Load field ->
-        work linker extra_node_deps g n ~type_fn:(fun g n ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
             let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
             match ptr.typ with
             | Ptr (Struct (Value { name = _; fields })) -> (
@@ -166,15 +230,17 @@ let do_mem_node linker extra_node_deps g n (m : Node.mem_kind) =
             | ALL -> (~new_type:ALL, ~extra_deps:[])
             | _ -> assert false)
     | Store _ ->
-        work linker extra_node_deps g n ~type_fn:(fun _ _ -> (~new_type:Memory, ~extra_deps:[]))
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun _ _ ->
+            (~new_type:Memory, ~extra_deps:[]))
     | New -> []
 
-let do_node extra_node_deps (g : (Node.t, Graph.readwrite) Graph.t) linker (n : Node.t) =
+let do_node extra_node_deps min_integer_types (g : (Node.t, Graph.readwrite) Graph.t) linker
+    (n : Node.t) =
     match n.kind with
-    | Data d -> do_data_node linker extra_node_deps g n d
-    | Ctrl c -> do_ctrl_node linker extra_node_deps g n c
+    | Data d -> do_data_node linker extra_node_deps min_integer_types g n d
+    | Ctrl c -> do_ctrl_node linker extra_node_deps min_integer_types g n c
     | Scope _ -> []
-    | Mem m -> do_mem_node linker extra_node_deps g n m
+    | Mem m -> do_mem_node linker extra_node_deps min_integer_types g n m
     | ForwardRef _ ->
         (* ignore these, they will produce an error in type checking *)
         []
@@ -206,11 +272,12 @@ let run g linker =
         Graph.remove_dependency g ~node:n ~dep:start);
 
     let extra_node_deps = Hashtbl.create (module Node) in
+    let min_integer_types = Hashtbl.create (module Node) in
     let rec loop i =
         match Queue.dequeue worklist with
         | None -> i
         | Some n ->
-            let news = do_node extra_node_deps g linker n in
+            let news = do_node extra_node_deps min_integer_types g linker n in
             Queue.enqueue_all worklist news;
             loop (i + 1)
     in
