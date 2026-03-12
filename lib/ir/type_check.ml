@@ -23,7 +23,9 @@ let do_data_node g (n : Node.t) (k : Node.data_kind) =
     | Add
     | Sub
     | Mul
-    | Div
+    | Div ->
+        let expected = [ Types.i64; Types.i64 ] in
+        expect_types n.loc ~expected ~inputs
     | Lsh
     | Rsh
     | BAnd
@@ -34,7 +36,7 @@ let do_data_node g (n : Node.t) (k : Node.data_kind) =
     | LEq
     | Gt
     | GEq ->
-        let expected = [ Types.Integer All; Integer All ] in
+        let expected = [ Types.i64; Types.i64 ] in
         expect_types n.loc ~expected ~inputs
     | Constant -> None
     | Proj _ -> None
@@ -127,7 +129,7 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
     match k with
     | New ->
         let size = Graph.get_dependency g n 2 |> Option.value_exn in
-        if Types.is_a size.typ (Integer All) then
+        if Types.is_a size.typ Types.i64 then
           None
         else
           Some
@@ -163,7 +165,7 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
                     (Types.human_readable pointed_to_type);
                 ]
         | Some field_type ->
-            let expected = [ field_type; Integer All ] in
+            let expected = [ field_type; Types.i64 ] in
             expect_types n.loc ~expected ~inputs:[ value.typ; offset.typ ])
     | Load name -> (
         let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
@@ -187,7 +189,7 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
                       (Types.human_readable pointed_to_type);
                   ]
             else
-              expect_types n.loc ~expected:[ Integer All ] ~inputs:[ offset.typ ]
+              expect_types n.loc ~expected:[ Types.i64 ] ~inputs:[ offset.typ ]
         | _ ->
             Some
               [

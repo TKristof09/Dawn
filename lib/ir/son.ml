@@ -13,7 +13,7 @@ let rec get_type g scope t =
         (* TODO: perhaps we want to keep the count known in the future to check
            against it in type_check. But for now we ignore type annotations
            anyway *)
-        Types.make_array (get_type g scope t) (Integer Any)
+        Types.make_array (get_type g scope t) Types.i64
     | _ -> failwith "todo"
 
 let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
@@ -59,21 +59,39 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
                 Scope_node.define g scope name default_init false
             | _ -> failwith "todo")
         | Array (t, count) ->
+            (* TODO: use this function, but for now it doesn't fill in the count even if it's constant *)
+            (* let arr_type = get_type g scope typ in *)
             let element_type = get_type g scope t in
             let ctrl = Scope_node.get_ctrl g scope in
             let count = do_expr g count scope cur_ret_node linker |> Option.value_exn in
-            let el_size = Const_node.create_int g loc (Int.ceil_log2 8) in
-            let size = Bitop_nodes.create_lsh g loc count el_size in
-            let size = Arithmetic_nodes.create_add g loc size (Const_node.create_int g loc 8) in
+            count.min_typ <- Some Types.i64;
+            let el_size = Const_node.create_int g loc (Types.get_size element_type) in
+            let size = Arithmetic_nodes.create_mul g loc count el_size in
+            let size =
+                Arithmetic_nodes.create_add g loc size
+                  (Const_node.create_int g loc (Types.get_size Types.i64))
+            in
+            size.min_typ <- Some Types.i64;
             let mem = Scope_node.get_mem g scope in
-            let arr_type = Types.make_array element_type count.typ in
+            let count_type =
+                match count.typ with
+                | Integer (Value { min; max; num_widens; fixed_width }) ->
+                    Types.make_int ~num_widens ~fixed_width:64 min max
+                | _ -> count.typ
+            in
+            count.typ <- count_type;
+            let arr_type = Types.make_array element_type count_type in
             let n = Mem_nodes.create_new g loc ~ctrl ~mem ~size arr_type in
             let mem = Proj_node.create g loc n 0 in
             let ptr = Proj_node.create g loc n 1 in
             ptr.min_typ <- Some (Ptr arr_type);
             let offset =
-                Types.get_offset arr_type "len" |> Option.value_exn |> Const_node.create_int g loc
+                Types.get_offset arr_type "len"
+                |> Option.value_exn
+                |> Types.make_int_const ~fixed_width:64
+                |> Const_node.create_from_type g loc
             in
+            offset.min_typ <- Some Types.i64;
             let store = Mem_nodes.create_store g loc ~mem ~ptr ~offset "len" ~value:count in
             Scope_node.define g scope name ptr false;
             Scope_node.set_mem g scope store
@@ -115,20 +133,22 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
             let ptr = Scope_node.get g scope name in
 
             let index = do_expr g idx_expr scope cur_ret_node linker |> Option.value_exn in
-            (* TODO: for now we only do 64 bit values. This cause a problem with strings for now. *)
-            let el_size = Const_node.create_int g loc (Int.ceil_log2 8) in
+            index.min_typ <- Some Types.i64;
             let base =
                 match ptr.typ with
                 | Ptr (Struct _ as s) -> Types.get_offset s "[]" |> Option.value ~default:(-1)
                 | _ -> assert false
             in
             let el_typ = Types.get_field_type ptr.typ "[]" |> Option.value ~default:ALL in
+            let el_size = Const_node.create_int g loc (Types.get_size el_typ) in
             let offset =
                 Arithmetic_nodes.create_add g loc
                   (Const_node.create_int g loc base)
-                  (Bitop_nodes.create_lsh g loc index el_size)
+                  (Arithmetic_nodes.create_mul g loc index el_size)
             in
+            offset.min_typ <- Some Types.i64;
             let load = Mem_nodes.create_load g loc ~mem ~ptr "[]" ~offset el_typ in
+            load.min_typ <- Some el_typ;
             Some load)
     | Ast.VarAssign (name, expr) ->
         let n = do_expr g expr scope cur_ret_node linker |> Option.value_exn in
@@ -136,22 +156,24 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         Some n
     | Ast.ArrayVarAssign (name, index, value) ->
         let index = do_expr g index scope cur_ret_node linker |> Option.value_exn in
+        index.min_typ <- Some Types.i64;
         let value = do_expr g value scope cur_ret_node linker |> Option.value_exn in
         let ptr = Scope_node.get g scope name in
         let mem = Scope_node.get_mem g scope in
-        (* TODO: for now we only do 64 bit values. This cause a problem with strings for now. *)
-        let el_size = Const_node.create_int g loc (Int.ceil_log2 8) in
         let base =
             match ptr.typ with
             | Ptr (Struct _ as s) -> Types.get_offset s "[]" |> Option.value ~default:(-1)
             | _ -> failwithf "Invalid ptr type: %s for %s" (Node.show ptr) name ()
         in
+        let el_typ = Types.get_field_type ptr.typ "[]" |> Option.value_exn in
+        let el_size = Const_node.create_int g loc (Types.get_size el_typ) in
         let offset =
             Arithmetic_nodes.create_add g loc
               (Const_node.create_int g loc base)
-              (Bitop_nodes.create_lsh g loc index el_size)
+              (Arithmetic_nodes.create_mul g loc index el_size)
         in
-        value.min_typ <- Some (Types.get_field_type ptr.typ "[]" |> Option.value_exn);
+        offset.min_typ <- Some Types.i64;
+        value.min_typ <- Some el_typ;
         let store_mem = Mem_nodes.create_store g loc ~mem ~ptr ~offset "[]" ~value in
         Scope_node.set_mem g scope store_mem;
         Some value
@@ -330,6 +352,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
                           |> Option.value_exn
                           |> Const_node.create_int g loc
                       in
+                      offset.min_typ <- Some Types.i64;
                       let mem = Scope_node.get_mem g scope in
                       let store = Mem_nodes.create_store g loc ~mem ~ptr ~offset name ~value in
                       Scope_node.set_mem g scope store;
@@ -347,6 +370,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
             |> Option.value ~default:(-1)
             |> Const_node.create_int g loc
         in
+        offset.min_typ <- Some Types.i64;
         let mem = Scope_node.get_mem g scope in
         let field_typ = Types.get_field_type base.typ field_name |> Option.value ~default:ALL in
         let load = Mem_nodes.create_load g loc ~mem ~ptr:base field_name ~offset field_typ in

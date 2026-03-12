@@ -26,6 +26,7 @@ and integer = private {
     min : int;
     max : int;
     num_widens : int;
+    fixed_width : int option; (* in bits *)
   }
 
 and t =
@@ -46,8 +47,8 @@ and t =
 [@@deriving show { with_path = false }, sexp_of]
 
 val equal : t -> t -> bool
-val make_int : ?num_widens:int -> int -> int -> t
-val make_int_const : int -> t
+val make_int : ?num_widens:int -> ?fixed_width:int -> int -> int -> t
+val make_int_const : ?fixed_width:int -> int -> t
 val make_fun_ptr : ?idx:int -> t list -> t -> t
 val make_struct : string -> (string * t) list -> t
 val make_array : t -> t -> t
@@ -68,9 +69,11 @@ val get_size : t -> int
 val get_top : t -> t
 val get_integer_const_exn : t -> int
 val widen_int : t -> t -> t
+val i64 : t
 val i32 : t
 val i16 : t
 val i8 : t
+val u64 : t
 val u32 : t
 val u16 : t
 val u8 : t

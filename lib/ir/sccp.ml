@@ -8,12 +8,12 @@ module NodeSet = struct
 end
 
 let set_type g (n : Node.t) new_type =
-    (* assert monotonicity of transfer function which should always refine the
-        type or keep it same types should always drop downwards in the lattice, we
-        start from top (Any) and drop types as more constraints on them get discovered
-        *)
-    (* [%log.debug "%a : %s -> %s" Node.pp n (Types.show n.typ) (Types.show new_type)]; *)
-    assert (Types.is_a n.typ new_type);
+    (* We can't assert monotonicity because for integers we track a minimum
+       type (= max bit width) which raises monotonically during sccp. The node
+       type then gets clamped to this min type. So node type can actually raise
+       in these cases. But since this min type moves monotonically it will terminate
+       at some point and from then on the node type drops monotonically so the whole
+       SCCP terminates *)
     n.typ <- new_type;
     Graph.get_dependants g n
 
@@ -75,12 +75,21 @@ let work linker extra_node_deps min_integer_types (g : (Node.t, Graph.readwrite)
                    widens to i32 range but the add still executes so it's range
                    becomes [i32_min + 1; i32_max + 1] which is bad. *)
                 if i.min <= new_i.min && new_i.max <= i.max then
-                  new_type
+                  let combined_width =
+                      match (i.fixed_width, new_i.fixed_width) with
+                      | None, None -> None
+                      | Some w, None
+                      | None, Some w ->
+                          Some w
+                      | Some w, Some w' -> Some (max w w')
+                  in
+                  Types.make_int ~num_widens:new_i.num_widens ?fixed_width:combined_width new_i.min
+                    new_i.max
                 else
                   min_type
             | Some (Integer All) ->
                 (* this is full i64 range *)
-                new_type
+                Types.make_int ~num_widens:new_i.num_widens ~fixed_width:64 new_i.min new_i.max
             | Some _ -> assert false)
         | _ -> new_type
     in

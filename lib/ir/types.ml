@@ -42,6 +42,7 @@ and integer = {
     min : int;
     max : int;
     num_widens : int;
+    fixed_width : int option; (* in bits *)
   }
 
 and t =
@@ -62,16 +63,20 @@ and t =
 [@@deriving show { with_path = false }, sexp_of, equal]
 
 let rec human_readable t =
-    let human_readable_int { min; max; num_widens } =
-        let bits =
-            if min >= 0 then
-              Int.ceil_log2 (max + 1)
-            else
-              let bits_neg = if min >= 0 then 0 else Int.ceil_log2 (-min) in
-              let bits_pos = if max < 0 then 0 else Int.ceil_log2 (max + 1) in
-              1 + Int.max bits_neg bits_pos
-        in
-        Printf.sprintf "i%d" bits
+    let human_readable_int { min; max; num_widens; fixed_width } =
+        show_integer { min; max; num_widens; fixed_width }
+        (* let bits = *)
+        (*     match fixed_width with *)
+        (*     | Some w -> w *)
+        (*     | None -> *)
+        (*         if min >= 0 then *)
+        (*           Int.ceil_log2 (max + 1) *)
+        (*         else *)
+        (*           let bits_neg = if min >= 0 then 0 else Int.ceil_log2 (-min) in *)
+        (*           let bits_pos = if max < 0 then 0 else Int.ceil_log2 (max + 1) in *)
+        (*           1 + Int.max bits_neg bits_pos *)
+        (* in *)
+        (* Printf.sprintf "i%d" (Int.max 1 bits) *)
     in
     match t with
     | Integer (Value i) -> human_readable_int i
@@ -113,21 +118,26 @@ let get_top = function
     | DeadControl -> DeadControl
     | ALL -> ANY
 
-let make_int ?(num_widens = 0) min max =
+let make_int ?(num_widens = 0) ?fixed_width min max =
     if min = Int.min_value && max = Int.max_value then
       Integer All
     else if max = Int.min_value && min = Int.max_value then
       Integer Any
     else
-      Integer (Value { min; max; num_widens })
+      Integer (Value { min; max; num_widens; fixed_width })
 
-let make_int_const i = Integer (Value { min = i; max = i; num_widens = 0 })
-let i32 = make_int ~num_widens:3 (-1 lsl 31) ((1 lsl 31) - 1)
-let i16 = make_int ~num_widens:3 (-1 lsl 15) ((1 lsl 15) - 1)
-let i8 = make_int ~num_widens:3 (-1 lsl 7) ((1 lsl 7) - 1)
-let u32 = make_int ~num_widens:3 0 ((1 lsl 32) - 1)
-let u16 = make_int ~num_widens:3 0 ((1 lsl 16) - 1)
-let u8 = make_int ~num_widens:3 0 ((1 lsl 8) - 1)
+let make_int_const ?fixed_width i =
+    Integer (Value { min = i; max = i; num_widens = 0; fixed_width })
+
+(* TODO: i64 and u64 are not correct but we can't represent them in ocaml easily *)
+let i64 = make_int ~fixed_width:64 ~num_widens:3 Int.min_value Int.max_value
+let i32 = make_int ~fixed_width:32 ~num_widens:3 (-1 lsl 31) ((1 lsl 31) - 1)
+let i16 = make_int ~fixed_width:16 ~num_widens:3 (-1 lsl 15) ((1 lsl 15) - 1)
+let i8 = make_int ~fixed_width:8 ~num_widens:3 (-1 lsl 7) ((1 lsl 7) - 1)
+let u64 = make_int ~fixed_width:64 ~num_widens:3 0 Int.max_value
+let u32 = make_int ~fixed_width:32 ~num_widens:3 0 ((1 lsl 32) - 1)
+let u16 = make_int ~fixed_width:16 ~num_widens:3 0 ((1 lsl 16) - 1)
+let u8 = make_int ~fixed_width:8 ~num_widens:3 0 ((1 lsl 8) - 1)
 
 let make_fun_ptr ?idx params ret =
     let is_valid_param_type t =
@@ -221,7 +231,7 @@ let make_string s =
     let len = String.length s in
     let values = s |> String.to_list |> List.map ~f:(fun c -> make_int_const (Char.to_int c)) in
     let typ = ConstArray (Value { element_type = u8; values }) in
-    make_array_inner "str" typ (make_int_const len)
+    make_array_inner "str" typ (make_int_const ~fixed_width:64 len)
 
 let rec of_ast_type (ast_type : Ast.var_type) : t =
     let try_parse_int s =
@@ -236,8 +246,9 @@ let rec of_ast_type (ast_type : Ast.var_type) : t =
     match ast_type with
     | Type s -> (
         match try_parse_int s with
-        | Some (`UInt bits) -> make_int ~num_widens:3 0 ((1 lsl bits) - 1)
-        | Some (`Int bits) -> make_int ~num_widens:3 (-1 lsl (bits - 1)) ((1 lsl (bits - 1)) - 1)
+        | Some (`UInt bits) -> make_int ~fixed_width:bits ~num_widens:3 0 ((1 lsl bits) - 1)
+        | Some (`Int bits) ->
+            make_int ~fixed_width:bits ~num_widens:3 (-1 lsl (bits - 1)) ((1 lsl (bits - 1)) - 1)
         | None -> (
             match s with
             | "str" ->
@@ -270,13 +281,26 @@ let rec meet t t' =
           (meet_sub_lattice t t' ~f:(fun i i' ->
                let min_range = min i.min i'.min in
                let max_range = max i.max i'.max in
+               let combined_width =
+                   match (i.fixed_width, i'.fixed_width) with
+                   | None, None -> None
+                   | Some w, None
+                   | None, Some w ->
+                       Some w
+                   | Some w, Some w' -> Some (max w w')
+               in
                if min_range = Int.min_value && max_range = Int.max_value then
                  All
                else if max_range = Int.min_value && min_range = Int.max_value then
                  Any
                else
                  Value
-                   { min = min_range; max = max_range; num_widens = max i.num_widens i'.num_widens }))
+                   {
+                     min = min_range;
+                     max = max_range;
+                     num_widens = max i.num_widens i'.num_widens;
+                     fixed_width = combined_width;
+                   }))
     | Bool t, Bool t' ->
         Bool (meet_sub_lattice t t' ~f:(fun i i' -> if Bool.equal i i' then Value i else All))
     | Tuple t, Tuple t' ->
@@ -388,13 +412,27 @@ let rec join t t' =
           (join_sub_lattice t t' ~f:(fun i i' ->
                let min_range = max i.min i'.min in
                let max_range = min i.max i'.max in
+               let combined_width =
+                   (* TODO: should this logic be the same in both meet and join? Need to think more about it *)
+                   match (i.fixed_width, i'.fixed_width) with
+                   | None, None -> None
+                   | Some w, None
+                   | None, Some w ->
+                       Some w
+                   | Some w, Some w' -> Some (max w w')
+               in
                if min_range = Int.min_value && max_range = Int.max_value then
                  All
                else if max_range = Int.min_value && min_range = Int.max_value then
                  Any
                else
                  Value
-                   { min = min_range; max = max_range; num_widens = min i.num_widens i'.num_widens }))
+                   {
+                     min = min_range;
+                     max = max_range;
+                     num_widens = min i.num_widens i'.num_widens;
+                     fixed_width = combined_width;
+                   }))
     | Bool t, Bool t' ->
         let l = join_sub_lattice t t' ~f:(fun x x' -> if Bool.equal x x' then Value x else Any) in
         Bool l
@@ -583,45 +621,22 @@ let get_string t =
         | _ -> None)
     | _ -> None
 
-let rec get_offset t field =
-    match t with
-    | Struct (Value { name = _; fields }) ->
-        List.fold_until fields ~init:0
-          ~f:(fun acc (name, t) ->
-            (* TODO: use t's size *)
-            ignore t;
-            if String.equal name field then
-              Stop (Some acc)
-            else
-              Continue (acc + 8))
-          ~finish:(fun _ -> None)
-    | Ptr (Struct _ as s) -> get_offset s field
-    | _ -> None
-
-let rec get_field_type t field_name =
-    match t with
-    | Struct (Value { name = _; fields }) ->
-        List.find_map fields ~f:(fun (name, t) ->
-            if String.equal name field_name then
-              Some t
-            else
-              None)
-    | Ptr (Struct _ as s) -> get_field_type s field_name
-    | _ -> None
-
 let rec get_size t =
     match t with
-    | Integer (Value { min; max; num_widens = _ }) ->
+    | Integer (Value { min; max; num_widens = _; fixed_width }) ->
         (* Integers get rounded oup to nearest multiple of 8bit size, so e.g. i12 would be stored as i16 *)
         let bits =
-            if min >= 0 then
-              Int.ceil_log2 (max + 1)
-            else
-              let bits_neg = if min >= 0 then 0 else Int.ceil_log2 (-min) in
-              let bits_pos = if max < 0 then 0 else Int.ceil_log2 (max + 1) in
-              Int.max bits_neg bits_pos
+            match fixed_width with
+            | Some w -> w
+            | None ->
+                if min >= 0 then
+                  Int.ceil_log2 (max + 1)
+                else
+                  let bits_neg = if min >= 0 then 0 else Int.ceil_log2 (-min) in
+                  let bits_pos = if max < 0 then 0 else Int.ceil_log2 (max + 1) in
+                  Int.max bits_neg bits_pos
         in
-        (bits + 7) / 8
+        Int.max 1 ((bits + 7) / 8)
     | Integer _ -> 8
     | Bool _ -> 1
     | Struct (Value s) ->
@@ -638,6 +653,30 @@ let rec get_size t =
         8
     | _ -> failwithf "todo: %s" (show t) ()
 
+let rec get_offset t field =
+    match t with
+    | Struct (Value { name = _; fields }) ->
+        List.fold_until fields ~init:0
+          ~f:(fun acc (name, t) ->
+            if String.equal name field then
+              Stop (Some acc)
+            else
+              Continue (acc + get_size t))
+          ~finish:(fun _ -> None)
+    | Ptr (Struct _ as s) -> get_offset s field
+    | _ -> None
+
+let rec get_field_type t field_name =
+    match t with
+    | Struct (Value { name = _; fields }) ->
+        List.find_map fields ~f:(fun (name, t) ->
+            if String.equal name field_name then
+              Some t
+            else
+              None)
+    | Ptr (Struct _ as s) -> get_field_type s field_name
+    | _ -> None
+
 let get_integer_const_exn = function
     | Integer (Value { min; max; num_widens = _ }) ->
         if min = max then
@@ -648,9 +687,18 @@ let get_integer_const_exn = function
 
 let widen_int t min_type =
     match t with
-    | Integer (Value { min; max; num_widens }) ->
+    | Integer (Value { min; max; num_widens; fixed_width }) -> (
         if num_widens < 3 then
-          Integer (Value { min; max; num_widens = num_widens + 1 })
+          Integer (Value { min; max; num_widens = num_widens + 1; fixed_width })
         else
-          min_type
+          match
+            fixed_width
+          with
+          | Some w ->
+              [%log.debug "Have fixed width %d ignoring min_type" w];
+              let is_unsigned = min >= 0 in
+              let min = if is_unsigned then 0 else -1 lsl (w - 1) in
+              let max = if is_unsigned then (1 lsl w) - 1 else (1 lsl (w - 1)) - 1 in
+              make_int ~num_widens:3 ~fixed_width:w min max
+          | None -> min_type)
     | _ -> assert false

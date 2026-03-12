@@ -62,14 +62,40 @@ let asm_of_op (kind : Machine_node.machine_node_kind) =
     | Load -> "mov"
     | Noop -> ""
 
-let asm_of_loc (loc : Registers.loc) =
+let asm_of_loc (loc : Registers.loc) size =
+    let pick ~size ~r8 ~r4 ~r2 ~r1 =
+        match size with
+        | 8 -> r8
+        | 4 -> r4
+        | 2 -> r2
+        | 1 -> r1
+        | n -> failwithf "unsupported register size: %d" n ()
+    in
     match loc with
-    | Reg Flags -> ""
-    | Reg reg -> Registers.show_reg reg |> String.lowercase
     | Stack offs ->
         (* HACK: for now we consider everything as 64 bit value but this needs to be dealt with better *)
         let offs = (offs * 8) + 256 in
-        Printf.sprintf "[rbp %s 0x%x]" (if offs > 0 then "+" else "-") (abs offs)
+        let size_str = pick ~size ~r8:"qword" ~r4:"dword" ~r2:"word" ~r1:"byte" in
+        Printf.sprintf "%s [rbp %s 0x%x]" size_str (if offs > 0 then "+" else "-") (abs offs)
+    | Reg reg -> (
+        match reg with
+        | RAX -> pick ~size ~r8:"rax" ~r4:"eax" ~r2:"ax" ~r1:"al"
+        | RBX -> pick ~size ~r8:"rbx" ~r4:"ebx" ~r2:"bx" ~r1:"bl"
+        | RCX -> pick ~size ~r8:"rcx" ~r4:"ecx" ~r2:"cx" ~r1:"cl"
+        | RDX -> pick ~size ~r8:"rdx" ~r4:"edx" ~r2:"dx" ~r1:"dl"
+        | RSI -> pick ~size ~r8:"rsi" ~r4:"esi" ~r2:"si" ~r1:"sil"
+        | RDI -> pick ~size ~r8:"rdi" ~r4:"edi" ~r2:"di" ~r1:"dil"
+        | R8 -> pick ~size ~r8:"r8" ~r4:"r8d" ~r2:"r8w" ~r1:"r8b"
+        | R9 -> pick ~size ~r8:"r9" ~r4:"r9d" ~r2:"r9w" ~r1:"r9b"
+        | R10 -> pick ~size ~r8:"r10" ~r4:"r10d" ~r2:"r10w" ~r1:"r10b"
+        | R11 -> pick ~size ~r8:"r11" ~r4:"r11d" ~r2:"r11w" ~r1:"r11b"
+        | R12 -> pick ~size ~r8:"r12" ~r4:"r12d" ~r2:"r12w" ~r1:"r12b"
+        | R13 -> pick ~size ~r8:"r13" ~r4:"r13d" ~r2:"r13w" ~r1:"r13b"
+        | R14 -> pick ~size ~r8:"r14" ~r4:"r14d" ~r2:"r14w" ~r1:"r14b"
+        | R15 -> pick ~size ~r8:"r15" ~r4:"r15d" ~r2:"r15w" ~r1:"r15b"
+        | RSP -> pick ~size ~r8:"rsp" ~r4:"esp" ~r2:"sp" ~r1:"spl"
+        | RBP -> pick ~size ~r8:"rbp" ~r4:"ebp" ~r2:"bp" ~r1:"bpl"
+        | Flags -> "")
 
 let get_label (n : Machine_node.t) =
     match n.kind with
@@ -105,7 +131,7 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
         | Int i ->
             let reg = Hashtbl.find_exn reg_assoc n in
             let op_str = asm_of_op n.kind in
-            Printf.sprintf "\t%s %s, %d" op_str (asm_of_loc reg) i
+            Printf.sprintf "\t%s %s, %d" op_str (asm_of_loc reg (Types.get_size n.ir_node.typ)) i
         | Ptr ->
             let reg = Hashtbl.find_exn reg_assoc n in
             let op_str = asm_of_op n.kind in
@@ -116,7 +142,9 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
                     Linker.get_name linker (Types.get_fun_idx n.ir_node.typ |> Option.value_exn)
                 | _ -> failwith "idk"
             in
-            Printf.sprintf "\t%s %s, [%s]" op_str (asm_of_loc reg) ptr_addr
+            Printf.sprintf "\t%s %s, [%s]" op_str
+              (asm_of_loc reg (Types.get_size n.ir_node.typ))
+              ptr_addr
         | AddImm i
         | SubImm i
         | MulImm i
@@ -126,16 +154,25 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
         | AndImm i
         | OrImm i ->
             let deps = Graph.get_dependencies g n |> List.tl_exn in
-            let regs = deps |> List.filter_opt |> List.map ~f:(Hashtbl.find_exn reg_assoc) in
+            let regs =
+                deps
+                |> List.filter_opt
+                |> List.map ~f:(fun d ->
+                    let size = Types.get_size d.ir_node.typ in
+                    (Hashtbl.find_exn reg_assoc d, size))
+            in
             let op_str = asm_of_op n.kind in
-            let reg_str = regs |> List.map ~f:asm_of_loc |> String.concat ~sep:", " in
+            let reg_str =
+                regs
+                |> List.map ~f:(fun (reg, size) -> asm_of_loc reg size)
+                |> String.concat ~sep:", "
+            in
             Printf.sprintf "\t%s %s, %d" op_str reg_str i
         | Div ->
             let deps = Graph.get_dependencies g n |> List.tl_exn in
-            let reg_divisor =
-                List.nth_exn deps 1 |> Option.value_exn |> Hashtbl.find_exn reg_assoc
-            in
-            let reg_str = asm_of_loc reg_divisor in
+            let divisor = List.nth_exn deps 1 |> Option.value_exn in
+            let reg_divisor = Hashtbl.find_exn reg_assoc divisor in
+            let reg_str = asm_of_loc reg_divisor (Types.get_size divisor.ir_node.typ) in
             let op_str = asm_of_op n.kind in
             (* have to sign extend RAX into RDX for signed division *)
             (* TODO: use xor rdx, rdx  for unsigned division once we have that distinction *)
@@ -189,9 +226,15 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
         | Lsh
         | Rsh ->
             let deps = Graph.get_dependencies g n |> List.tl_exn in
-            let reg = deps |> List.hd_exn |> Option.value_exn |> Hashtbl.find_exn reg_assoc in
+            let dep = deps |> List.hd_exn |> Option.value_exn in
+            let reg = Hashtbl.find_exn reg_assoc dep in
             let op_str = asm_of_op n.kind in
-            Printf.sprintf "\t%s %s, cl" op_str (asm_of_loc reg)
+            assert (
+              0
+              = Registers.compare_loc
+                  (List.nth_exn deps 2 |> Option.value_exn |> Hashtbl.find_exn reg_assoc)
+                  (Reg Registers.RCX));
+            Printf.sprintf "\t%s %s, cl" op_str (asm_of_loc reg (Types.get_size dep.ir_node.typ))
         | Add
         | Sub
         | Mul
@@ -215,14 +258,24 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
                 else
                   deps
             in
-            let regs = nodes |> List.filter_opt |> List.map ~f:(Hashtbl.find_exn reg_assoc) in
+            let regs =
+                nodes
+                |> List.filter_opt
+                |> List.map ~f:(fun d ->
+                    let size = Types.get_size d.ir_node.typ in
+                    (Hashtbl.find_exn reg_assoc d, size))
+            in
             let op_str = asm_of_op n.kind in
-            let reg_str = regs |> List.map ~f:asm_of_loc |> String.concat ~sep:", " in
+            let reg_str =
+                regs
+                |> List.map ~f:(fun (reg, size) -> asm_of_loc reg size)
+                |> String.concat ~sep:", "
+            in
             Printf.sprintf "\t%s %s" op_str reg_str
         | Set _ ->
             let op_str = asm_of_op n.kind in
             let reg = Hashtbl.find_exn reg_assoc n in
-            Printf.sprintf "\t%s %s" op_str (asm_of_loc reg)
+            Printf.sprintf "\t%s %s" op_str (asm_of_loc reg (Types.get_size n.ir_node.typ))
         | DProj _ -> ""
         | FunctionProlog i ->
             let target = Linker.get_name linker i in
@@ -237,7 +290,7 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             let op = asm_of_op n.kind in
             let target = Graph.get_dependency g n 1 |> Option.value_exn in
             let target_reg = Hashtbl.find_exn reg_assoc target in
-            Printf.sprintf "\t%s %s" op (asm_of_loc target_reg)
+            Printf.sprintf "\t%s %s" op (asm_of_loc target_reg (Types.get_size target.ir_node.typ))
         | FunctionCallEnd -> ""
         | CalleeSave _ -> ""
         | New ->
@@ -249,36 +302,38 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
                     | _ -> false)
             in
             let ptr_reg = Hashtbl.find_exn reg_assoc ptr in
-            let size_reg =
-                Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn)
-            in
+            let size = Graph.get_dependency g n 2 |> Option.value_exn in
+            let size_reg = Hashtbl.find_exn reg_assoc size in
             assert (Poly.equal ptr_reg (Reg RAX));
             assert (Poly.equal size_reg (Reg RDI));
             (* HACK: this is only until i get heap memory alloc. *)
-            Printf.sprintf "\tsub rsp, %s   ; alloc\n\tmov %s, rsp" (asm_of_loc size_reg)
-              (asm_of_loc ptr_reg)
+            Printf.sprintf "\tsub rsp, %s   ; alloc\n\tmov %s, rsp"
+              (asm_of_loc size_reg (Types.get_size size.ir_node.typ))
+              (asm_of_loc ptr_reg (Types.get_size ptr.ir_node.typ))
         | Store ->
-            let reg = Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 4 |> Option.value_exn) in
-            let ptr_reg =
-                Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn)
-            in
-            let offset_reg =
-                Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 3 |> Option.value_exn)
-            in
+            let value = Graph.get_dependency g n 4 |> Option.value_exn in
+            let reg = Hashtbl.find_exn reg_assoc value in
+            let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
+            let ptr_reg = Hashtbl.find_exn reg_assoc ptr in
+            let offset = Graph.get_dependency g n 3 |> Option.value_exn in
+            let offset_reg = Hashtbl.find_exn reg_assoc offset in
             let op_str = asm_of_op n.kind in
-            Printf.sprintf "\t%s [%s + %s], %s" op_str (asm_of_loc ptr_reg) (asm_of_loc offset_reg)
-              (asm_of_loc reg)
+            Printf.sprintf "\t%s [%s + %s], %s" op_str
+              (asm_of_loc ptr_reg (Types.get_size ptr.ir_node.typ))
+              (asm_of_loc offset_reg (Types.get_size offset.ir_node.typ))
+              (asm_of_loc reg (Types.get_size value.ir_node.typ))
         | Load ->
+            (* TODO care must be taken to use movsxd for loading signed values narrower than 64bit since mov zero extends normally *)
             let reg = Hashtbl.find_exn reg_assoc n in
-            let ptr_reg =
-                Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 2 |> Option.value_exn)
-            in
-            let offset_reg =
-                Hashtbl.find_exn reg_assoc (Graph.get_dependency g n 3 |> Option.value_exn)
-            in
+            let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
+            let offset = Graph.get_dependency g n 3 |> Option.value_exn in
+            let ptr_reg = Hashtbl.find_exn reg_assoc ptr in
+            let offset_reg = Hashtbl.find_exn reg_assoc offset in
             let op_str = asm_of_op n.kind in
-            Printf.sprintf "\t%s %s, [%s + %s]" op_str (asm_of_loc reg) (asm_of_loc ptr_reg)
-              (asm_of_loc offset_reg)
+            Printf.sprintf "\t%s %s, [%s + %s]" op_str
+              (asm_of_loc reg (Types.get_size n.ir_node.typ))
+              (asm_of_loc ptr_reg (Types.get_size ptr.ir_node.typ))
+              (asm_of_loc offset_reg (Types.get_size offset.ir_node.typ))
         | Noop -> ""
     in
     (* let node_loc = *)
