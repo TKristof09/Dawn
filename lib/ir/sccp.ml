@@ -150,6 +150,7 @@ let do_data_node linker extra_node_deps min_integer_types g n (k : Node.data_kin
         (* params are just fancy phi nodes so this should work the same *)
         work linker extra_node_deps min_integer_types g n ~type_fn:Phi_node.compute_type
     | External _ -> (* this is just like a constant *) []
+    | Cast -> failwith "TODO"
 
 let do_ctrl_node linker extra_node_deps min_integer_types g n (c : Node.ctrl_kind) =
     match c with

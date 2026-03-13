@@ -20,6 +20,7 @@ type data_kind =
     | Phi
     | Param of int
     | External of string
+    | Cast
 
 and ctrl_kind =
     | Start

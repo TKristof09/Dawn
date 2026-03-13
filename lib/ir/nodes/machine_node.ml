@@ -30,6 +30,8 @@ type ideal =
 type machine_node_kind =
     | Int of int
     | Ptr
+    | ZeroExtend
+    | SignExtend
     | Add
     | AddImm of int
     | Sub
@@ -143,7 +145,9 @@ let is_control_node n =
     | Load
     | CalleeSave _
     | Ideal (External _)
-    | Noop ->
+    | Noop
+    | ZeroExtend
+    | SignExtend ->
         false
 
 let is_blockhead n =
@@ -184,6 +188,8 @@ let is_two_address n =
     | JmpAlways
     | Jmp _
     | Mov
+    | ZeroExtend
+    | SignExtend
     | DProj _
     | FunctionProlog _
     | Return
@@ -302,6 +308,12 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
         | 2 -> Some Registers.Mask.general_r (* index *)
         | _ -> failwithf "Invalid index %d for input reg mask of %s" i (show n) ())
     | Noop -> None
+    | ZeroExtend ->
+        assert (i = 0);
+        Some Registers.Mask.general_r
+    | SignExtend ->
+        assert (i = 0);
+        Some Registers.Mask.general_r
     | Ideal _ -> None
 
 let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
@@ -380,6 +392,12 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     | Store -> None
     | Load -> Some Registers.Mask.general_w
     | Noop -> None
+    | ZeroExtend ->
+        assert (i = 0);
+        Some Registers.Mask.general_w
+    | SignExtend ->
+        assert (i = 0);
+        Some Registers.Mask.general_w
     | Ideal _ -> None
 
 let get_register_kills (n : t) =
@@ -565,6 +583,23 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
             Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node g machine_g))
         in
         Graph.add_dependencies machine_g node deps;
+        node
+    | Cast ->
+        let input = Graph.get_dependency g n 1 |> Option.value_exn in
+        let kind =
+            match input.typ with
+            | Integer (Value { min; max; num_widens; fixed_width }) ->
+                let is_unsigned = min >= 0 in
+                if is_unsigned then
+                  ZeroExtend
+                else
+                  SignExtend
+            | _ -> failwithf "TODO: not handled yet %s" (Types.show input.typ) ()
+        in
+        let node = { id = next_id (); kind; ir_node = n } in
+        Graph.add_dependencies machine_g node [];
+        Graph.add_dependencies machine_g node
+          (Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node g machine_g)));
         node
 
 and of_ctrl_node g machine_g (kind : Node.ctrl_kind) (n : Node.t) =

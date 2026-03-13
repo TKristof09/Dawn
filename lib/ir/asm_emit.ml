@@ -2,6 +2,8 @@ open Core
 
 let asm_of_op (kind : Machine_node.machine_node_kind) =
     match kind with
+    | ZeroExtend -> failwith "Handle zero extend outside this function"
+    | SignExtend -> failwith "Handle sign extend outside this function"
     | Add
     | AddImm _ ->
         "add"
@@ -59,7 +61,10 @@ let asm_of_op (kind : Machine_node.machine_node_kind) =
     | Param _ -> ""
     | New -> assert false
     | Store -> "mov"
-    | Load -> "mov"
+    | Load ->
+        (* TODO: as an optimisation we could load using movsx instead of
+           potentially load with mov and signextend with movsx *)
+        "mov"
     | Noop -> ""
 
 let asm_of_loc (loc : Registers.loc) size =
@@ -145,6 +150,29 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             Printf.sprintf "\t%s %s, [%s]" op_str
               (asm_of_loc reg (Types.get_size n.ir_node.typ))
               ptr_addr
+        | ZeroExtend ->
+            let reg = Hashtbl.find_exn reg_assoc n in
+            let input = Graph.get_dependency g n 1 |> Option.value_exn in
+            let input_reg = Hashtbl.find_exn reg_assoc input in
+            let input_size = Types.get_size input.ir_node.typ in
+            let output_size = Types.get_size n.ir_node.typ in
+            if input_size = 4 && output_size = 8 then
+              Printf.sprintf "\tmov %s, %s" (asm_of_loc reg 4) (asm_of_loc input_reg input_size)
+            else
+              Printf.sprintf "\tmovzx %s, %s" (asm_of_loc reg output_size)
+                (asm_of_loc input_reg input_size)
+        | SignExtend ->
+            let reg = Hashtbl.find_exn reg_assoc n in
+            let input = Graph.get_dependency g n 1 |> Option.value_exn in
+            let input_reg = Hashtbl.find_exn reg_assoc input in
+            let input_size = Types.get_size input.ir_node.typ in
+            let output_size = Types.get_size n.ir_node.typ in
+            if input_size = 4 && output_size = 8 then
+              Printf.sprintf "\tmovsxd %s, %s" (asm_of_loc reg output_size)
+                (asm_of_loc input_reg input_size)
+            else
+              Printf.sprintf "\tmovsx %s, %s" (asm_of_loc reg output_size)
+                (asm_of_loc input_reg input_size)
         | AddImm i
         | SubImm i
         | MulImm i
@@ -153,20 +181,10 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
         | RshImm i
         | AndImm i
         | OrImm i ->
-            let deps = Graph.get_dependencies g n |> List.tl_exn in
-            let regs =
-                deps
-                |> List.filter_opt
-                |> List.map ~f:(fun d ->
-                    let size = Types.get_size d.ir_node.typ in
-                    (Hashtbl.find_exn reg_assoc d, size))
-            in
+            let dep = Graph.get_dependency g n 1 |> Option.value_exn in
+            let reg = Hashtbl.find_exn reg_assoc dep in
             let op_str = asm_of_op n.kind in
-            let reg_str =
-                regs
-                |> List.map ~f:(fun (reg, size) -> asm_of_loc reg size)
-                |> String.concat ~sep:", "
-            in
+            let reg_str = asm_of_loc reg (Types.get_size dep.ir_node.typ) in
             Printf.sprintf "\t%s %s, %d" op_str reg_str i
         | Div ->
             let deps = Graph.get_dependencies g n |> List.tl_exn in
@@ -262,8 +280,22 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
                 nodes
                 |> List.filter_opt
                 |> List.map ~f:(fun d ->
-                    let size = Types.get_size d.ir_node.typ in
-                    (Hashtbl.find_exn reg_assoc d, size))
+                    match d.kind with
+                    | CalleeSave _ ->
+                        (* CalleSaves always need to save the full 64bit register *)
+                        (Hashtbl.find_exn reg_assoc d, 8)
+                    | Mov -> (
+                        (* Movs that spill CalleeSaved nodes have their ir_node
+                           as the Funciton, these need to be treated specifically as 64bit
+                           to save the full 64bit reg *)
+                        match d.ir_node.kind with
+                        | Ctrl (Function _) -> (Hashtbl.find_exn reg_assoc d, 8)
+                        | _ ->
+                            let size = Types.get_size d.ir_node.typ in
+                            (Hashtbl.find_exn reg_assoc d, size))
+                    | _ ->
+                        let size = Types.get_size d.ir_node.typ in
+                        (Hashtbl.find_exn reg_assoc d, size))
             in
             let op_str = asm_of_op n.kind in
             let reg_str =
@@ -323,17 +355,18 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
               (asm_of_loc offset_reg (Types.get_size offset.ir_node.typ))
               (asm_of_loc reg (Types.get_size value.ir_node.typ))
         | Load ->
-            (* TODO care must be taken to use movsxd for loading signed values narrower than 64bit since mov zero extends normally *)
             let reg = Hashtbl.find_exn reg_assoc n in
             let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
             let offset = Graph.get_dependency g n 3 |> Option.value_exn in
             let ptr_reg = Hashtbl.find_exn reg_assoc ptr in
             let offset_reg = Hashtbl.find_exn reg_assoc offset in
-            let op_str = asm_of_op n.kind in
-            Printf.sprintf "\t%s %s, [%s + %s]" op_str
-              (asm_of_loc reg (Types.get_size n.ir_node.typ))
-              (asm_of_loc ptr_reg (Types.get_size ptr.ir_node.typ))
-              (asm_of_loc offset_reg (Types.get_size offset.ir_node.typ))
+            let output_size = Types.get_size n.ir_node.typ in
+            let s =
+                Printf.sprintf "\t%s %s, [%s + %s]" (asm_of_op n.kind) (asm_of_loc reg output_size)
+                  (asm_of_loc ptr_reg (Types.get_size ptr.ir_node.typ))
+                  (asm_of_loc offset_reg (Types.get_size offset.ir_node.typ))
+            in
+            s
         | Noop -> ""
     in
     (* let node_loc = *)

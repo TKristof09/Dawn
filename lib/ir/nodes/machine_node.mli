@@ -20,6 +20,8 @@ type ideal =
 type machine_node_kind =
     | Int of int
     | Ptr
+    | ZeroExtend
+    | SignExtend
     | Add
     | AddImm of int
     | Sub

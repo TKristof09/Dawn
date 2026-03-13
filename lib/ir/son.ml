@@ -79,7 +79,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
                     Types.make_int ~num_widens ~fixed_width:64 min max
                 | _ -> count.typ
             in
-            count.typ <- count_type;
+            count.min_typ <- Some count_type;
             let arr_type = Types.make_array element_type count_type in
             let n = Mem_nodes.create_new g loc ~ctrl ~mem ~size arr_type in
             let mem = Proj_node.create g loc n 0 in
@@ -404,7 +404,7 @@ let of_ast ast linker =
     let scope = Scope_node.create () in
     Scope_node.set_ctrl g scope ctrl;
     Scope_node.set_mem g scope mem;
-    let builtin_types = [ "i32"; "i64"; "bool"; "str"; "void" ] in
+    let builtin_types = [ "i32"; "i64"; "i63"; "bool"; "str"; "void" ] in
     List.iter builtin_types ~f:(define_builtin_type g scope);
     Core.List.iter ast ~f:(fun s -> do_statement g s scope None linker);
     let ctrl = Scope_node.get_ctrl g scope in

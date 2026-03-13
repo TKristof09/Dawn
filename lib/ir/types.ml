@@ -36,6 +36,7 @@ and const_array = {
   }
 
 and integer = {
+    (* TODO: probably want to keep track of whether the types is actually unsigned or if it's signed but just happens to have min >= 0 *)
     (* TODO: this doesn't allow us to represent all (u)int64 values. But Menhir
        can't parse these anyway so we'd need to move to storing integer
        literals as strings or using some bigint library *)
@@ -64,19 +65,18 @@ and t =
 
 let rec human_readable t =
     let human_readable_int { min; max; num_widens; fixed_width } =
-        show_integer { min; max; num_widens; fixed_width }
-        (* let bits = *)
-        (*     match fixed_width with *)
-        (*     | Some w -> w *)
-        (*     | None -> *)
-        (*         if min >= 0 then *)
-        (*           Int.ceil_log2 (max + 1) *)
-        (*         else *)
-        (*           let bits_neg = if min >= 0 then 0 else Int.ceil_log2 (-min) in *)
-        (*           let bits_pos = if max < 0 then 0 else Int.ceil_log2 (max + 1) in *)
-        (*           1 + Int.max bits_neg bits_pos *)
-        (* in *)
-        (* Printf.sprintf "i%d" (Int.max 1 bits) *)
+        let bits =
+            match fixed_width with
+            | Some w -> w
+            | None ->
+                if min >= 0 then
+                  Int.ceil_log2 (max + 1)
+                else
+                  let bits_neg = if min >= 0 then 0 else Int.ceil_log2 (-min) in
+                  let bits_pos = if max < 0 then 0 else Int.ceil_log2 (max + 1) in
+                  1 + Int.max bits_neg bits_pos
+        in
+        Printf.sprintf "i%d" (Int.max 1 bits)
     in
     match t with
     | Integer (Value i) -> human_readable_int i
@@ -624,7 +624,7 @@ let get_string t =
 let rec get_size t =
     match t with
     | Integer (Value { min; max; num_widens = _; fixed_width }) ->
-        (* Integers get rounded oup to nearest multiple of 8bit size, so e.g. i12 would be stored as i16 *)
+        (* Integers get rounded up to nearest of 8/16/32/64, so e.g. i12 would be stored as i16 *)
         let bits =
             match fixed_width with
             | Some w -> w
@@ -634,9 +634,20 @@ let rec get_size t =
                 else
                   let bits_neg = if min >= 0 then 0 else Int.ceil_log2 (-min) in
                   let bits_pos = if max < 0 then 0 else Int.ceil_log2 (max + 1) in
-                  Int.max bits_neg bits_pos
+                  1 + Int.max bits_neg bits_pos
         in
-        Int.max 1 ((bits + 7) / 8)
+        let bits = Int.max 1 bits in
+        let bits =
+            if bits <= 8 then
+              8
+            else if bits <= 16 then
+              16
+            else if bits <= 32 then
+              32
+            else
+              64
+        in
+        bits / 8
     | Integer _ -> 8
     | Bool _ -> 1
     | Struct (Value s) ->
@@ -694,6 +705,14 @@ let widen_int t min_type =
           match
             fixed_width
           with
+          | Some 64 ->
+              (* TODO HACK for ocaml ints being 63 bit wide *)
+              [%log.debug "Have fixed width %d ignoring min_type" 64];
+              let is_unsigned = min >= 0 in
+              if is_unsigned then u64 else i64
+          | Some 63 when min >= 0 ->
+              (* TODO HACK for ocaml ints being 63 bit wide *)
+              make_int ~num_widens:3 ~fixed_width:63 0 ((1 lsl 62) - 1)
           | Some w ->
               [%log.debug "Have fixed width %d ignoring min_type" w];
               let is_unsigned = min >= 0 in
@@ -702,3 +721,17 @@ let widen_int t min_type =
               make_int ~num_widens:3 ~fixed_width:w min max
           | None -> min_type)
     | _ -> assert false
+
+let rec is_high = function
+    | ANY
+    | Integer Any
+    | Bool Any
+    | Tuple Any
+    | FunPtr Any
+    | Struct Any
+    | ConstArray Any
+    | Type Any
+    | DeadControl ->
+        true
+    | Ptr t -> is_high t
+    | _ -> false

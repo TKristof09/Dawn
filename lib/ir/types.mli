@@ -69,6 +69,7 @@ val get_size : t -> int
 val get_top : t -> t
 val get_integer_const_exn : t -> int
 val widen_int : t -> t -> t
+val is_high : t -> bool
 val i64 : t
 val i32 : t
 val i16 : t

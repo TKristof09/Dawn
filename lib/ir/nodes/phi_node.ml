@@ -52,11 +52,11 @@ let compute_type g n =
         Integer (Value { min = old_min; max = old_max; num_widens = old_num_widens }) )
       when not (Types.equal old_type new_type) ->
         let new_type =
-            if (not (Types.is_constant new_type)) && num_widens <= old_num_widens then
+            if (not (Types.is_constant new_type)) && num_widens <= old_num_widens then (
               (* TODO: we want to store the original type of the phi and only
                  widen up to that. So e.g. a u8 doesnt need to be widened down
                  so much, only to the full u8 range *)
-              Types.widen_int new_type Types.i32
+              Types.widen_int new_type Types.i64)
             else
               new_type
         in

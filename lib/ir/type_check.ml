@@ -65,6 +65,9 @@ let do_data_node g (n : Node.t) (k : Node.data_kind) =
         (* Error reporting happens at FunctionCall nodes for better error location tracking *)
         None
     | External _ -> None
+    | Cast ->
+        (* TODO: probably should check *something* *)
+        None
 
 let do_ctrl_node g (n : Node.t) (k : Node.ctrl_kind) =
     match k with

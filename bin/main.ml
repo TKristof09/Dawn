@@ -6,22 +6,6 @@ let parse filename =
     | Ok ast -> Ast.show_program ast |> print_endline
     | Error msg -> Printf.eprintf "%s\n" msg
 
-let opt filename =
-    match Parser.parse filename with
-    | Ok ast ->
-        let linker = Linker.create () in
-        let son = Son.of_ast ast linker in
-        [%log.debug "\n%a" Ir_printer.pp_dot son];
-        Sccp.run son linker;
-        [%log.debug "\n%a" Ir_printer.pp_dot son];
-        let type_errors = Type_check.run son in
-        if List.is_empty type_errors then
-          [%log.debug "\n%s" (Ir_printer.to_dot son)]
-        else (
-          List.iter type_errors ~f:(fun err -> [%log.error err]);
-          failwith "TypeCheckFailed")
-    | Error msg -> Printf.eprintf "%s\n" msg
-
 let compile filename =
     match Parser.parse filename with
     | Ok ast ->
@@ -29,12 +13,12 @@ let compile filename =
         let son = Son.of_ast ast linker in
         [%log.debug "\n%s" (Ir_printer.to_dot son)];
         Sccp.run son linker;
-        let son = Graph.readonly son in
-        let type_errors = Type_check.run son in
+        let type_errors = Type_check.run (Graph.readonly son) in
         [%log.debug "\n%s" (Ir_printer.to_dot son)];
         if not (List.is_empty type_errors) then
           List.iter type_errors ~f:(fun err -> [%log.error err])
         else (
+          Integer_widening.run son;
           [%log.debug "\n%s" (Ir_printer.to_dot son)];
           let schedules = Scheduler.schedule son in
           (* only do code gen on non external functions *)
@@ -65,7 +49,6 @@ let usage_msg =
      Commands:\n\
     \  compile    Compile the file (default)\n\
     \  parse      Parse and print AST\n\
-    \  opt        Run sccp and print result\n\n\
      Options:"
 
 let command = ref "compile"
@@ -84,7 +67,7 @@ let rec speclist =
 let anon_fun arg =
     if String.(!command = "compile") && String.(!filename = "") then
       (* First positional arg could be command or filename *)
-      if String.(arg = "compile") || String.(arg = "parse") || String.(arg = "opt") then
+      if String.(arg = "compile") || String.(arg = "parse") then
         command := arg
       else
         filename := arg
@@ -99,7 +82,6 @@ let () =
     match !command with
     | "compile" -> compile !filename
     | "parse" -> parse !filename
-    | "opt" -> opt !filename
     | _ ->
         Printf.eprintf "Unknown command: %s\n" !command;
         Stdlib.Arg.usage speclist usage_msg;

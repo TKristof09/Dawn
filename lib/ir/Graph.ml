@@ -138,6 +138,7 @@ let get_start g = g.start
 let get_stop g = g.stop
 
 let set_dependency (type a) g node dep idx =
+    (* TODO: shouldn't this clean up the old dep if it no longer has any uses? like remove_dependency *)
     let module Node = (val g.node_module : GraphNode with type t = a) in
     (* assert (idx <> 0 || Option.value_map dep ~default:true ~f:Node.is_ctrl || Node.is_scope node); *)
     check g;

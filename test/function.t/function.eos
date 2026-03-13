@@ -1,4 +1,4 @@
-const f = fun(print_fn: (i32 -> void), a: i32, b: i32, c: i32, d: i32, e: i32) -> i32 {
+const f = fun(print_fn: (i63 -> void), a: i32, b: i32, c: i32, d: i32, e: i32) -> i32 {
     let res: i32 = a + b + c + d + e;
     print_fn(res);
     res
@@ -10,9 +10,9 @@ f(print_fun, 1,2,3,4,5);
 print_fun = print2;
 f(print_fun, 1,2,3,4,5);
 
-const print_int = fun(i: i32) = @extern("print_int");
+const print_int = fun(i: i63) = @extern("print_int");
 const print = fun(s: str) = @extern("print");
-const print2 = fun(i: i32) {
+const print2 = fun(i: i63) {
     print("\nOther fn: ");
     print_int(10 + i)
 };
