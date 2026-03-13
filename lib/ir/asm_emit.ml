@@ -369,10 +369,6 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             s
         | Noop -> ""
     in
-    (* let node_loc = *)
-    (*     Printf.sprintf "%s:%d:%d" n.ir_node.loc.filename n.ir_node.loc.line n.ir_node.loc.col *)
-    (* in *)
-    (* let node_asm = Printf.sprintf "%s ; %s" node_asm node_loc in *)
     let jmp_target =
         match prev_node with
         | None -> None
@@ -416,7 +412,25 @@ let emit_function g reg_assoc program linker =
     let rec aux l prev =
         match l with
         | [] -> []
-        | [ n ] -> [ asm_of_node g reg_assoc linker n prev None ]
+        | [ n ] -> (
+            let node_asm = asm_of_node g reg_assoc linker n prev None in
+            (* Check if the last emitted control node has a CFG successor
+               that won't be fallen into (since there's nothing after us). *)
+            let last_ctrl =
+                if Machine_node.is_control_node n then
+                  n
+                else
+                  Graph.get_dependency g n 0 |> Option.value_exn
+            in
+            let trailing_jmp =
+                Graph.get_dependants g last_ctrl
+                |> List.find ~f:Machine_node.is_blockhead
+                |> Option.map ~f:(fun target ->
+                    Printf.sprintf "\t%s %s" (asm_of_op JmpAlways) (get_label target))
+            in
+            match trailing_jmp with
+            | None -> [ node_asm ]
+            | Some jmp -> [ node_asm ^ "\n" ^ jmp ])
         | n :: n' :: t -> asm_of_node g reg_assoc linker n prev (Some n') :: aux (n' :: t) (Some n)
     in
     (* let program = add_jumps g program in *)
