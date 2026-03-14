@@ -7,8 +7,11 @@ let expect_types (loc : Ast.loc) ~expected ~inputs =
         let errors =
             List.filter l ~f:(fun (expected, actual) -> not (Types.is_a actual expected))
             |> List.map ~f:(fun (expected, actual) ->
-                Printf.sprintf "%s:%d: Expected %s, got %s" loc.filename loc.line
-                  (Types.human_readable expected) (Types.human_readable actual))
+                let msg =
+                    Printf.sprintf "Expected %s, got %s" (Types.human_readable expected)
+                      (Types.human_readable actual)
+                in
+                (loc, msg))
         in
         if List.is_empty errors then
           None
@@ -80,11 +83,7 @@ let do_ctrl_node g (n : Node.t) (k : Node.ctrl_kind) =
         if Types.is_a cond.typ (Bool All) then
           None
         else
-          Some
-            [
-              Printf.sprintf "%s:%d: Expected bool got %s" n.loc.filename n.loc.line
-                (Types.human_readable cond.typ);
-            ]
+          Some [ (n.loc, Printf.sprintf "Expected bool got %s" (Types.human_readable cond.typ)) ]
     | Region -> None
     | Loop -> None
     | Function { ret; signature; idx = _ } ->
@@ -121,8 +120,9 @@ let do_ctrl_node g (n : Node.t) (k : Node.ctrl_kind) =
         if List.length expected <> List.length actual_args then
           Some
             [
-              Printf.sprintf "%s:%d: Invalid number of arguments, got %d expected %d" n.loc.filename
-                n.loc.line (List.length actual_args) (List.length expected);
+              ( n.loc,
+                Printf.sprintf "Invalid number of arguments, got %d expected %d"
+                  (List.length actual_args) (List.length expected) );
             ]
         else
           expect_types n.loc ~expected ~inputs:actual_args
@@ -135,11 +135,7 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
         if Types.is_a size.typ Types.i64 then
           None
         else
-          Some
-            [
-              Printf.sprintf "%s:%d: Expected integer got %s" n.loc.filename n.loc.line
-                (Types.human_readable size.typ);
-            ]
+          Some [ (n.loc, Printf.sprintf "Expected integer got %s" (Types.human_readable size.typ)) ]
     | Store name -> (
         let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
         let offset = Graph.get_dependency g n 3 |> Option.value_exn in
@@ -156,16 +152,16 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
             if String.equal name "[]" then
               Some
                 [
-                  Printf.sprintf "%s:%d: %s is not an array, can't index into it" n.loc.filename
-                    n.loc.line
-                    (Types.human_readable pointed_to_type);
+                  ( n.loc,
+                    Printf.sprintf "%s is not an array, can't index into it"
+                      (Types.human_readable pointed_to_type) );
                 ]
             else
               Some
                 [
-                  Printf.sprintf "%s:%d: Field %s is not part of type %s" n.loc.filename n.loc.line
-                    name
-                    (Types.human_readable pointed_to_type);
+                  ( n.loc,
+                    Printf.sprintf "Field %s is not part of type %s" name
+                      (Types.human_readable pointed_to_type) );
                 ]
         | Some field_type ->
             let expected = [ field_type; Types.i64 ] in
@@ -180,25 +176,22 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
               if String.equal name "[]" then
                 Some
                   [
-                    Printf.sprintf "%s:%d: %s is not an array, can't index into it" n.loc.filename
-                      n.loc.line
-                      (Types.human_readable pointed_to_type);
+                    ( n.loc,
+                      Printf.sprintf "%s is not an array, can't index into it"
+                        (Types.human_readable pointed_to_type) );
                   ]
               else
                 Some
                   [
-                    Printf.sprintf "%s:%d: Field %s is not part of type %s" n.loc.filename
-                      n.loc.line name
-                      (Types.human_readable pointed_to_type);
+                    ( n.loc,
+                      Printf.sprintf "Field %s is not part of type %s" name
+                        (Types.human_readable pointed_to_type) );
                   ]
             else
               expect_types n.loc ~expected:[ Types.i64 ] ~inputs:[ offset.typ ]
         | _ ->
             Some
-              [
-                Printf.sprintf "%s:%d: Expected pointer, got %s" n.loc.filename n.loc.line
-                  (Types.human_readable ptr.typ);
-              ])
+              [ (n.loc, Printf.sprintf "Expected pointer, got %s" (Types.human_readable ptr.typ)) ])
 
 let type_check_node g (n : Node.t) =
     match n.kind with
@@ -206,11 +199,12 @@ let type_check_node g (n : Node.t) =
     | Ctrl c -> do_ctrl_node g n c
     | Scope _ -> None
     | Mem m -> do_mem_node g n m
-    | ForwardRef name ->
-        Some [ Printf.sprintf "%s:%d: Undefined symbol %s" n.loc.filename n.loc.line name ]
+    | ForwardRef name -> Some [ (n.loc, Printf.sprintf "Undefined symbol %s" name) ]
 
 let run (g : (Node.t, 'b) Graph.t) =
     Graph.fold g ~init:[] ~f:(fun errors n ->
         match type_check_node g n with
         | None -> errors
         | Some errs -> errs @ errors)
+    |> List.sort ~compare:(fun (loc, _) (loc', _) -> Ast.compare_loc loc loc')
+    |> List.map ~f:(fun (loc, msg) -> Printf.sprintf "%s:%d: %s" loc.filename loc.line msg)

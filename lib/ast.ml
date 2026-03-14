@@ -82,3 +82,14 @@ and expr =
                    l l']
     | FieldAccess of expr node * name
 [@@deriving show { with_path = false }, eq, sexp_of]
+
+let compare_loc l l' =
+    let c = String.compare l.filename l'.filename in
+    if c <> 0 then
+      c
+    else
+      let c = Int.compare l.line l'.line in
+      if c <> 0 then
+        c
+      else
+        Int.compare l.col l'.col
