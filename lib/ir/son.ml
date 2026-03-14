@@ -133,7 +133,6 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
             let ptr = Scope_node.get g scope name in
 
             let index = do_expr g idx_expr scope cur_ret_node linker |> Option.value_exn in
-            index.min_typ <- Some Types.i64;
             let base =
                 match ptr.typ with
                 | Ptr (Struct _ as s) -> Types.get_offset s "[]" |> Option.value ~default:(-1)
@@ -156,7 +155,6 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         Some n
     | Ast.ArrayVarAssign (name, index, value) ->
         let index = do_expr g index scope cur_ret_node linker |> Option.value_exn in
-        index.min_typ <- Some Types.i64;
         let value = do_expr g value scope cur_ret_node linker |> Option.value_exn in
         let ptr = Scope_node.get g scope name in
         let mem = Scope_node.get_mem g scope in

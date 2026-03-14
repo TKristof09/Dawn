@@ -229,7 +229,9 @@ let make_array element_type len_type =
 
 let make_string s =
     let len = String.length s in
-    let values = s |> String.to_list |> List.map ~f:(fun c -> make_int_const (Char.to_int c)) in
+    let values =
+        s |> String.to_list |> List.map ~f:(fun c -> make_int_const ~fixed_width:8 (Char.to_int c))
+    in
     let typ = ConstArray (Value { element_type = u8; values }) in
     make_array_inner "str" typ (make_int_const ~fixed_width:64 len)
 
@@ -659,6 +661,7 @@ let rec get_size t =
               failwith "todo array size"
             else
               get_size t)
+    | ConstArray (Value { element_type; values = _ }) -> get_size element_type
     | Ptr _
     | FunPtr _ ->
         8

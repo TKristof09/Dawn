@@ -40,7 +40,11 @@ let backwards_prop_min_integer_type min_integer_types g n min_type =
             !changed
         in
         ignore (update n);
-        Graph.get_dependencies g n |> List.tl_exn |> List.filter_opt |> List.filter ~f:update
+        Graph.get_dependencies g n
+        |> List.tl_exn
+        |> List.filter_opt
+        |> List.filter ~f:(fun n -> Option.is_none n.min_typ)
+        |> List.filter ~f:update
     | _ -> []
 
 let work linker extra_node_deps min_integer_types (g : (Node.t, Graph.readwrite) Graph.t)
@@ -61,6 +65,7 @@ let work linker extra_node_deps min_integer_types (g : (Node.t, Graph.readwrite)
         Hashtbl.update extra_node_deps d ~f:(function
           | None -> NodeSet.singleton n
           | Some s -> Set.add s n));
+
     let new_type =
         match new_type with
         | Types.Integer (Value new_i) -> (
@@ -75,15 +80,7 @@ let work linker extra_node_deps min_integer_types (g : (Node.t, Graph.readwrite)
                    widens to i32 range but the add still executes so it's range
                    becomes [i32_min + 1; i32_max + 1] which is bad. *)
                 if i.min <= new_i.min && new_i.max <= i.max then
-                  let combined_width =
-                      match (i.fixed_width, new_i.fixed_width) with
-                      | None, None -> None
-                      | Some w, None
-                      | None, Some w ->
-                          Some w
-                      | Some w, Some w' -> Some (max w w')
-                  in
-                  Types.make_int ~num_widens:new_i.num_widens ?fixed_width:combined_width new_i.min
+                  Types.make_int ~num_widens:new_i.num_widens ?fixed_width:i.fixed_width new_i.min
                     new_i.max
                 else
                   min_type
@@ -231,10 +228,10 @@ let do_mem_node linker extra_node_deps min_integer_types g n (m : Node.mem_kind)
                     match offs.typ with
                     | Integer _ when Types.is_constant offs.typ ->
                         let i = Types.get_integer_const_exn offs.typ in
-                        (* TODO: this only works for now because i consider everything 64 bit *)
+                        (* TODO: bounds check on the idx would be nice *)
                         let idx = (i - 8) / Types.get_size arr.element_type in
                         (~new_type:(List.nth_exn (arr.values :> Types.t list) idx), ~extra_deps:[])
-                    | _ -> (~new_type:(Types.get_top arr.element_type), ~extra_deps:[]))
+                    | _ -> (~new_type:arr.element_type, ~extra_deps:[]))
                 | Some field_type -> (~new_type:field_type, ~extra_deps:[]))
             | ANY -> (~new_type:ANY, ~extra_deps:[])
             | ALL -> (~new_type:ALL, ~extra_deps:[])

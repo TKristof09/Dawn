@@ -85,7 +85,9 @@ let show_kind kind =
 let show node =
     let kind_str = show_kind node.kind in
     let type_string = Types.show node.typ in
-    Printf.sprintf "Node { id : %d ; kind : %s; type :%s}" node.id kind_str type_string
+    let min_type_string = [%derive.show: Types.t option] node.min_typ in
+    Printf.sprintf "Node { id : %d ; kind : %s; type :%s; min_type: %s}" node.id kind_str
+      type_string min_type_string
 
 let pp fmt node = Format.fprintf fmt "%s" (show node)
 let compare n1 n2 = Int.compare n1.id n2.id

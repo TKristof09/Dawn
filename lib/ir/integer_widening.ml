@@ -118,6 +118,17 @@ let do_node g (n : Node.t) =
                     if not (Hash_set.mem already_casted arg) then (
                       Hash_set.add already_casted arg;
                       create_cast g arg n n.loc (param_size * 8)))))
+    | Mem (Store _)
+    | Mem (Load _) ->
+        let offs = Graph.get_dependency g n 3 |> Option.value_exn in
+        let offs_size = Types.get_size offs.typ in
+        if offs_size < 8 then
+          create_cast g offs n n.loc 64
+    | Mem New ->
+        let size = Graph.get_dependency g n 2 |> Option.value_exn in
+        let size_size = Types.get_size size.typ in
+        if size_size < 8 then
+          create_cast g size n n.loc 64
     | _ -> ()
 
 let run g =
