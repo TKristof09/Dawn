@@ -371,15 +371,15 @@ let duplicate_constants g function_graphs =
     let new_copies = Hashtbl.create (module Int) in
     List.iter consts ~f:(fun n ->
         Graph.get_dependants g n
-        |> List.filter ~f:(fun dep ->
-            match dep.kind with
+        |> List.filter ~f:(fun use ->
+            match use.kind with
             | Param _ -> false
             | _ -> true)
-        |> List.iter ~f:(fun dep ->
-            let fun_idx = get_function g dep in
+        |> List.iter ~f:(fun use ->
+            let fun_idx = get_function g use in
             if fun_idx <> 0 then
               let dep_idx, _ =
-                  List.findi_exn (Graph.get_dependencies g dep) ~f:(fun _ dep ->
+                  List.findi_exn (Graph.get_dependencies g use) ~f:(fun _ dep ->
                       match dep with
                       | None -> false
                       | Some dep -> Machine_node.equal dep n)
@@ -388,8 +388,15 @@ let duplicate_constants g function_graphs =
                   Hashtbl.find_or_add new_copies fun_idx ~default:(fun _ ->
                       Hashtbl.create (module Machine_node))
               in
-              Hashtbl.add_multi tbl ~key:n ~data:(dep, dep_idx)));
-    List.iteri function_graphs ~f:(fun fun_idx g ->
+              Hashtbl.add_multi tbl ~key:n ~data:(use, dep_idx)));
+    List.iter function_graphs ~f:(fun g ->
+        let fun_start : Machine_node.t = Graph.get_start g in
+        let fun_idx =
+            match fun_start.kind with
+            | FunctionProlog i -> i
+            | Ideal Start -> 0
+            | _ -> assert false
+        in
         match Hashtbl.find new_copies fun_idx with
         | None -> ()
         | Some tbl ->
