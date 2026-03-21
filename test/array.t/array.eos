@@ -1,5 +1,5 @@
 const print = fun(s: str)  = @extern("print");
-const print_int = fun(i: i63)  = @extern("print_int");
+const print_int = fun(i: i64)  = @extern("print_int");
 
 const print_val = fun(i : i32, v : i32) {
     print_int(i);

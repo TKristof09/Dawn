@@ -1,6 +1,6 @@
-const print_int = fun(i: i63) -> void = @extern("print_int");
+const print_int = fun(i: i64) -> void = @extern("print_int");
 
-const fact = fun(i: i63) -> i63 {
+const fact = fun(i: i64) -> i64 {
     if(i == 0) {
         1
     }

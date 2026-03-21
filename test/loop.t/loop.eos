@@ -1,4 +1,4 @@
-const print_int = fun(i: i63) = @extern("print_int");
+const print_int = fun(i: i64) = @extern("print_int");
 let i:i32 = 0;
 while(i < 10) {
     print_int(i);
