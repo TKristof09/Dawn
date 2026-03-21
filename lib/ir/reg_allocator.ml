@@ -531,7 +531,9 @@ end = struct
                       | Some loc -> Registers.Mask.remove acc loc)
               in
               match Registers.Mask.choose r_mask with
-              | None -> r :: failed_ranges
+              | None ->
+                  [%log.debug "No available reg for %a" Range.pp r];
+                  r :: failed_ranges
               | Some loc ->
                   assert (Poly.(loc <> Stack (-1)));
                   (* TODO: we could choose smarter here, see biasColor in Simple:IFG.java *)
@@ -877,7 +879,7 @@ let split_by_loop g program (lrg : Range.t) =
               in
               let program =
                   if
-                    (min_d = max_d || loop_depth g cfg <= min_d)
+                    (min_d = max_d || loop_depth g cfg <= min_d || Poly.equal n.kind (Ideal Phi))
                     && (not (Machine_node.is_cheap_to_clone n))
                     && not (false && single_user_split_adjacent)
                   then
@@ -907,7 +909,6 @@ let split_by_loop g program (lrg : Range.t) =
             |> List.foldi ~init:program ~f:(fun i program (cfg_in, input) ->
                 if
                   (not (Poly.equal input.kind Mov))
-                  && (min_d = max_d || loop_depth g cfg_in <= min_d)
                   && not
                        (Poly.equal cfg.kind (Ideal Loop)
                        && i = 1
