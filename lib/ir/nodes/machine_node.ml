@@ -416,8 +416,6 @@ let get_register_kills (n : t) =
     match n.kind with
     | FunctionCall _ -> Some Registers.Mask.caller_save
     | Div -> Some (Registers.Mask.of_list [ Reg RDX ])
-    (* TODO: important to remove just leaving in to test reg alloc fail bug *)
-    | New -> Some Registers.Mask.caller_save
     | _ -> None
 
 let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
