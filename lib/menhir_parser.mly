@@ -12,7 +12,7 @@
             };
         }
 %}
-%token <int> INT
+%token <string> INT
 %token <string> STRING
 %token <string> IDENTIFIER
 %token TRUE
@@ -170,7 +170,7 @@ let field_initialiser_list :=
 let expr_without_block := 
     | id = IDENTIFIER; ASSIGN; rhs = expr; {  VarAssign (id, rhs) |> make_node $sloc }
     | id = IDENTIFIER; n = delimited(LBRACKET, expr, RBRACKET); ASSIGN; rhs = expr; {  ArrayVarAssign (id, n, rhs) |> make_node $sloc }
-    | MINUS; e = expr; %prec UMINUS {  Sub (make_node $sloc (Int 0), e) |> make_node $sloc }
+    | MINUS; e = expr; %prec UMINUS {  Sub (make_node $sloc (Int (Z.zero)), e) |> make_node $sloc }
     | NOT; e = expr; %prec NOT { UNot e |> make_node $sloc } | bin_expr
     | e = expr; LPAREN; args = arg_list; RPAREN; {  FnCall(e, args) |> make_node $sloc }
     | literal
@@ -233,7 +233,7 @@ let while_loop :=
 
 let literal := 
     | x = STRING; { make_node $sloc (String x) }
-    | x = INT; { make_node $sloc (Int x) }
+    | x = INT; { make_node $sloc (Int (Z.of_string x)) }
     | FALSE; {  Bool (false)  |> make_node $sloc }
     | TRUE; {  Bool (true) |> make_node $sloc }
     | NULLPTR; {  Nullptr |> make_node $sloc }

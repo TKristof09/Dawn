@@ -20,31 +20,43 @@ let set_type g (n : Node.t) new_type =
 let backwards_prop_min_integer_type min_integer_types g n min_type =
     assert (Types.is_a min_type (Integer All));
 
+    let update min_type n =
+        let changed = ref false in
+        Hashtbl.update min_integer_types n ~f:(function
+          | None ->
+              changed := true;
+              min_type
+          | Some t ->
+              let t_new = Types.join t min_type in
+              changed := not (Types.equal t t_new);
+              t_new);
+        !changed
+    in
     match n.Node.kind with
     | Data Add
     | Data Sub
     | Data Mul
     | Data Div
     | Data Phi
+    | Data BAnd
+    | Data BOr
     | Data (Param _) ->
-        let update n =
-            let changed = ref false in
-            Hashtbl.update min_integer_types n ~f:(function
-              | None ->
-                  changed := true;
-                  min_type
-              | Some t ->
-                  let t_new = Types.join t min_type in
-                  changed := not (Types.equal t t_new);
-                  t_new);
-            !changed
-        in
-        ignore (update n);
+        ignore (update min_type n);
         Graph.get_dependencies g n
         |> List.tl_exn
         |> List.filter_opt
         |> List.filter ~f:(fun n -> Option.is_none n.min_typ)
-        |> List.filter ~f:update
+        |> List.filter ~f:(update min_type)
+    | Data Lsh
+    | Data Rsh ->
+        ignore (update min_type n);
+        let lhs = Graph.get_dependency g n 1 |> Option.value_exn in
+        let rhs = Graph.get_dependency g n 2 |> Option.value_exn in
+        let changed1 = update min_type lhs in
+        (* TODO: rhs of shift needs to be smaller (e.g. if lhs is i32 then rhs has to be u5) *)
+        let changed2 = update min_type rhs in
+        let l = if changed1 then [ lhs ] else [] in
+        if changed2 then rhs :: l else l
     | _ -> []
 
 let work linker extra_node_deps min_integer_types (g : (Node.t, Graph.readwrite) Graph.t)
@@ -79,7 +91,7 @@ let work linker extra_node_deps min_integer_types (g : (Node.t, Graph.readwrite)
                    E.g. in (i is i32) while(i <= 10) { i+= 1} the phi fully
                    widens to i32 range but the add still executes so it's range
                    becomes [i32_min + 1; i32_max + 1] which is bad. *)
-                if i.min <= new_i.min && new_i.max <= i.max then
+                if Z.leq i.min new_i.min && Z.leq new_i.max i.max then
                   Types.make_int ~num_widens:new_i.num_widens ?fixed_width:i.fixed_width new_i.min
                     new_i.max
                 else
@@ -88,6 +100,11 @@ let work linker extra_node_deps min_integer_types (g : (Node.t, Graph.readwrite)
                 (* this is full i64 range *)
                 Types.make_int ~num_widens:new_i.num_widens ~fixed_width:64 new_i.min new_i.max
             | Some _ -> assert false)
+        | Integer All -> (
+            (* try to constrain Integer All to some fixed width if we know the width we want *)
+            match Hashtbl.find min_integer_types n with
+            | None -> new_type
+            | Some min_type -> min_type)
         | _ -> new_type
     in
     let new_work =
@@ -229,7 +246,7 @@ let do_mem_node linker extra_node_deps min_integer_types g n (m : Node.mem_kind)
                     | Integer _ when Types.is_constant offs.typ ->
                         let i = Types.get_integer_const_exn offs.typ in
                         (* TODO: bounds check on the idx would be nice *)
-                        let idx = (i - 8) / Types.get_size arr.element_type in
+                        let idx = (Z.to_int i - 8) / Types.get_size arr.element_type in
                         (~new_type:(List.nth_exn (arr.values :> Types.t list) idx), ~extra_deps:[])
                     | _ -> (~new_type:arr.element_type, ~extra_deps:[]))
                 | Some field_type -> (~new_type:field_type, ~extra_deps:[]))

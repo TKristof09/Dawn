@@ -6,6 +6,13 @@ type 'a sub_lattice =
 
 val pp_sub_lattice : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a sub_lattice -> unit
 
+type integer = private {
+    min : Z.t;
+    max : Z.t;
+    num_widens : int;
+    fixed_width : int option; (* in bits *)
+  }
+
 type fun_ptr = private {
     params : t list;
     ret : t;
@@ -20,13 +27,6 @@ and struct_type = private {
 and const_array = {
     element_type : t;
     values : t list;
-  }
-
-and integer = private {
-    min : int;
-    max : int;
-    num_widens : int;
-    fixed_width : int option; (* in bits *)
   }
 
 and t =
@@ -47,8 +47,8 @@ and t =
 [@@deriving show { with_path = false }, sexp_of]
 
 val equal : t -> t -> bool
-val make_int : ?num_widens:int -> ?fixed_width:int -> int -> int -> t
-val make_int_const : ?fixed_width:int -> int -> t
+val make_int : ?num_widens:int -> ?fixed_width:int -> Z.t -> Z.t -> t
+val make_int_const : ?fixed_width:int -> Z.t -> t
 val make_fun_ptr : ?idx:int -> t list -> t -> t
 val make_struct : string -> (string * t) list -> t
 val make_array : t -> t -> t
@@ -67,7 +67,7 @@ val get_field_type : t -> string -> t option
 val human_readable : t -> string
 val get_size : t -> int
 val get_top : t -> t
-val get_integer_const_exn : t -> int
+val get_integer_const_exn : t -> Z.t
 val widen_int : t -> t -> t
 val is_high : t -> bool
 val i64 : t

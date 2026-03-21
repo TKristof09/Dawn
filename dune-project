@@ -29,7 +29,7 @@
    menhir
    core
    core_kernel
-   lrgrep
+   zarith
    )
  (tags
   (topics "to describe" your project)))

@@ -16,7 +16,7 @@ depends: [
   "menhir"
   "core"
   "core_kernel"
-  "lrgrep"
+  "zarith"
   "odoc" {with-doc}
 ]
 build: [

@@ -27,28 +27,40 @@ type ideal =
     | External of string
 [@@deriving show { with_path = false }, sexp_of]
 
+module Z = struct
+  include Z
+
+  let sexp_of_t z = Sexp.Atom (Z.to_string z)
+
+  let t_of_sexp = function
+      | Sexp.Atom s -> Z.of_string s
+      | _ -> failwith "Z.t_of_sexp: expected atom"
+
+  let pp fmt z = Format.pp_print_string fmt (Z.to_string z)
+end
+
 type machine_node_kind =
-    | Int of int
+    | Int of Z.t
     | Ptr
     | ZeroExtend
     | SignExtend
     | Add
-    | AddImm of int
+    | AddImm of Z.t
     | Sub
-    | SubImm of int
+    | SubImm of Z.t
     | Mul
-    | MulImm of int
+    | MulImm of Z.t
     | Div
     | Lsh
     | Rsh
     | And
     | Or
-    | LshImm of int
-    | RshImm of int
-    | AndImm of int
-    | OrImm of int
+    | LshImm of Z.t
+    | RshImm of Z.t
+    | AndImm of Z.t
+    | OrImm of Z.t
     | Cmp
-    | CmpImm of int
+    | CmpImm of Z.t
     | Set of cmp
     | JmpAlways
     | Jmp of cmp
@@ -404,6 +416,7 @@ let get_register_kills (n : t) =
     match n.kind with
     | FunctionCall _ -> Some Registers.Mask.caller_save
     | Div -> Some (Registers.Mask.of_list [ Reg RDX ])
+    (* TODO: important to remove just leaving in to test reg alloc fail bug *)
     | New -> Some Registers.Mask.caller_save
     | _ -> None
 
@@ -469,7 +482,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
             | Ptr _ -> Ptr
             | FunPtr _ -> Ptr
             | Void -> Noop
-            | Bool (Value b) -> Int (Bool.to_int b)
+            | Bool (Value b) -> Int (Bool.to_int b |> Z.of_int)
             | _ -> assert false
         in
         let node = { id = next_id (); kind; ir_node = n } in
@@ -589,7 +602,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
         let kind =
             match input.typ with
             | Integer (Value { min; max; num_widens; fixed_width }) ->
-                let is_unsigned = min >= 0 in
+                let is_unsigned = Z.geq min Z.zero in
                 if is_unsigned then
                   ZeroExtend
                 else
@@ -639,7 +652,7 @@ and of_ctrl_node g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
             (* Predicate is not a compare. Add a compare node to compare the
                predicate value to 0 and set that as the depedency of the Jmp
                node *)
-            let comp_node = { id = next_id (); kind = CmpImm 0; ir_node = cond } in
+            let comp_node = { id = next_id (); kind = CmpImm Z.zero; ir_node = cond } in
             let kind = Jmp NEq in
             let node = { id = next_id (); kind; ir_node = n } in
             Graph.add_dependencies machine_g node [];
@@ -731,7 +744,7 @@ let post_process (machine_g : (t, Graph.readwrite) Graph.t) =
     let temp_node =
         {
           id = next_id ();
-          kind = Int 0;
+          kind = Int Z.zero;
           ir_node = Node.create_data { filename = ""; line = 0; col = 0 } Types.ANY Constant;
         }
     in

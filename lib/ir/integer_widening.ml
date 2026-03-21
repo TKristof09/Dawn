@@ -40,6 +40,11 @@ let do_node g (n : Node.t) =
                 Graph.set_dependency g use (Some cast_node) dep_idx
             | Some cast_node -> Graph.set_dependency g use (Some cast_node) dep_idx)
     in
+    let n_fixed_width =
+        match n.typ with
+        | Integer (Value { min; max; num_widens; fixed_width }) -> fixed_width
+        | _ -> None
+    in
     match n.kind with
     | Data Add
     | Data Sub
@@ -50,7 +55,9 @@ let do_node g (n : Node.t) =
         let lhs_size = Types.get_size lhs.typ in
         let rhs_size = Types.get_size rhs.typ in
         (* Lowering bit width requires explicit cast in the source code. Only widening is done automatically. *)
-        assert (n_size >= lhs_size && n_size >= rhs_size);
+        (* TODO: some nice error message*)
+        if Option.is_some n_fixed_width then
+          assert (n_size >= lhs_size && n_size >= rhs_size);
         if lhs_size < n_size then
           create_cast g lhs n n.loc (n_size * 8);
         if rhs_size < n_size then

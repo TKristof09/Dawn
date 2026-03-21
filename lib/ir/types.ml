@@ -15,6 +15,39 @@ let pp_fun_indices fmt = function
     | `Include set -> Format.fprintf fmt "`Include %s" ([%derive.show: int list] (Set.to_list set))
     | `Exclude set -> Format.fprintf fmt "`Exclude %s" ([%derive.show: int list] (Set.to_list set))
 
+type integer = {
+    (* TODO: probably want to keep track of whether the types is actually unsigned or if it's signed but just happens to have min >= 0 *)
+    (* TODO: decide and document better the inclusiveness of endpoints *)
+    min : Z.t;
+    max : Z.t;
+    num_widens : int;
+    fixed_width : int option; (* in bits *)
+  }
+
+let pp_integer fmt { min; max; num_widens; fixed_width } =
+    match fixed_width with
+    | Some w ->
+        Format.fprintf fmt "[%s, %s] (width=%d, widens=%d)" (Z.to_string min) (Z.to_string max) w
+          num_widens
+    | None ->
+        Format.fprintf fmt "[%s, %s] (widens=%d)" (Z.to_string min) (Z.to_string max) num_widens
+
+let sexp_of_integer { min; max; num_widens; fixed_width } =
+    Sexp.List
+      [
+        Sexp.List [ Sexp.Atom "min"; Sexp.Atom (Z.to_string min) ];
+        Sexp.List [ Sexp.Atom "max"; Sexp.Atom (Z.to_string max) ];
+        Sexp.List [ Sexp.Atom "num_widens"; sexp_of_int num_widens ];
+        Sexp.List [ Sexp.Atom "fixed_width"; sexp_of_option sexp_of_int fixed_width ];
+      ]
+
+let equal_integer { min; max; num_widens; fixed_width }
+    { min = min'; max = max'; num_widens = num_widens'; fixed_width = fixed_width' } =
+    Z.equal min min'
+    && Z.equal max max'
+    && num_widens = num_widens'
+    && Option.equal Int.equal fixed_width fixed_width'
+
 type fun_ptr = {
     params : t list;
     ret : t;
@@ -33,17 +66,6 @@ and struct_type = {
 and const_array = {
     element_type : t;
     values : t list;
-  }
-
-and integer = {
-    (* TODO: probably want to keep track of whether the types is actually unsigned or if it's signed but just happens to have min >= 0 *)
-    (* TODO: this doesn't allow us to represent all (u)int64 values. But Menhir
-       can't parse these anyway so we'd need to move to storing integer
-       literals as strings or using some bigint library *)
-    min : int;
-    max : int;
-    num_widens : int;
-    fixed_width : int option; (* in bits *)
   }
 
 and t =
@@ -65,15 +87,16 @@ and t =
 
 let rec human_readable t =
     let human_readable_int { min; max; num_widens; fixed_width } =
+        (* Format.asprintf "%a" pp_integer { min; max; num_widens; fixed_width } *)
         let bits =
             match fixed_width with
             | Some w -> w
             | None ->
-                if min >= 0 then
-                  Int.ceil_log2 (max + 1)
+                if Z.geq min Z.zero then
+                  Z.numbits (Z.add max Z.one)
                 else
-                  let bits_neg = if min >= 0 then 0 else Int.ceil_log2 (-min) in
-                  let bits_pos = if max < 0 then 0 else Int.ceil_log2 (max + 1) in
+                  let bits_neg = if Z.geq min Z.zero then 0 else Z.numbits min in
+                  let bits_pos = if Z.lt max Z.zero then 0 else Z.numbits (Z.add max Z.one) in
                   1 + Int.max bits_neg bits_pos
         in
         Printf.sprintf "i%d" (Int.max 1 bits)
@@ -118,10 +141,13 @@ let get_top = function
     | DeadControl -> DeadControl
     | ALL -> ANY
 
+let int64_min = Z.neg (Z.pow (Z.of_int 2) 63)
+let uint64_max = Z.sub (Z.pow (Z.of_int 2) 64) Z.one
+
 let make_int ?(num_widens = 0) ?fixed_width min max =
-    if min = Int.min_value && max = Int.max_value then
+    if Z.equal min int64_min && Z.equal max uint64_max then
       Integer All
-    else if max = Int.min_value && min = Int.max_value then
+    else if Z.equal max int64_min && Z.equal min uint64_max then
       Integer Any
     else
       Integer (Value { min; max; num_widens; fixed_width })
@@ -129,15 +155,24 @@ let make_int ?(num_widens = 0) ?fixed_width min max =
 let make_int_const ?fixed_width i =
     Integer (Value { min = i; max = i; num_widens = 0; fixed_width })
 
-(* TODO: i64 and u64 are not correct but we can't represent them in ocaml easily *)
-let i64 = make_int ~fixed_width:64 ~num_widens:3 Int.min_value Int.max_value
-let i32 = make_int ~fixed_width:32 ~num_widens:3 (-1 lsl 31) ((1 lsl 31) - 1)
-let i16 = make_int ~fixed_width:16 ~num_widens:3 (-1 lsl 15) ((1 lsl 15) - 1)
-let i8 = make_int ~fixed_width:8 ~num_widens:3 (-1 lsl 7) ((1 lsl 7) - 1)
-let u64 = make_int ~fixed_width:64 ~num_widens:3 0 Int.max_value
-let u32 = make_int ~fixed_width:32 ~num_widens:3 0 ((1 lsl 32) - 1)
-let u16 = make_int ~fixed_width:16 ~num_widens:3 0 ((1 lsl 16) - 1)
-let u8 = make_int ~fixed_width:8 ~num_widens:3 0 ((1 lsl 8) - 1)
+let signed_bounds w =
+    let pow = Z.pow (Z.of_int 2) (w - 1) in
+    (Z.neg pow, Z.sub pow Z.one)
+
+let unsigned_bounds w = (Z.zero, Z.sub (Z.pow (Z.of_int 2) w) Z.one)
+
+let make_int_fixed ~fixed_width ~num_widens bounds_fn =
+    let min, max = bounds_fn fixed_width in
+    make_int ~fixed_width ~num_widens min max
+
+let i64 = make_int_fixed ~fixed_width:64 ~num_widens:3 signed_bounds
+let i32 = make_int_fixed ~fixed_width:32 ~num_widens:3 signed_bounds
+let i16 = make_int_fixed ~fixed_width:16 ~num_widens:3 signed_bounds
+let i8 = make_int_fixed ~fixed_width:8 ~num_widens:3 signed_bounds
+let u64 = make_int_fixed ~fixed_width:64 ~num_widens:3 unsigned_bounds
+let u32 = make_int_fixed ~fixed_width:32 ~num_widens:3 unsigned_bounds
+let u16 = make_int_fixed ~fixed_width:16 ~num_widens:3 unsigned_bounds
+let u8 = make_int_fixed ~fixed_width:8 ~num_widens:3 unsigned_bounds
 
 let make_fun_ptr ?idx params ret =
     let is_valid_param_type t =
@@ -228,9 +263,11 @@ let make_array element_type len_type =
     make_array_inner name element_type len_type
 
 let make_string s =
-    let len = String.length s in
+    let len = String.length s |> Z.of_int in
     let values =
-        s |> String.to_list |> List.map ~f:(fun c -> make_int_const ~fixed_width:8 (Char.to_int c))
+        s
+        |> String.to_list
+        |> List.map ~f:(fun c -> make_int_const ~fixed_width:8 (Char.to_int c |> Z.of_int))
     in
     let typ = ConstArray (Value { element_type = u8; values }) in
     make_array_inner "str" typ (make_int_const ~fixed_width:64 len)
@@ -248,9 +285,8 @@ let rec of_ast_type (ast_type : Ast.var_type) : t =
     match ast_type with
     | Type s -> (
         match try_parse_int s with
-        | Some (`UInt bits) -> make_int ~fixed_width:bits ~num_widens:3 0 ((1 lsl bits) - 1)
-        | Some (`Int bits) ->
-            make_int ~fixed_width:bits ~num_widens:3 (-1 lsl (bits - 1)) ((1 lsl (bits - 1)) - 1)
+        | Some (`UInt bits) -> make_int_fixed ~fixed_width:bits ~num_widens:3 unsigned_bounds
+        | Some (`Int bits) -> make_int_fixed ~fixed_width:bits ~num_widens:3 signed_bounds
         | None -> (
             match s with
             | "str" ->
@@ -281,26 +317,26 @@ let rec meet t t' =
     | Integer t, Integer t' ->
         Integer
           (meet_sub_lattice t t' ~f:(fun i i' ->
-               let min_range = min i.min i'.min in
-               let max_range = max i.max i'.max in
+               let min_range = Z.min i.min i'.min in
+               let max_range = Z.max i.max i'.max in
                let combined_width =
                    match (i.fixed_width, i'.fixed_width) with
                    | None, None -> None
                    | Some w, None
                    | None, Some w ->
                        Some w
-                   | Some w, Some w' -> Some (max w w')
+                   | Some w, Some w' -> Some (Int.max w w')
                in
-               if min_range = Int.min_value && max_range = Int.max_value then
+               if Z.equal min_range int64_min && Z.equal max_range uint64_max then
                  All
-               else if max_range = Int.min_value && min_range = Int.max_value then
+               else if Z.equal max_range int64_min && Z.equal min_range uint64_max then
                  Any
                else
                  Value
                    {
                      min = min_range;
                      max = max_range;
-                     num_widens = max i.num_widens i'.num_widens;
+                     num_widens = Int.max i.num_widens i'.num_widens;
                      fixed_width = combined_width;
                    }))
     | Bool t, Bool t' ->
@@ -412,8 +448,8 @@ let rec join t t' =
     | Integer t, Integer t' ->
         Integer
           (join_sub_lattice t t' ~f:(fun i i' ->
-               let min_range = max i.min i'.min in
-               let max_range = min i.max i'.max in
+               let min_range = Z.max i.min i'.min in
+               let max_range = Z.min i.max i'.max in
                let combined_width =
                    (* TODO: should this logic be the same in both meet and join? Need to think more about it *)
                    match (i.fixed_width, i'.fixed_width) with
@@ -421,18 +457,18 @@ let rec join t t' =
                    | Some w, None
                    | None, Some w ->
                        Some w
-                   | Some w, Some w' -> Some (max w w')
+                   | Some w, Some w' -> Some (Int.max w w')
                in
-               if min_range = Int.min_value && max_range = Int.max_value then
+               if Z.equal min_range int64_min && Z.equal max_range uint64_max then
                  All
-               else if max_range = Int.min_value && min_range = Int.max_value then
+               else if Z.equal max_range int64_min && Z.equal min_range uint64_max then
                  Any
                else
                  Value
                    {
                      min = min_range;
                      max = max_range;
-                     num_widens = min i.num_widens i'.num_widens;
+                     num_widens = Int.min i.num_widens i'.num_widens;
                      fixed_width = combined_width;
                    }))
     | Bool t, Bool t' ->
@@ -539,7 +575,7 @@ let rec is_constant t =
     | DeadControl
     | Memory ->
         false
-    | Integer (Value { min; max; num_widens = _ }) -> min = max
+    | Integer (Value { min; max; num_widens = _ }) -> Z.equal min max
     | Integer _ -> false
     | Bool x -> is_constant_lattice x
     | Tuple x -> is_constant_lattice x
@@ -614,8 +650,10 @@ let get_string t =
             match List.hd_exn values with
             | Integer _ ->
                 List.map values ~f:(function
-                  | Integer (Value { min; max; num_widens = _ }) when min = max ->
-                      Char.of_int_exn min
+                  | Integer (Value { min; max; num_widens = _; fixed_width = _ })
+                    when Z.equal min max ->
+                      (* TODO: nicer error message than just Char.of_int_exn i guess *)
+                      Z.to_int min |> Char.of_int_exn
                   | _ -> assert false)
                 |> String.of_char_list
                 |> Option.some
@@ -631,11 +669,11 @@ let rec get_size t =
             match fixed_width with
             | Some w -> w
             | None ->
-                if min >= 0 then
-                  Int.ceil_log2 (max + 1)
+                if Z.geq min Z.zero then
+                  Z.numbits (Z.add max Z.one)
                 else
-                  let bits_neg = if min >= 0 then 0 else Int.ceil_log2 (-min) in
-                  let bits_pos = if max < 0 then 0 else Int.ceil_log2 (max + 1) in
+                  let bits_neg = if Z.geq min Z.zero then 0 else Z.numbits min in
+                  let bits_pos = if Z.lt max Z.zero then 0 else Z.numbits (Z.add max Z.one) in
                   1 + Int.max bits_neg bits_pos
         in
         let bits = Int.max 1 bits in
@@ -693,7 +731,7 @@ let rec get_field_type t field_name =
 
 let get_integer_const_exn = function
     | Integer (Value { min; max; num_widens = _ }) ->
-        if min = max then
+        if Z.equal min max then
           min
         else
           raise (Invalid_argument "Not an integer constant")
@@ -708,20 +746,11 @@ let widen_int t min_type =
           match
             fixed_width
           with
-          | Some 64 ->
-              (* TODO HACK for ocaml ints being 63 bit wide *)
-              [%log.debug "Have fixed width %d ignoring min_type" 64];
-              let is_unsigned = min >= 0 in
-              if is_unsigned then u64 else i64
-          | Some 63 when min >= 0 ->
-              (* TODO HACK for ocaml ints being 63 bit wide *)
-              make_int ~num_widens:3 ~fixed_width:63 0 ((1 lsl 62) - 1)
           | Some w ->
               [%log.debug "Have fixed width %d ignoring min_type" w];
-              let is_unsigned = min >= 0 in
-              let min = if is_unsigned then 0 else -1 lsl (w - 1) in
-              let max = if is_unsigned then (1 lsl w) - 1 else (1 lsl (w - 1)) - 1 in
-              make_int ~num_widens:3 ~fixed_width:w min max
+              let is_unsigned = Z.geq min Z.zero in
+              make_int_fixed ~num_widens:3 ~fixed_width:w
+                (if is_unsigned then unsigned_bounds else signed_bounds)
           | None -> min_type)
     | _ -> assert false
 

@@ -18,27 +18,27 @@ type ideal =
 [@@deriving show { with_path = false }, sexp_of]
 
 type machine_node_kind =
-    | Int of int
+    | Int of Z.t
     | Ptr
     | ZeroExtend
     | SignExtend
     | Add
-    | AddImm of int
+    | AddImm of Z.t
     | Sub
-    | SubImm of int
+    | SubImm of Z.t
     | Mul
-    | MulImm of int
+    | MulImm of Z.t
     | Div
     | Lsh
     | Rsh
     | And
     | Or
-    | LshImm of int
-    | RshImm of int
-    | AndImm of int
-    | OrImm of int
+    | LshImm of Z.t
+    | RshImm of Z.t
+    | AndImm of Z.t
+    | OrImm of Z.t
     | Cmp
-    | CmpImm of int
+    | CmpImm of Z.t
     | Set of cmp
     | JmpAlways
     | Jmp of cmp

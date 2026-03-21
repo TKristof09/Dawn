@@ -136,7 +136,9 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
         | Int i ->
             let reg = Hashtbl.find_exn reg_assoc n in
             let op_str = asm_of_op n.kind in
-            Printf.sprintf "\t%s %s, %d" op_str (asm_of_loc reg (Types.get_size n.ir_node.typ)) i
+            Printf.sprintf "\t%s %s, %s" op_str
+              (asm_of_loc reg (Types.get_size n.ir_node.typ))
+              (Z.to_string i)
         | Ptr ->
             let reg = Hashtbl.find_exn reg_assoc n in
             let op_str = asm_of_op n.kind in
@@ -185,7 +187,7 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             let reg = Hashtbl.find_exn reg_assoc dep in
             let op_str = asm_of_op n.kind in
             let reg_str = asm_of_loc reg (Types.get_size dep.ir_node.typ) in
-            Printf.sprintf "\t%s %s, %d" op_str reg_str i
+            Printf.sprintf "\t%s %s, %s" op_str reg_str (Z.to_string i)
         | Div ->
             let deps = Graph.get_dependencies g n |> List.tl_exn in
             let divisor = List.nth_exn deps 1 |> Option.value_exn in

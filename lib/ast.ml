@@ -5,12 +5,14 @@ type loc = {
     line : int;
     col : int;
   }
+[@@deriving show { with_path = false }, eq, sexp_of]
 
-and qualifier =
+type qualifier =
     | Const
     | Mutable
+[@@deriving show { with_path = false }, eq]
 
-and 'a node = {
+type 'a node = {
     node : 'a;
     loc : loc;
   }
@@ -45,7 +47,7 @@ and statement =
 
 and expr =
     | String of string
-    | Int of int
+    | Int of Z.t [@printer fun fmt i -> fprintf fmt "Int %s" (Z.to_string i)]
     | Bool of bool
     | Nullptr
     | Variable of name * expr node option
@@ -81,7 +83,7 @@ and expr =
                      Option.equal name_equal field_name field_name' && node_equal value value')
                    l l']
     | FieldAccess of expr node * name
-[@@deriving show { with_path = false }, eq, sexp_of]
+[@@deriving show { with_path = false }, eq]
 
 let compare_loc l l' =
     let c = String.compare l.filename l'.filename in

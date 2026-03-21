@@ -53,7 +53,7 @@ rule read = parse
             | None -> IDENTIFIER s
             | Some token -> token
         }
-    | digit+ as num { INT (int_of_string num) }
+    | digit+ as num { INT (num) }
     | '"' { read_string (Buffer.create 16) lexbuf }
     | "." { DOT }
     | "+" { PLUS }

@@ -13,10 +13,10 @@ let create_bor g loc (lhs : Node.t) (rhs : Node.t) = common g loc lhs rhs BOr
 let compute_type g (n : Node.t) =
     let op =
         match n.kind with
-        | Data Lsh -> Int.shift_left
-        | Data Rsh -> Int.shift_right
-        | Data BAnd -> Int.bit_and
-        | Data BOr -> Int.bit_or
+        | Data Lsh -> fun a b -> Z.shift_left a (Z.to_int b)
+        | Data Rsh -> fun a b -> Z.shift_right a (Z.to_int b)
+        | Data BAnd -> Z.logand
+        | Data BOr -> Z.logor
         | _ -> assert false
     in
     let lhs = Graph.get_dependency g n 1 |> Option.value_exn in

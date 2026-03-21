@@ -42,6 +42,12 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
                     (Linker.get_name linker fun_idx)
                 then
                   Linker.set_name linker fun_idx name
+            | Integer (Value i) when Option.is_some n.min_typ -> (
+                (* for constant integers we set the width to the type annotation's width if present *)
+                match n.min_typ |> Option.value_exn with
+                | Integer (Value min_typ) ->
+                    n.typ <- Types.make_int_const ?fixed_width:min_typ.fixed_width i.min
+                | _ -> ())
             | _ -> ())
         | _ -> ());
         Scope_node.define g scope name n (Poly.equal qualifier Ast.Const)
@@ -52,7 +58,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
             match t with
             | Integer _ ->
                 let default_init =
-                    do_expr g { loc = s.loc; node = Int 0 } scope cur_ret_node linker
+                    do_expr g { loc = s.loc; node = Int Z.zero } scope cur_ret_node linker
                     |> Option.value_exn
                 in
                 default_init.min_typ <- Some t;
@@ -88,6 +94,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
             let offset =
                 Types.get_offset arr_type "len"
                 |> Option.value_exn
+                |> Z.of_int
                 |> Types.make_int_const ~fixed_width:64
                 |> Const_node.create_from_type g loc
             in
@@ -120,7 +127,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         Some (f g loc lhs rhs)
     in
     match e.node with
-    | Ast.Int i -> Some (Const_node.create_int g loc i)
+    | Ast.Int i -> Some (Const_node.create_zint g loc i)
     | Ast.Bool b -> Some (Const_node.create_bool g loc b)
     | Ast.String s -> Some (Const_node.create_string g loc s)
     | Ast.Variable (name, idx_expr) -> (
@@ -402,7 +409,11 @@ let of_ast ast linker =
     let scope = Scope_node.create () in
     Scope_node.set_ctrl g scope ctrl;
     Scope_node.set_mem g scope mem;
-    let builtin_types = [ "i32"; "i64"; "i63"; "bool"; "str"; "void" ] in
+    let builtin_types =
+        [ "bool"; "str"; "void" ]
+        @ List.init 128 ~f:(fun i ->
+            if i < 64 then Printf.sprintf "i%d" (i + 1) else Printf.sprintf "u%d" (i - 64 + 1))
+    in
     List.iter builtin_types ~f:(define_builtin_type g scope);
     Core.List.iter ast ~f:(fun s -> do_statement g s scope None linker);
     let ctrl = Scope_node.get_ctrl g scope in

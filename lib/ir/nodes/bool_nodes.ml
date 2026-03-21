@@ -16,12 +16,12 @@ let create_geq g loc (lhs : Node.t) (rhs : Node.t) = create_common g loc lhs rhs
 let compute_type g (n : Node.t) =
     let op =
         match n.kind with
-        | Data Eq -> ( = )
-        | Data NEq -> ( <> )
-        | Data Lt -> ( < )
-        | Data LEq -> ( <= )
-        | Data Gt -> ( > )
-        | Data GEq -> ( >= )
+        | Data Eq -> Z.equal
+        | Data NEq -> fun a b -> not (Z.equal a b)
+        | Data Lt -> Z.lt
+        | Data LEq -> Z.leq
+        | Data Gt -> Z.gt
+        | Data GEq -> Z.geq
         | _ -> assert false
     in
     let lhs = Graph.get_dependency g n 1 |> Option.value_exn in
@@ -36,34 +36,40 @@ let compute_type g (n : Node.t) =
             let rhs_v = Types.get_integer_const_exn rhs.typ in
             match n.kind with
             | Data Eq ->
-                if not (lhs.min <= rhs_v && rhs_v <= lhs.max) then Bool (Value false) else Bool All
+                if not (Z.leq lhs.min rhs_v && Z.leq rhs_v lhs.max) then
+                  Bool (Value false)
+                else
+                  Bool All
             | Data NEq ->
-                if not (lhs.min <= rhs_v && rhs_v <= lhs.max) then Bool (Value true) else Bool All
-            | Data Lt ->
-                if lhs.max < rhs_v then
+                if not (Z.leq lhs.min rhs_v && Z.leq rhs_v lhs.max) then
                   Bool (Value true)
-                else if lhs.min >= rhs_v then
+                else
+                  Bool All
+            | Data Lt ->
+                if Z.lt lhs.max rhs_v then
+                  Bool (Value true)
+                else if Z.geq lhs.min rhs_v then
                   Bool (Value false)
                 else
                   Bool All
             | Data LEq ->
-                if lhs.max <= rhs_v then
+                if Z.leq lhs.max rhs_v then
                   Bool (Value true)
-                else if lhs.min > rhs_v then
+                else if Z.gt lhs.min rhs_v then
                   Bool (Value false)
                 else
                   Bool All
             | Data Gt ->
-                if lhs.min > rhs_v then
+                if Z.gt lhs.min rhs_v then
                   Bool (Value true)
-                else if lhs.max <= rhs_v then
+                else if Z.leq lhs.max rhs_v then
                   Bool (Value false)
                 else
                   Bool All
             | Data GEq ->
-                if lhs.min >= rhs_v then
+                if Z.geq lhs.min rhs_v then
                   Bool (Value true)
-                else if lhs.max < rhs_v then
+                else if Z.lt lhs.max rhs_v then
                   Bool (Value false)
                 else
                   Bool All
@@ -72,34 +78,40 @@ let compute_type g (n : Node.t) =
             let lhs_v = Types.get_integer_const_exn lhs.typ in
             match n.kind with
             | Data Eq ->
-                if not (rhs.min <= lhs_v && lhs_v <= rhs.max) then Bool (Value false) else Bool All
+                if not (Z.leq rhs.min lhs_v && Z.leq lhs_v rhs.max) then
+                  Bool (Value false)
+                else
+                  Bool All
             | Data NEq ->
-                if not (rhs.min <= lhs_v && lhs_v <= rhs.max) then Bool (Value true) else Bool All
-            | Data Lt ->
-                if lhs_v < rhs.min then
+                if not (Z.leq rhs.min lhs_v && Z.leq lhs_v rhs.max) then
                   Bool (Value true)
-                else if lhs_v >= rhs.max then
+                else
+                  Bool All
+            | Data Lt ->
+                if Z.lt lhs_v rhs.min then
+                  Bool (Value true)
+                else if Z.geq lhs_v rhs.max then
                   Bool (Value false)
                 else
                   Bool All
             | Data LEq ->
-                if lhs_v <= rhs.min then
+                if Z.leq lhs_v rhs.min then
                   Bool (Value true)
-                else if lhs_v > rhs.max then
+                else if Z.gt lhs_v rhs.max then
                   Bool (Value false)
                 else
                   Bool All
             | Data Gt ->
-                if lhs_v > rhs.max then
+                if Z.gt lhs_v rhs.max then
                   Bool (Value true)
-                else if lhs_v <= rhs.min then
+                else if Z.leq lhs_v rhs.min then
                   Bool (Value false)
                 else
                   Bool All
             | Data GEq ->
-                if lhs_v >= rhs.max then
+                if Z.geq lhs_v rhs.max then
                   Bool (Value true)
-                else if lhs_v < rhs.min then
+                else if Z.lt lhs_v rhs.min then
                   Bool (Value false)
                 else
                   Bool All
@@ -107,34 +119,37 @@ let compute_type g (n : Node.t) =
         | Integer (Value lhs), Integer (Value rhs) -> (
             match n.kind with
             | Data Eq ->
-                if lhs.max < rhs.min || lhs.min > rhs.max then Bool (Value false) else Bool All
+                if Z.lt lhs.max rhs.min || Z.gt lhs.min rhs.max then
+                  Bool (Value false)
+                else
+                  Bool All
             | Data NEq ->
-                if lhs.max < rhs.min || lhs.min > rhs.max then Bool (Value true) else Bool All
+                if Z.lt lhs.max rhs.min || Z.gt lhs.min rhs.max then Bool (Value true) else Bool All
             | Data Lt ->
-                if lhs.max < rhs.min then
+                if Z.lt lhs.max rhs.min then
                   Bool (Value true)
-                else if lhs.min >= rhs.max then
+                else if Z.geq lhs.min rhs.max then
                   Bool (Value false)
                 else
                   Bool All
             | Data LEq ->
-                if lhs.max <= rhs.min then
+                if Z.leq lhs.max rhs.min then
                   Bool (Value true)
-                else if lhs.min > rhs.max then
+                else if Z.gt lhs.min rhs.max then
                   Bool (Value false)
                 else
                   Bool All
             | Data Gt ->
-                if lhs.min > rhs.max then
+                if Z.gt lhs.min rhs.max then
                   Bool (Value true)
-                else if lhs.max <= rhs.min then
+                else if Z.leq lhs.max rhs.min then
                   Bool (Value false)
                 else
                   Bool All
             | Data GEq ->
-                if lhs.min >= rhs.max then
+                if Z.geq lhs.min rhs.max then
                   Bool (Value true)
-                else if lhs.max < rhs.min then
+                else if Z.lt lhs.max rhs.min then
                   Bool (Value false)
                 else
                   Bool All
