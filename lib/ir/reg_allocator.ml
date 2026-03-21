@@ -547,6 +547,8 @@ end = struct
 end
 
 let spill_node g (lrg : Range.t) n =
+    assert (not @@ Machine_node.is_control_node n);
+
     let clone_node g (n : Machine_node.t) =
         let n' = { n with id = Machine_node.next_id () } in
         Graph.add_dependencies g n' (Graph.get_dependencies g n);
@@ -557,7 +559,18 @@ let spill_node g (lrg : Range.t) n =
         let n' : Machine_node.t =
             { id = Machine_node.next_id (); kind = Mov; ir_node = n.ir_node }
         in
-        let cfg = Graph.get_dependency g n 0 in
+        let cfg =
+            match n.kind with
+            | DProj _ ->
+                Graph.get_dependency g n 0
+                |> Option.bind ~f:(fun input ->
+                    if Machine_node.is_blockhead input then
+                      Some input
+                    else
+                      Graph.get_dependency g input 0)
+            | _ -> Graph.get_dependency g n 0
+        in
+        assert (Option.exists cfg ~f:Machine_node.is_blockhead);
         Graph.add_dependencies g n' [ cfg; Some n ];
         n'
     in
@@ -582,7 +595,16 @@ let insert_before ?(skip = true) g program ~(before_this : Machine_node.t)
             List.fold_until program ~init:None
               ~f:(fun acc n ->
                 let cfg =
-                    if Machine_node.is_blockhead n then Some n else Graph.get_dependency g n 0
+                    match n.Machine_node.kind with
+                    | DProj _ ->
+                        Graph.get_dependency g n 0
+                        |> Option.bind ~f:(fun input ->
+                            if Machine_node.is_blockhead input then
+                              Some input
+                            else
+                              Graph.get_dependency g input 0)
+                    | _ ->
+                        if Machine_node.is_blockhead n then Some n else Graph.get_dependency g n 0
                 in
                 match cfg with
                 | None -> Continue acc
@@ -608,6 +630,7 @@ let insert_before ?(skip = true) g program ~(before_this : Machine_node.t)
                         | Some n -> if Machine_node.equal n node_to_spill then Some i else None)
                 in
                 let region = Graph.get_dependency g before_this 0 |> Option.value_exn in
+                assert (Poly.equal region.kind (Ideal Region) || Poly.equal region.kind (Ideal Loop));
                 Graph.get_dependency g region idx |> Option.value_exn
             | _ -> Graph.get_dependency g before_this 0 |> Option.value_exn
         in
