@@ -232,6 +232,42 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
             List.map args ~f:(fun arg ->
                 do_expr g arg scope cur_ret_node linker |> Option.value_exn)
         in
+        let big_ret_type =
+            match fun_ptr.typ with
+            | FunPtr (Value { params; ret; fun_indices }) -> (
+                let first_param = List.hd params in
+                match first_param with
+                | None -> None
+                | Some (Ptr (Struct _ as s) as t) when Types.equal t ret -> Some s
+                | _ -> None)
+            | _ -> (
+                match fun_ptr.kind with
+                | ForwardRef _ ->
+                    (* TODO: how to figure out in recursive functions?
+                           Since we only have the forward ref which has no type
+                           associated with it. This will probably need to be
+                           another pass after IR construction but before SCCP
+                           .For now I just leave it so it will be incorrect if
+                               the recursive function has big return type *)
+                    [%log.warn "Recursive functions don't yet work with big return types "];
+                    None
+                | _ -> failwithf "Invalid fun ptr typ %s" (Node.show fun_ptr) ())
+        in
+        let args =
+            match big_ret_type with
+            | None -> args
+            | Some deref_ret_type ->
+                (* Allocate place for big return type and pass ptr as first arg *)
+                let ctrl = Scope_node.get_ctrl g scope in
+                let mem = Scope_node.get_mem g scope in
+                let size = Types.get_size deref_ret_type |> Const_node.create_int g loc in
+                let new_node = Mem_nodes.create_new g loc ~ctrl ~mem ~size deref_ret_type in
+                let mem = Proj_node.create g loc new_node 0 in
+                let ptr = Proj_node.create g loc new_node 1 in
+                ptr.min_typ <- Some (Ptr deref_ret_type);
+                Scope_node.set_mem g scope mem;
+                ptr :: args
+        in
         let call_node, call_end =
             Fun_node.add_call g loc ~ctrl:(Scope_node.get_ctrl g scope)
               ~mem:(Scope_node.get_mem g scope) ~fun_ptr args
@@ -244,6 +280,10 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         Some return_val
     (* | Ast.Return ->  *)
     | Ast.FnDeclaration (typ, param_names, body) ->
+        (* TODO: when return value is big the function body will allocate
+           memory for the struct, fill it up then at the end we copy the data
+           into the memory provided by the caller. This should be optimised
+           (like NRVO/URVO in C++) *)
         let ret_type, param_types =
             match typ with
             | Ast.Fn (ret, params) -> (ret, params)
@@ -253,6 +293,15 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
             Types.make_fun_ptr
               (List.map param_types ~f:(get_type g scope))
               (get_type g scope ret_type)
+        in
+        let param_names, param_types, big_ret =
+            match fun_ptr_type with
+            | FunPtr (Value { params; ret; fun_indices = _ }) ->
+                if List.length params = List.length param_names then
+                  (param_names, params, false)
+                else
+                  ("$ret" :: param_names, params, true)
+            | _ -> assert false
         in
         let fun_node, ret_node = Fun_node.create g loc fun_ptr_type in
         let fun_idx = Linker.define linker fun_node in
@@ -267,18 +316,49 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         let mem = Fun_node.create_param g loc fun_node Memory 0 in
         Scope_node.set_mem g scope mem;
         List.zip_exn param_types param_names
-        |> List.iteri ~f:(fun i (typ, pname) ->
-            let param_type = get_type g scope typ in
-            let param_node = Fun_node.create_param g loc fun_node param_type (i + 1) in
-            param_node.min_typ <- Some param_type;
+        |> List.iteri ~f:(fun i (ptype, pname) ->
+            let param_node = Fun_node.create_param g loc fun_node ptype (i + 1) in
+            param_node.min_typ <- Some ptype;
             Scope_node.define g scope pname param_node false);
         let body_n =
             do_expr g body scope (Some ret_node) linker
             |> Option.value ~default:(Const_node.create_from_type g body.loc Types.Void)
         in
         body_n.min_typ <- Some (get_type g scope ret_type);
-        Fun_node.add_return g ret_node ~ctrl:(Scope_node.get_ctrl g scope)
-          ~mem:(Scope_node.get_mem g scope) ~val_n:body_n;
+        if big_ret then (
+          (*  store the values into $ret if return value goes onto stack and put ptr as return value *)
+          let ret_ptr = Scope_node.get g scope "$ret" in
+          (match ret_ptr.typ with
+          | Ptr (Struct (Value { name; fields }) as s) ->
+              let initial_mem = Scope_node.get_mem g scope in
+              List.iter fields ~f:(fun (name, t) ->
+                  let offset =
+                      Types.get_offset s name
+                      |> Option.value_exn
+                      |> Const_node.create_int g ret_node.loc
+                  in
+                  (* The loads intentionally use the initial MEMORY , this is
+                     correct since we aren't creating any write -> read chains
+                     here and I think that the loads all using the initial
+                     memory will make it easier in the future to coalesce
+                     memory ops to eliminate store -> load -> store chains to
+                     same address *)
+                  let load =
+                      Mem_nodes.create_load g ret_node.loc ~mem:initial_mem ~ptr:body_n name ~offset
+                        t
+                  in
+                  let mem = Scope_node.get_mem g scope in
+                  let store =
+                      Mem_nodes.create_store g ret_node.loc ~mem ~ptr:ret_ptr ~offset name
+                        ~value:load
+                  in
+                  Scope_node.set_mem g scope store)
+          | _ -> assert false);
+          Fun_node.add_return g ret_node ~ctrl:(Scope_node.get_ctrl g scope)
+            ~mem:(Scope_node.get_mem g scope) ~val_n:ret_ptr)
+        else
+          Fun_node.add_return g ret_node ~ctrl:(Scope_node.get_ctrl g scope)
+            ~mem:(Scope_node.get_mem g scope) ~val_n:body_n;
         Scope_node.pop g scope;
         Scope_node.set_ctrl g scope old_ctrl;
         Scope_node.set_mem g scope old_mem;
@@ -293,17 +373,24 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         let fun_ptr_type =
             Types.make_fun_ptr (List.map param_types ~f:(get_type g scope)) ret_type
         in
+        let param_types =
+            match fun_ptr_type with
+            | FunPtr (Value { params; ret; fun_indices = _ }) -> params
+            | _ -> assert false
+        in
         let fun_node, ret_node = Fun_node.create g loc fun_ptr_type in
         let fun_idx = Linker.define linker fun_node in
         (match fun_node.kind with
         | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx })
         | _ -> assert false);
         let fun_ptr = Const_node.create_fun_ptr g loc fun_node fun_idx in
+        (* TODO the extern node should probably also pretend to use the MEMORY
+           since it could store stuff into the passed in ptr when return value
+           doesnt fit into a single register *)
         let ret_val = Extern_node.create g loc ret_type external_name in
         ret_val.min_typ <- Some ret_type;
         let mem = Fun_node.create_param g loc fun_node Memory 0 in
-        List.mapi param_types ~f:(fun i typ ->
-            let param_type = get_type g scope typ in
+        List.mapi param_types ~f:(fun i param_type ->
             let param_node = Fun_node.create_param g loc fun_node param_type (i + 1) in
             param_node.min_typ <- Some param_type;
             Some param_node)
@@ -420,7 +507,7 @@ let of_ast ast linker =
     Graph.set_stop_ctrl g ctrl;
     Scope_node.set_ctrl g scope (Graph.get_stop g);
     (* makes life easier and we dont need the scope anymore i think*)
-    (* Graph.remove_node g scope; *)
+    Graph.remove_node g scope;
     (* Graph.add_dependencies g stop (Graph.get_dependencies g scope |> List.tl_exn); *)
     (* Graph.cleanup g; *)
     Graph.get_dependants g (Graph.get_start g)

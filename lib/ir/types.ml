@@ -208,10 +208,15 @@ let make_fun_ptr ?idx params ret =
             | Struct _ -> Ptr t
             | _ -> t)
     in
-    let ret =
+    let params, ret =
         match ret with
-        | Struct _ -> Ptr ret
-        | _ -> ret
+        | Struct _ ->
+            (* If return value is big caller allocates stack space and passes in ptr as first arg *)
+            (* TODO it should actually depends on size of ret to allow small
+               structs returned as reg but that would be a bunch more work i
+               think *)
+            (Ptr ret :: params, Ptr ret)
+        | _ -> (params, ret)
     in
     FunPtr (Value { params; ret; fun_indices })
 
