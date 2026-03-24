@@ -380,6 +380,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         in
         let fun_node, ret_node = Fun_node.create g loc fun_ptr_type in
         let fun_idx = Linker.define linker fun_node in
+        Linker.set_name linker fun_idx external_name;
         (match fun_node.kind with
         | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx })
         | _ -> assert false);
