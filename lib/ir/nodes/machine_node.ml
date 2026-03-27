@@ -305,7 +305,7 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
     | FunctionCallEnd -> None
     | Param _ -> None
     | CalleeSave _ -> None
-    | New -> if i = 1 then Some (Registers.Mask.x64_systemv 0) else None
+    | New -> if i = 1 then Some Registers.Mask.general_r else None
     | Store -> (
         match i with
         | 0 -> None
@@ -400,7 +400,7 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
             | _ -> false
         in
         if i = 0 && not is_void then Some Registers.Mask.rax else None
-    | New -> if i = 1 then Some Registers.Mask.rax else None
+    | New -> if i = 1 then Some Registers.Mask.general_w else None
     | Store -> None
     | Load -> Some Registers.Mask.general_w
     | Noop -> None
@@ -425,7 +425,10 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
           List.find_mapi deps ~f:(fun i n ->
               Option.bind n ~f:(fun n ->
                   match n.typ with
-                  | Integer _ when Types.is_constant n.typ -> Some (i, n)
+                  | Integer _
+                    when Types.is_constant n.typ && Z.fits_int32 (Types.get_integer_const_exn n.typ)
+                    ->
+                      Some (i, n)
                   | _ -> None))
         with
         | None ->
@@ -454,7 +457,9 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
         | None -> assert false
         | Some dep -> (
             match dep.typ with
-            | Integer _ when Types.is_constant dep.typ ->
+            | Integer _
+              when Types.is_constant dep.typ && Z.fits_int32 (Types.get_integer_const_exn dep.typ)
+              ->
                 let v = Types.get_integer_const_exn dep.typ in
                 let kind = kind_imm v in
                 let node = { id = next_id (); kind; ir_node = n } in

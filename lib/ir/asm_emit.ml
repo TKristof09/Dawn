@@ -188,6 +188,7 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
         | RshImm i
         | AndImm i
         | OrImm i ->
+            assert (Z.fits_int32 i);
             let dep = Graph.get_dependency g n 1 |> Option.value_exn in
             let reg = Hashtbl.find_exn reg_assoc dep in
             let op_str = asm_of_op n.kind in
@@ -257,7 +258,7 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             assert (
               0
               = Registers.compare_loc
-                  (List.nth_exn deps 2 |> Option.value_exn |> Hashtbl.find_exn reg_assoc)
+                  (List.nth_exn deps 1 |> Option.value_exn |> Hashtbl.find_exn reg_assoc)
                   (Reg Registers.RCX));
             Printf.sprintf "\t%s %s, cl" op_str (asm_of_loc reg (Types.get_size dep.ir_node.typ))
         | Add
@@ -352,8 +353,6 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             let ptr_reg = Hashtbl.find_exn reg_assoc ptr in
             let size = Graph.get_dependency g n 2 |> Option.value_exn in
             let size_reg = Hashtbl.find_exn reg_assoc size in
-            assert (Poly.equal ptr_reg (Reg RAX));
-            assert (Poly.equal size_reg (Reg RDI));
             (* HACK: this is only until i get heap memory alloc. *)
             Printf.sprintf "\tsub rsp, %s   ; alloc\n\tmov %s, rsp"
               (asm_of_loc size_reg (Types.get_size size.ir_node.typ))
