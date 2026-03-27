@@ -106,11 +106,6 @@ let rec human_readable t =
     | Integer _ -> "integer"
     | Bool _ -> "bool"
     | Struct (Value s) -> s.name
-    | Ptr (Struct _ as s) ->
-        (* HACK: we always represent structs as Ptr(Struct...) now so this
-           makes the pretty printer look nicer, but idk if in the future i want
-           to change this representation *)
-        human_readable s
     | Ptr p -> "*" ^ human_readable p
     | Void -> "void"
     | FunPtr (Value { params; ret; fun_indices }) ->
@@ -180,7 +175,8 @@ let make_fun_ptr ?idx params ret =
         | Integer _
         | Bool _
         | Ptr _
-        | FunPtr _ ->
+        | FunPtr _
+        | Struct _ ->
             true
         | _ -> false
     in
@@ -202,12 +198,7 @@ let make_fun_ptr ?idx params ret =
         | Some idx -> `Include (Int.Set.singleton idx)
         | None -> `Exclude Int.Set.empty
     in
-    let params =
-        List.map params ~f:(fun t ->
-            match t with
-            | Struct _ -> Ptr t
-            | _ -> t)
-    in
+
     let params, ret =
         match ret with
         | Struct _ ->
@@ -275,7 +266,7 @@ let make_string s =
         |> List.map ~f:(fun c -> make_int_const ~fixed_width:8 (Char.to_int c |> Z.of_int))
     in
     let typ = ConstArray (Value { element_type = u8; values }) in
-    make_array_inner "str" typ (make_int_const ~fixed_width:64 len)
+    make_array_inner "str" (Ptr typ) (make_int_const ~fixed_width:64 len)
 
 let rec of_ast_type (ast_type : Ast.var_type) : t =
     let try_parse_int s =
@@ -295,10 +286,9 @@ let rec of_ast_type (ast_type : Ast.var_type) : t =
         | None -> (
             match s with
             | "str" ->
-                Ptr
-                  (make_array_inner "str"
-                     (ConstArray (Value { element_type = u8; values = [] }))
-                     (Integer All))
+                make_array_inner "str"
+                  (Ptr (ConstArray (Value { element_type = u8; values = [] })))
+                  (Integer All)
             | "bool" -> Bool All
             | "void" -> Void
             | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type ast_type) ()))
@@ -631,6 +621,7 @@ let is_const_array t =
                 t
               with
               | ConstArray (Value _) -> true
+              | Ptr (ConstArray (Value _)) -> true
               | _ -> false
             else
               false)
@@ -638,7 +629,8 @@ let is_const_array t =
 
 let get_string t =
     match t with
-    | Ptr (Struct (Value { name = _; fields })) -> (
+    | Ptr (Struct (Value { name = _; fields }))
+    | Struct (Value { name = _; fields }) -> (
         match
           List.find_map fields ~f:(fun (name, t) ->
               if String.equal name "[]" then
@@ -646,6 +638,7 @@ let get_string t =
                   t
                 with
                 | ConstArray (Value l) -> Some l
+                | Ptr (ConstArray (Value l)) -> Some l
                 | _ -> None
               else
                 None)
@@ -665,6 +658,25 @@ let get_string t =
             | _ -> None)
         | _ -> None)
     | _ -> None
+
+let rec get_field_type t field_name =
+    match t with
+    | Struct (Value { name = _; fields }) ->
+        List.find_map fields ~f:(fun (name, t) ->
+            if String.equal name field_name then
+              Some t
+            else
+              None)
+    | Ptr (Struct _ as s) -> get_field_type s field_name
+    | _ -> None
+
+let get_integer_const_exn = function
+    | Integer (Value { min; max; num_widens = _ }) ->
+        if Z.equal min max then
+          min
+        else
+          raise (Invalid_argument "Not an integer constant")
+    | _ -> raise (Invalid_argument "Not an integer constant")
 
 let rec get_size t =
     match t with
@@ -701,7 +713,24 @@ let rec get_size t =
           s.fields
           ~f:(fun (name, t) ->
             if String.equal name "[]" then
-              failwith "todo array size"
+              match
+                t
+              with
+              | Ptr _ ->
+                  (* slices *)
+                  (* TODO: how to differentiate slice from static length array of pointers? *)
+                  8
+              | _ ->
+                  let len_t =
+                      List.find_map_exn s.fields ~f:(fun (name, t) ->
+                          if String.equal name "len" then Some t else None)
+                  in
+                  if is_constant len_t then
+                    let count = get_integer_const_exn len_t in
+                    let el_size = get_size t in
+                    Z.to_int count * el_size
+                  else
+                    failwith "Array with non compile time known length"
             else
               get_size t)
     | ConstArray (Value { element_type; values = _ }) -> get_size element_type
@@ -722,25 +751,6 @@ let rec get_offset t field =
           ~finish:(fun _ -> None)
     | Ptr (Struct _ as s) -> get_offset s field
     | _ -> None
-
-let rec get_field_type t field_name =
-    match t with
-    | Struct (Value { name = _; fields }) ->
-        List.find_map fields ~f:(fun (name, t) ->
-            if String.equal name field_name then
-              Some t
-            else
-              None)
-    | Ptr (Struct _ as s) -> get_field_type s field_name
-    | _ -> None
-
-let get_integer_const_exn = function
-    | Integer (Value { min; max; num_widens = _ }) ->
-        if Z.equal min max then
-          min
-        else
-          raise (Invalid_argument "Not an integer constant")
-    | _ -> raise (Invalid_argument "Not an integer constant")
 
 let widen_int t min_type =
     match t with

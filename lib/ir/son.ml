@@ -42,6 +42,8 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
                     (Linker.get_name linker fun_idx)
                 then
                   Linker.set_name linker fun_idx name
+            | Type (Value (Struct (Value { name = _; fields }))) ->
+                n.typ <- Type (Value (Types.make_struct name fields))
             | Integer (Value i) when Option.is_some n.min_typ -> (
                 (* for constant integers we set the width to the type annotation's width if present *)
                 match n.min_typ |> Option.value_exn with
@@ -140,11 +142,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
             let ptr = Scope_node.get g scope name in
 
             let index = do_expr g idx_expr scope cur_ret_node linker |> Option.value_exn in
-            let base =
-                match ptr.typ with
-                | Ptr (Struct _ as s) -> Types.get_offset s "[]" |> Option.value ~default:(-1)
-                | _ -> assert false
-            in
+            let base = Types.get_offset ptr.typ "[]" |> Option.value ~default:(-1) in
             let el_typ = Types.get_field_type ptr.typ "[]" |> Option.value ~default:ALL in
             let el_size = Const_node.create_int g loc (Types.get_size el_typ) in
             let offset =
@@ -165,11 +163,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         let value = do_expr g value scope cur_ret_node linker |> Option.value_exn in
         let ptr = Scope_node.get g scope name in
         let mem = Scope_node.get_mem g scope in
-        let base =
-            match ptr.typ with
-            | Ptr (Struct _ as s) -> Types.get_offset s "[]" |> Option.value ~default:(-1)
-            | _ -> failwithf "Invalid ptr type: %s for %s" (Node.show ptr) name ()
-        in
+        let base = Types.get_offset ptr.typ "[]" |> Option.value ~default:(-1) in
         let el_typ = Types.get_field_type ptr.typ "[]" |> Option.value_exn in
         let el_size = Const_node.create_int g loc (Types.get_size el_typ) in
         let offset =
@@ -417,7 +411,7 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         let mem = Proj_node.create g loc n 0 in
         Scope_node.set_mem g scope mem;
         let ptr = Proj_node.create g loc n 1 in
-        ptr.min_typ <- Some (Ptr typ);
+        ptr.min_typ <- Some typ;
         let field_names =
             match typ with
             | Struct (Value { name = _; fields }) -> List.map fields ~f:fst |> String.Set.of_list

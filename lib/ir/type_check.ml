@@ -144,6 +144,7 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
         let pointed_to_type =
             match ptr.typ with
             | Ptr p -> p
+            | Struct _ -> ptr.typ
             | _ -> assert false
         in
         let field_type = Types.get_field_type pointed_to_type name in
@@ -170,6 +171,7 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
         let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
         let offset = Graph.get_dependency g n 3 |> Option.value_exn in
         match ptr.typ with
+        | (Struct _ as pointed_to_type)
         | Ptr pointed_to_type ->
             let field_type = Types.get_field_type pointed_to_type name in
             if Option.is_none field_type then
@@ -192,6 +194,7 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
         | _ ->
             Some
               [ (n.loc, Printf.sprintf "Expected pointer, got %s" (Types.human_readable ptr.typ)) ])
+    | AddrOf -> None
 
 let type_check_node g (n : Node.t) =
     match n.kind with

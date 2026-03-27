@@ -42,6 +42,7 @@ and mem_kind =
     | New
     | Load of string
     | Store of string
+    | AddrOf
 
 and kind =
     | Data of data_kind

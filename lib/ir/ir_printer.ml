@@ -26,6 +26,7 @@ let node_label node =
         | Data (Proj i)
         | Ctrl (Proj i) ->
             Printf.sprintf "Proj %d" i
+        | Data (Param i) -> Printf.sprintf "Param %d" i
         | Data d -> show_sexp (Node.sexp_of_data_kind d)
         | Ctrl c -> show_sexp (Node.sexp_of_ctrl_kind c)
         | Mem m -> show_sexp (Node.sexp_of_mem_kind m)

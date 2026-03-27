@@ -29,7 +29,7 @@ let create_fun_ptr g loc (fun_node : Node.t) idx =
 
 let create_string g loc s =
     let arr_typ = Types.make_string s in
-    let n = Node.create_data loc (Ptr arr_typ) Constant in
+    let n = Node.create_data loc arr_typ Constant in
     Graph.add_dependencies g n [ Some (Graph.get_start g) ];
     Graph.finalize_node g n
 

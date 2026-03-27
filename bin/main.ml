@@ -18,8 +18,9 @@ let compile filename =
         if not (List.is_empty type_errors) then
           List.iter type_errors ~f:(fun err -> [%log.error err])
         else (
-          Integer_widening.run son;
+          Struct_fun_args.run son;
           [%log.debug "\n%s" (Ir_printer.to_dot son)];
+          Integer_widening.run son;
           let schedules = Scheduler.schedule son in
           (* only do code gen on non external functions *)
           let functions =

@@ -230,14 +230,9 @@ let do_mem_node linker extra_node_deps min_integer_types g n (m : Node.mem_kind)
         work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
             let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
             match ptr.typ with
+            | Struct (Value { name = _; fields })
             | Ptr (Struct (Value { name = _; fields })) -> (
-                let field_type =
-                    List.find_map fields ~f:(fun (name, t) ->
-                        if String.equal field name then
-                          Some t
-                        else
-                          None)
-                in
+                let field_type = Types.get_field_type ptr.typ field in
                 match field_type with
                 | None -> (~new_type:ALL, ~extra_deps:[])
                 | Some (ConstArray (Value arr)) -> (
@@ -257,6 +252,10 @@ let do_mem_node linker extra_node_deps min_integer_types g n (m : Node.mem_kind)
         work linker extra_node_deps min_integer_types g n ~type_fn:(fun _ _ ->
             (~new_type:Memory, ~extra_deps:[]))
     | New -> []
+    | AddrOf ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
+            let input = Graph.get_dependency g n 1 |> Option.value_exn in
+            (~new_type:(Ptr input.typ), ~extra_deps:[]))
 
 let do_node extra_node_deps min_integer_types (g : (Node.t, Graph.readwrite) Graph.t) linker
     (n : Node.t) =

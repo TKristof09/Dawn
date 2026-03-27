@@ -145,13 +145,18 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             let ptr_addr =
                 match n.ir_node.typ with
                 | Ptr p when Types.is_const_array p -> Printf.sprintf "C_%d" n.ir_node.id
+                | Struct _ when Types.is_const_array n.ir_node.typ ->
+                    Printf.sprintf "C_%d" n.ir_node.id
                 | FunPtr (Value _) ->
                     Linker.get_name linker (Types.get_fun_idx n.ir_node.typ |> Option.value_exn)
-                | _ -> failwith "idk"
+                | _ -> failwithf "idk %s" (Types.show n.ir_node.typ) ()
             in
-            Printf.sprintf "\t%s %s, [%s]" op_str
-              (asm_of_loc reg (Types.get_size n.ir_node.typ))
-              ptr_addr
+            let size =
+                match n.ir_node.typ with
+                | Struct _ -> Types.get_size (Ptr n.ir_node.typ)
+                | _ -> Types.get_size n.ir_node.typ
+            in
+            Printf.sprintf "\t%s %s, [%s]" op_str (asm_of_loc reg size) ptr_addr
         | ZeroExtend ->
             let reg = Hashtbl.find_exn reg_assoc n in
             let input = Graph.get_dependency g n 1 |> Option.value_exn in
@@ -293,10 +298,19 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
                         match d.ir_node.kind with
                         | Ctrl (Function _) -> (Hashtbl.find_exn reg_assoc d, 8)
                         | _ ->
-                            let size = Types.get_size d.ir_node.typ in
+                            let size =
+                                match d.ir_node.typ with
+                                | Struct _ -> 8
+                                | _ -> Types.get_size d.ir_node.typ
+                            in
+
                             (Hashtbl.find_exn reg_assoc d, size))
                     | _ ->
-                        let size = Types.get_size d.ir_node.typ in
+                        let size =
+                            match d.ir_node.typ with
+                            | Struct _ -> 8
+                            | _ -> Types.get_size d.ir_node.typ
+                        in
                         (Hashtbl.find_exn reg_assoc d, size))
             in
             let op_str = asm_of_op n.kind in
@@ -343,7 +357,7 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             (* HACK: this is only until i get heap memory alloc. *)
             Printf.sprintf "\tsub rsp, %s   ; alloc\n\tmov %s, rsp"
               (asm_of_loc size_reg (Types.get_size size.ir_node.typ))
-              (asm_of_loc ptr_reg (Types.get_size ptr.ir_node.typ))
+              (asm_of_loc ptr_reg 8)
         | Store ->
             let value = Graph.get_dependency g n 4 |> Option.value_exn in
             let reg = Hashtbl.find_exn reg_assoc value in
@@ -352,8 +366,7 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             let offset = Graph.get_dependency g n 3 |> Option.value_exn in
             let offset_reg = Hashtbl.find_exn reg_assoc offset in
             let op_str = asm_of_op n.kind in
-            Printf.sprintf "\t%s [%s + %s], %s" op_str
-              (asm_of_loc ptr_reg (Types.get_size ptr.ir_node.typ))
+            Printf.sprintf "\t%s [%s + %s], %s" op_str (asm_of_loc ptr_reg 8)
               (asm_of_loc offset_reg (Types.get_size offset.ir_node.typ))
               (asm_of_loc reg (Types.get_size value.ir_node.typ))
         | Load ->
@@ -365,7 +378,7 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             let output_size = Types.get_size n.ir_node.typ in
             let s =
                 Printf.sprintf "\t%s %s, [%s + %s]" (asm_of_op n.kind) (asm_of_loc reg output_size)
-                  (asm_of_loc ptr_reg (Types.get_size ptr.ir_node.typ))
+                  (asm_of_loc ptr_reg 8)
                   (asm_of_loc offset_reg (Types.get_size offset.ir_node.typ))
             in
             s
@@ -480,9 +493,7 @@ print_int:
     let print =
         {|
 print:
-    mov     rsi, rdi
-    add     rsi, 8
-    mov     rdx, [rdi]
+    mov     rdx, rdi
     mov     rax, 1
     mov     rdi, 1
     syscall
@@ -491,6 +502,14 @@ print:
     print ^ print_int
 
 let gather_const_arrays functions =
+    (* TODO: currently we put the string literal in rodata
+    and also create the fat pointer struct in rodata. Another option is to
+    create the struct as an immediate value instead of keeping it in rodata.
+    Having the struct simply as an immediate would be better in some cases.
+    Keeping the struct in rodata is better if same string used in many places,
+    if we need to take address of the struct, ... but worse because more
+    indirection to get to contents. We should choose between the two options on
+    a case by case basis *)
     let arr_map = Hashtbl.create (module Int) in
     List.iter functions ~f:(fun (g, _, _) ->
         Graph.iter g ~f:(fun (n : Machine_node.t) ->
@@ -500,7 +519,8 @@ let gather_const_arrays functions =
                 | None -> ()
                 | Some s ->
                     let with_len =
-                        Printf.sprintf "\n\tdq %d\n\tdb %s" (String.length s)
+                        Printf.sprintf "\n\tdq %d\n\tdq STR_%d\nSTR_%d:\n\tdb %s" (String.length s)
+                          n.id n.id
                           (String.to_list s
                           |> List.map ~f:(fun c -> c |> Char.to_int |> Int.to_string)
                           |> String.concat ~sep:", ")

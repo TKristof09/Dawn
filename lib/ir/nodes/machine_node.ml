@@ -479,6 +479,7 @@ let rec of_data_node g machine_g (kind : Node.data_kind) (n : Node.t) =
             | Integer _ when Types.is_constant n.typ -> Int (Types.get_integer_const_exn n.typ)
             | Ptr _ -> Ptr
             | FunPtr _ -> Ptr
+            | Struct _ -> Ptr
             | Void -> Noop
             | Bool (Value b) -> Int (Bool.to_int b |> Z.of_int)
             | _ -> assert false
@@ -710,6 +711,7 @@ and of_mem_node g machine_g kind (n : Node.t) =
     | Node.New -> simple New
     | Store _ -> (* TODO check for ops like add that can address memory directly *) simple Store
     | Load _ -> (* TODO check for ops like add that can address memory directly *) simple Load
+    | AddrOf -> failwith "todo"
 
 and convert_node g machine_g (n : Node.t) =
     match

@@ -26,3 +26,5 @@ val create_load :
   offset:Node.t ->
   Types.t ->
   Node.t
+
+val create_addr_of : (Node.t, Graph.readwrite) Graph.t -> Ast.loc -> Node.t -> Node.t
