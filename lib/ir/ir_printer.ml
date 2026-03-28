@@ -27,6 +27,8 @@ let node_label node =
         | Ctrl (Proj i) ->
             Printf.sprintf "Proj %d" i
         | Data (Param i) -> Printf.sprintf "Param %d" i
+        | Mem (Load s) -> Printf.sprintf "Load %s" s
+        | Mem (Store s) -> Printf.sprintf "Store %s" s
         | Data d -> show_sexp (Node.sexp_of_data_kind d)
         | Ctrl c -> show_sexp (Node.sexp_of_ctrl_kind c)
         | Mem m -> show_sexp (Node.sexp_of_mem_kind m)
@@ -35,7 +37,31 @@ let node_label node =
     in
     kind_str
 
-(* pp version of to_dot *)
+let get_edge_color (def : Node.t) (use : Node.t) =
+    let rec aux (def_typ : Types.t) (use_typ : Types.t) =
+        match def_typ with
+        | Control -> (
+            match use.kind with
+            | Ctrl _ -> "color=red"
+            | _ -> "color=green,style=dashed,arrowhead=none")
+        | DeadControl -> "color=green,style=dashed,arrowhead=none"
+        | Memory -> "color=blue"
+        | Tuple (Value l) -> (
+            if Types.equal def_typ use_typ then
+              ""
+            else
+              match
+                use.kind
+              with
+              | Ctrl (Proj i)
+              | Data (Proj i) ->
+                  aux (List.nth_exn l i) use_typ
+              | Ctrl (Function _) -> "color=red"
+              | _ -> assert false)
+        | _ -> ""
+    in
+    aux def.typ use.typ
+
 let pp_dot fmt g =
     Format.fprintf fmt "digraph G {@\n";
     Format.fprintf fmt "ordering=\"in\";@\n";
@@ -79,27 +105,11 @@ let pp_dot fmt g =
                 match dep with
                 | None -> ()
                 | Some dep ->
-                    let style =
-                        match (dep.kind, node.kind) with
-                        | Ctrl _, Data Constant -> ""
-                        | Data (Proj _), Mem _ -> (
-                            match dep.typ with
-                            | Memory -> "color=blue"
-                            | _ -> "")
-                        | Mem _, Data (Proj _) -> (
-                            match node.typ with
-                            | Memory -> "color=blue"
-                            | _ -> "")
-                        | Mem _, Mem _ -> "color=blue"
-                        | Ctrl _, Data _
-                        | Ctrl _, Mem _ ->
-                            "color=green,style=dashed,arrowhead=none"
-                        | Ctrl _, Ctrl _ -> "color=red"
-                        | _ -> ""
-                    in
+                    let style = get_edge_color dep node in
 
-                    Format.fprintf fmt "  %s -> %s[arrowsize=0.5,headlabel=%d,%s];@\n"
-                      (node_to_dot_id dep.id) (node_to_dot_id node.id) i style));
+                    Format.fprintf fmt
+                      "  %s -> %s[arrowsize=0.5,headlabel=%d,tooltip=\"#%d->#%d (%d)\",%s];@\n"
+                      (node_to_dot_id dep.id) (node_to_dot_id node.id) i dep.id node.id i style));
 
     Format.fprintf fmt "}@\n";
 
@@ -129,10 +139,8 @@ let pp_dot fmt g =
 
     Format.fprintf fmt "}@\n"
 
-(* Original string-returning version *)
 let to_dot g = Format.asprintf "%a" pp_dot g
 
-(* pp version of to_dot_machine *)
 let pp_dot_machine fmt g =
     Format.fprintf fmt "digraph G {@\n";
     Format.fprintf fmt "ordering=\"in\";@\n";
@@ -175,17 +183,14 @@ let pp_dot_machine fmt g =
                 | Some dep ->
                     let style =
                         match (dep.kind, node.kind) with
-                        | _, Int _ when Machine_node.is_control_node dep -> ""
-                        | _, _
-                          when Machine_node.is_control_node dep
-                               && not (Machine_node.is_control_node node) ->
-                            "color=green,style=dashed,arrowhead=none"
-                        | _, _ when Machine_node.is_control_node dep -> "color=red"
-                        | _ -> ""
+                        | CalleeSave _, Return -> "style=dashed,arrowhead=none"
+                        | FunctionProlog _, CalleeSave _ -> "style=dashed,arrowhead=none"
+                        | _ -> get_edge_color dep.ir_node node.ir_node
                     in
 
-                    Format.fprintf fmt "  %s -> %s[arrowsize=0.5,headlabel=%d,%s];@\n"
-                      (node_to_dot_id dep.id) (node_to_dot_id node.id) i style));
+                    Format.fprintf fmt
+                      "  %s -> %s[arrowsize=0.5,headlabel=%d,tooltip=\"#%d->#%d (%d)\",%s];@\n"
+                      (node_to_dot_id dep.id) (node_to_dot_id node.id) i dep.id node.id i style));
 
     Format.fprintf fmt "}@\n";
     Format.fprintf fmt "}@\n"
