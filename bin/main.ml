@@ -15,12 +15,13 @@ let compile filename =
         Sccp.run son linker;
         let type_errors = Type_check.run (Graph.readonly son) in
         [%log.debug "\n%s" (Ir_printer.to_dot son)];
-        if not (List.is_empty type_errors) then
-          List.iter type_errors ~f:(fun err -> [%log.error err])
+        if not (List.is_empty type_errors) then (
+          List.iter type_errors ~f:(fun err -> [%log.error err]);
+          exit 1)
         else (
           Struct_fun_args.run son;
-          [%log.debug "\n%s" (Ir_printer.to_dot son)];
           Integer_widening.run son;
+          [%log.debug "\n%s" (Ir_printer.to_dot son)];
           let schedules = Scheduler.schedule son in
           (* only do code gen on non external functions *)
           let functions =

@@ -4,6 +4,7 @@ let asm_of_op (kind : Machine_node.machine_node_kind) =
     match kind with
     | ZeroExtend -> failwith "Handle zero extend outside this function"
     | SignExtend -> failwith "Handle sign extend outside this function"
+    | AddrOf -> "lea"
     | Add
     | AddImm _ ->
         "add"
@@ -157,6 +158,14 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
                 | _ -> Types.get_size n.ir_node.typ
             in
             Printf.sprintf "\t%s %s, [%s]" op_str (asm_of_loc reg size) ptr_addr
+        | AddrOf ->
+            let input = Graph.get_dependency g n 1 |> Option.value_exn in
+            let in_reg = Hashtbl.find_exn reg_assoc input in
+            let out_reg = Hashtbl.find_exn reg_assoc n in
+            let out_size = Types.get_size n.ir_node.typ in
+            assert (out_size = 4 || out_size = 8);
+            Printf.sprintf "\t%s %s, [%s]" (asm_of_op n.kind) (asm_of_loc out_reg out_size)
+              (asm_of_loc in_reg out_size)
         | ZeroExtend ->
             let reg = Hashtbl.find_exn reg_assoc n in
             let input = Graph.get_dependency g n 1 |> Option.value_exn in

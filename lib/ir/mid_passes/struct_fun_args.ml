@@ -353,5 +353,10 @@ let do_node g n =
     | _ -> ()
 
 let run g =
-    let nodes = Graph.fold g ~init:[] ~f:(fun acc n -> n :: acc) in
+    let nodes =
+        Graph.fold g ~init:[] ~f:(fun acc n ->
+            match n.Node.typ with
+            | Control -> n :: acc
+            | _ -> acc)
+    in
     List.iter nodes ~f:(do_node g)

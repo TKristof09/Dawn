@@ -257,8 +257,9 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
                 let size = Types.get_size deref_ret_type |> Const_node.create_int g loc in
                 let new_node = Mem_nodes.create_new g loc ~ctrl ~mem ~size deref_ret_type in
                 let mem = Proj_node.create g loc new_node 0 in
-                let ptr = Proj_node.create g loc new_node 1 in
-                ptr.min_typ <- Some (Ptr deref_ret_type);
+                let ret_struct = Proj_node.create g loc new_node 1 in
+                ret_struct.min_typ <- Some deref_ret_type;
+                let ptr = Mem_nodes.create_addr_of g loc ret_struct in
                 Scope_node.set_mem g scope mem;
                 ptr :: args
         in

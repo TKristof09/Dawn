@@ -42,6 +42,7 @@ end
 type machine_node_kind =
     | Int of Z.t
     | Ptr
+    | AddrOf
     | ZeroExtend
     | SignExtend
     | Add
@@ -159,7 +160,8 @@ let is_control_node n =
     | Ideal (External _)
     | Noop
     | ZeroExtend
-    | SignExtend ->
+    | SignExtend
+    | AddrOf ->
         false
 
 let is_blockhead n =
@@ -193,6 +195,7 @@ let is_two_address n =
         true
     | Int _
     | Ptr
+    | AddrOf
     | Div
     | Cmp
     | CmpImm _
@@ -326,6 +329,9 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
     | SignExtend ->
         assert (i = 0);
         Some Registers.Mask.general_r
+    | AddrOf ->
+        assert (i = 0);
+        Some Registers.Mask.all_and_stack
     | Ideal _ -> None
 
 let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
@@ -408,6 +414,9 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
         assert (i = 0);
         Some Registers.Mask.general_w
     | SignExtend ->
+        assert (i = 0);
+        Some Registers.Mask.general_w
+    | AddrOf ->
         assert (i = 0);
         Some Registers.Mask.general_w
     | Ideal _ -> None
@@ -716,7 +725,7 @@ and of_mem_node g machine_g kind (n : Node.t) =
     | Node.New -> simple New
     | Store _ -> (* TODO check for ops like add that can address memory directly *) simple Store
     | Load _ -> (* TODO check for ops like add that can address memory directly *) simple Load
-    | AddrOf -> failwith "todo"
+    | AddrOf -> simple AddrOf
 
 and convert_node g machine_g (n : Node.t) =
     match
