@@ -106,7 +106,8 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
             (* TODO: once we support floats we need to handle float eightbytes here too *)
             let typ = Types.u64 in
             let new_param =
-                Fun_node.create_param g param.loc fun_node typ (param_idx + eightbyte_idx)
+                Fun_node.create_param ?parent_fun:param.parent_fun g param.loc fun_node typ
+                  (param_idx + eightbyte_idx)
             in
             Graph.add_dependencies g new_param (List.init num_param_inputs ~f:(Fun.const None));
             new_param)
@@ -131,16 +132,18 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
             in
             let components =
                 List.map descriptors ~f:(fun desc ->
+                    (* offset 0 because using addr of field already *)
                     let offset =
-                        Types.get_offset arg.typ desc.field_name
-                        |> Option.value_exn
-                        |> Z.of_int
-                        |> Types.make_int_const ~fixed_width:64
-                        |> Const_node.create_from_type g param.loc
+                        Types.make_int_const ~fixed_width:64 Z.zero
+                        |> Const_node.create_from_type ?parent_fun:arg.parent_fun g arg.loc
+                    in
+                    let field_ptr =
+                        Mem_nodes.create_addr_of_field ?parent_fun:arg.parent_fun g arg.loc arg
+                          desc.field_name
                     in
                     let field_val =
-                        Mem_nodes.create_load g param.loc ~mem ~ptr:arg desc.field_name ~offset
-                          arg.typ
+                        Mem_nodes.create_load ?parent_fun:arg.parent_fun g arg.loc ~mem
+                          ~ptr:field_ptr desc.field_name ~offset arg.typ
                     in
                     field_val.typ <-
                       Types.get_field_type arg.typ desc.field_name |> Option.value_exn;
@@ -148,10 +151,13 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
                     let input =
                         if desc.byte_start_inside_eightbyte <> 0 then (
                           let shift_amount =
-                              Const_node.create_int g param.loc
+                              Const_node.create_int ?parent_fun:arg.parent_fun g arg.loc
                                 (8 * desc.byte_start_inside_eightbyte)
                           in
-                          let shifted = Bitop_nodes.create_lsh g param.loc field_val shift_amount in
+                          let shifted =
+                              Bitop_nodes.create_lsh ?parent_fun:arg.parent_fun g arg.loc field_val
+                                shift_amount
+                          in
                           let ~new_type, ~extra_deps:_ = Bitop_nodes.compute_type g shifted in
                           shifted.typ <- new_type;
                           shifted)
@@ -162,7 +168,9 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
             in
             let value =
                 List.reduce_exn components ~f:(fun c1 c2 ->
-                    let combined = Bitop_nodes.create_bor g param.loc c1 c2 in
+                    let combined =
+                        Bitop_nodes.create_bor ?parent_fun:arg.parent_fun g arg.loc c1 c2
+                    in
                     let ~new_type, ~extra_deps:_ = Bitop_nodes.compute_type g combined in
                     combined.typ <- new_type;
                     combined)
@@ -199,22 +207,29 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
                directly but this is much easier to implement and it's still correct *)
     let type_size = Types.get_size param.typ in
     let size =
-        Const_node.create_from_type g param.loc
+        Const_node.create_from_type ?parent_fun:param.parent_fun g param.loc
           (Types.make_int_const ~fixed_width:64 (Z.of_int type_size))
     in
     let typ = param.typ in
-    let reconstructed = Mem_nodes.create_new g param.loc ~ctrl:fun_node ~mem:in_mem ~size typ in
-    let mem = Proj_node.create g param.loc reconstructed 0 in
-    let ptr = Proj_node.create g param.loc reconstructed 1 in
+    let reconstructed =
+        Mem_nodes.create_new ?parent_fun:param.parent_fun g param.loc ~ctrl:fun_node ~mem:in_mem
+          ~size typ
+    in
+    let mem = Proj_node.create ?parent_fun:param.parent_fun g param.loc reconstructed 0 in
+    let ptr = Proj_node.create ?parent_fun:param.parent_fun g param.loc reconstructed 1 in
     let mem =
         List.fold descriptors ~init:mem ~f:(fun mem desc ->
             let eightbyte = List.nth_exn new_params desc.eightbyte_idx in
             let input =
                 if desc.byte_start_inside_eightbyte <> 0 then (
                   let shift_amount =
-                      Const_node.create_int g param.loc (8 * desc.byte_start_inside_eightbyte)
+                      Const_node.create_int ?parent_fun:param.parent_fun g param.loc
+                        (8 * desc.byte_start_inside_eightbyte)
                   in
-                  let shifted = Bitop_nodes.create_rsh g param.loc eightbyte shift_amount in
+                  let shifted =
+                      Bitop_nodes.create_rsh ?parent_fun:param.parent_fun g param.loc eightbyte
+                        shift_amount
+                  in
                   let ~new_type, ~extra_deps:_ = Bitop_nodes.compute_type g shifted in
                   shifted.typ <- new_type;
                   shifted)
@@ -224,10 +239,12 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
             let value =
                 if desc.size < 8 then (
                   let mask =
-                      Const_node.create_zint g param.loc
+                      Const_node.create_zint ?parent_fun:param.parent_fun g param.loc
                         (Z.sub (Z.shift_left Z.one (desc.size * 8)) Z.one)
                   in
-                  let masked = Bitop_nodes.create_band g param.loc input mask in
+                  let masked =
+                      Bitop_nodes.create_band ?parent_fun:param.parent_fun g param.loc input mask
+                  in
                   let ~new_type, ~extra_deps:_ = Bitop_nodes.compute_type g masked in
                   masked.typ <- new_type;
                   masked)
@@ -239,9 +256,10 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
                 |> Option.value_exn
                 |> Z.of_int
                 |> Types.make_int_const ~fixed_width:64
-                |> Const_node.create_from_type g param.loc
+                |> Const_node.create_from_type ?parent_fun:param.parent_fun g param.loc
             in
-            Mem_nodes.create_store g param.loc ~mem ~ptr ~offset desc.field_name ~value)
+            Mem_nodes.create_store ?parent_fun:param.parent_fun g param.loc ~mem ~ptr ~offset
+              desc.field_name ~value)
     in
 
     Graph.get_dependants g param
@@ -271,7 +289,7 @@ let pass_by_ptr g p =
         | Some arg ->
             (* account for dropped control input *)
             let dep_idx = i + 1 in
-            let ptr = Mem_nodes.create_addr_of g p.loc arg in
+            let ptr = Mem_nodes.create_addr_of ?parent_fun:p.parent_fun g p.loc arg in
             Graph.set_dependency g p (Some ptr) dep_idx)
 
 let do_node g n =

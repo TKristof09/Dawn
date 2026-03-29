@@ -43,6 +43,7 @@ type machine_node_kind =
     | Int of Z.t
     | Ptr
     | AddrOf
+    | Deref
     | ZeroExtend
     | SignExtend
     | Add
@@ -77,6 +78,7 @@ type machine_node_kind =
     | Store
     | Load
     | Noop
+    | RepMov of int
     (* nodes that have no machine equivalent *)
     | Ideal of ideal
 [@@deriving show { with_path = false }, sexp_of]
@@ -161,7 +163,9 @@ let is_control_node n =
     | Noop
     | ZeroExtend
     | SignExtend
-    | AddrOf ->
+    | AddrOf
+    | Deref
+    | RepMov _ ->
         false
 
 let is_blockhead n =
@@ -196,6 +200,7 @@ let is_two_address n =
     | Int _
     | Ptr
     | AddrOf
+    | Deref
     | Div
     | Cmp
     | CmpImm _
@@ -216,7 +221,8 @@ let is_two_address n =
     | Store
     | Load
     | Ideal _
-    | Noop ->
+    | Noop
+    | RepMov _ ->
         false
 
 let is_multi_output n =
@@ -332,6 +338,17 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
     | AddrOf ->
         assert (i = 0);
         Some Registers.Mask.all_and_stack
+    | Deref ->
+        assert (i = 1);
+        Some Registers.Mask.all_and_stack
+    | RepMov _ ->
+        assert (i <= 2);
+        if i = 1 then
+          Some (Registers.Mask.of_list [ Reg RSI ])
+        else if i = 2 then
+          Some (Registers.Mask.of_list [ Reg RDI ])
+        else
+          None
     | Ideal _ -> None
 
 let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
@@ -419,12 +436,22 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     | AddrOf ->
         assert (i = 0);
         Some Registers.Mask.general_w
+    | Deref ->
+        assert (i = 0);
+        Some Registers.Mask.general_w
+    | RepMov _ -> None
     | Ideal _ -> None
 
 let get_register_kills (n : t) =
     match n.kind with
     | FunctionCall _ -> Some Registers.Mask.caller_save
     | Div -> Some (Registers.Mask.of_list [ Reg RDX ])
+    | RepMov _ ->
+        (* HACK: can't create the input nodes in of_mem_node since original
+           graph is read only so we'll compute the correct  count
+           inside asm emit. So we need to kill the reg of rep mov to
+           make reg allocator work *)
+        Some (Registers.Mask.of_list [ Reg RCX ])
     | _ -> None
 
 let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
@@ -745,9 +772,47 @@ and of_mem_node memo g machine_g kind (n : Node.t) =
     in
     match kind with
     | Node.New -> simple New
-    | Store _ -> (* TODO check for ops like add that can address memory directly *) simple Store
-    | Load _ -> (* TODO check for ops like add that can address memory directly *) simple Load
+    | Store _ ->
+        (* TODO check for ops like add that can address memory directly *)
+        let value = Graph.get_dependency g n 4 |> Option.value_exn in
+        let size = Types.get_size value.typ in
+        assert (size <= 8);
+        simple Store
+    | Load _ -> (
+        (* TODO check for ops like add that can address memory directly *)
+        match n.typ with
+        | Struct _ ->
+            let offs = Graph.get_dependency g n 3 |> Option.value_exn in
+            assert (Z.equal (Types.get_integer_const_exn offs.typ) Z.zero);
+            let node = { id = next_id (); kind = AddrOf; ir_node = n } in
+            let deps =
+                [ None; Graph.get_dependency g n 2 ]
+                |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
+            in
+            Graph.add_dependencies machine_g node deps;
+            node
+        | _ -> simple Load)
     | AddrOf -> simple AddrOf
+    | AddrOfField f ->
+        let input = Graph.get_dependency g n 1 |> Option.value_exn in
+        let offs = Types.get_offset input.typ f |> Option.value_exn in
+        let base_addr = simple AddrOf in
+        let field_addr = { id = next_id (); kind = AddImm (Z.of_int offs); ir_node = n } in
+        Graph.add_dependencies machine_g field_addr [ None; Some base_addr ];
+        field_addr
+    | Deref -> (
+        match n.typ with
+        | Struct _ ->
+            Graph.get_dependency g n 2 |> Option.value_exn |> convert_node memo g machine_g
+        | _ -> simple Deref)
+    | Copy ->
+        let src = Graph.get_dependency g n 2 |> Option.value_exn in
+        let size =
+            match src.typ with
+            | Ptr p -> Types.get_size p
+            | _ -> assert false
+        in
+        simple (RepMov size)
 
 and convert_node memo g machine_g (n : Node.t) =
     match Hashtbl.find memo n with

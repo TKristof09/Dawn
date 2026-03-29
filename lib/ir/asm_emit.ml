@@ -5,6 +5,7 @@ let asm_of_op (kind : Machine_node.machine_node_kind) =
     | ZeroExtend -> failwith "Handle zero extend outside this function"
     | SignExtend -> failwith "Handle sign extend outside this function"
     | AddrOf -> "lea"
+    | Deref -> "mov"
     | Add
     | AddImm _ ->
         "add"
@@ -67,6 +68,7 @@ let asm_of_op (kind : Machine_node.machine_node_kind) =
            potentially load with mov and signextend with movsx *)
         "mov"
     | Noop -> ""
+    | RepMov _ -> assert false
 
 let asm_of_loc (loc : Registers.loc) size =
     let pick ~size ~r8 ~r4 ~r2 ~r1 =
@@ -162,8 +164,19 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             let input = Graph.get_dependency g n 1 |> Option.value_exn in
             let in_reg = Hashtbl.find_exn reg_assoc input in
             let out_reg = Hashtbl.find_exn reg_assoc n in
-            let out_size = Types.get_size n.ir_node.typ in
+            let out_size =
+                match n.ir_node.typ with
+                | Struct _ -> 8
+                | _ -> Types.get_size n.ir_node.typ
+            in
             assert (out_size = 4 || out_size = 8);
+            Printf.sprintf "\t%s %s, [%s]" (asm_of_op n.kind) (asm_of_loc out_reg out_size)
+              (asm_of_loc in_reg out_size)
+        | Deref ->
+            let input = Graph.get_dependency g n 2 |> Option.value_exn in
+            let in_reg = Hashtbl.find_exn reg_assoc input in
+            let out_reg = Hashtbl.find_exn reg_assoc n in
+            let out_size = Types.get_size n.ir_node.typ in
             Printf.sprintf "\t%s %s, [%s]" (asm_of_op n.kind) (asm_of_loc out_reg out_size)
               (asm_of_loc in_reg out_size)
         | ZeroExtend ->
@@ -390,6 +403,22 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
                   (asm_of_loc offset_reg (Types.get_size offset.ir_node.typ))
             in
             s
+        | RepMov num ->
+            let src = Graph.get_dependency g n 2 |> Option.value_exn in
+            let dst = Graph.get_dependency g n 3 |> Option.value_exn in
+            let src_reg = Hashtbl.find_exn reg_assoc src in
+            let dst_reg = Hashtbl.find_exn reg_assoc dst in
+            assert (Poly.equal src_reg (Reg RSI));
+            assert (Poly.equal dst_reg (Reg RDI));
+            let kind = 8 in
+            let op_str =
+                match kind with
+                | 8 -> "movsq"
+                | _ -> failwithf "todo %s" __LOC__ ()
+            in
+            assert (num % kind = 0);
+            let size = num / kind in
+            Printf.sprintf "\tmov rcx, %d\n\trep %s" size op_str
         | Noop -> ""
     in
     let jmp_target =

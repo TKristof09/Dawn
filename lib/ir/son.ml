@@ -286,6 +286,12 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
         let return_mem = Proj_node.create ?parent_fun g loc call_end 1 in
         Scope_node.set_mem g scope return_mem;
         let return_val = Proj_node.create ?parent_fun g loc call_end 2 in
+        let return_val =
+            if Option.is_some big_ret_type then
+              Mem_nodes.create_deref ?parent_fun g loc ~mem:return_mem return_val
+            else
+              return_val
+        in
         Some return_val
     (* | Ast.Return ->  *)
     | Ast.FnDeclaration (typ, param_names, body) ->
@@ -343,30 +349,14 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
           (*  store the values into $ret if return value goes onto stack and put ptr as return value *)
           let ret_ptr = Scope_node.get g scope "$ret" in
           (match ret_ptr.typ with
-          | Ptr (Struct (Value { name; fields }) as s) ->
-              let initial_mem = Scope_node.get_mem g scope in
-              List.iter fields ~f:(fun (name, t) ->
-                  let offset =
-                      Types.get_offset s name
-                      |> Option.value_exn
-                      |> Const_node.create_int g ret_node.loc
-                  in
-                  (* The loads intentionally use the initial MEMORY , this is
-                     correct since we aren't creating any write -> read chains
-                     here and I think that the loads all using the initial
-                     memory will make it easier in the future to coalesce
-                     memory ops to eliminate store -> load -> store chains to
-                     same address *)
-                  let load =
-                      Mem_nodes.create_load g ret_node.loc ~mem:initial_mem ~ptr:body_n name ~offset
-                        t
-                  in
-                  let mem = Scope_node.get_mem g scope in
-                  let store =
-                      Mem_nodes.create_store g ret_node.loc ~mem ~ptr:ret_ptr ~offset name
-                        ~value:load
-                  in
-                  Scope_node.set_mem g scope store)
+          | Ptr (Struct (Value { name; fields })) ->
+              let mem = Scope_node.get_mem g scope in
+              let body_ptr = Mem_nodes.create_addr_of ~parent_fun:fun_idx g ret_node.loc body_n in
+              let mem =
+                  Mem_nodes.create_copy ~parent_fun:fun_idx g ret_node.loc ~mem ~src:body_ptr
+                    ~dst:ret_ptr
+              in
+              Scope_node.set_mem g scope mem
           | _ -> assert false);
           Fun_node.add_return ~parent_fun:fun_idx g ret_node ~ctrl:(Scope_node.get_ctrl g scope)
             ~mem:(Scope_node.get_mem g scope) ~val_n:ret_ptr)
@@ -461,8 +451,25 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
                       let field_type = Types.get_field_type typ name |> Option.value_exn in
                       value.min_typ <- Some field_type;
                       let mem = Scope_node.get_mem g scope in
-                      let store = Mem_nodes.create_store g loc ~mem ~ptr ~offset name ~value in
-                      Scope_node.set_mem g scope store;
+                      let mem =
+                          match field_type with
+                          | Struct _ ->
+                              let dst =
+                                  Mem_nodes.create_addr_of_field ?parent_fun g loc struct_node name
+                              in
+                              let src = Mem_nodes.create_addr_of ?parent_fun g loc value in
+                              Mem_nodes.create_copy ?parent_fun g loc ~mem ~src ~dst
+                          | _ ->
+                              let offset =
+                                  Types.get_offset typ name
+                                  |> Option.value_exn
+                                  |> Const_node.create_int ?parent_fun g loc
+                              in
+                              offset.min_typ <- Some Types.i64;
+                              Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr:struct_node ~offset
+                                name ~value
+                      in
+                      Scope_node.set_mem g scope mem;
                       Set.remove remaining_field_names name)
         in
         if not (Set.is_empty remaining_field_names) then
@@ -471,16 +478,15 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
             ();
         Some struct_node
     | FieldAccess (e, field_name) ->
-        let offset =
-            Types.get_offset base.typ field_name
-            |> Option.value ~default:(-1)
-            |> Const_node.create_int g loc
-        in
         let base = do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn in
+        let offset = Const_node.create_int ?parent_fun g loc 0 in
         offset.min_typ <- Some Types.i64;
         let mem = Scope_node.get_mem g scope in
         let field_typ = Types.get_field_type base.typ field_name |> Option.value ~default:ALL in
-        let load = Mem_nodes.create_load g loc ~mem ~ptr:base field_name ~offset field_typ in
+        let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc base field_name in
+        let load =
+            Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr "" ~offset field_typ
+        in
         load.min_typ <- Some field_typ;
         Some load
     | _ -> failwithf "TODO: unimplemented %s" (Ast.show_expr e.node) ()

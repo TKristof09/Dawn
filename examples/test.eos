@@ -11,7 +11,6 @@ const s = "hello world";
 instance.f(instance.a + s.len);
 //TODO: const x = i64{5};
 */
-
 const print = fun(s: str) -> void = @extern("print");
 
 const s = "hello";
@@ -20,12 +19,37 @@ const S = type {
     left: str,
     right: str
 };
-const f = fun(s: str) -> S {
-    S{
+// TODO: returning a struct allocates it in the stack frame of the function so after returning it's actually a memory violation
+const f = fun(s: str, s2: str) -> S {
+//    let i:i32 = 0;
+//    let left: u8[s.len];
+//    let right: u8[s.len];
+//    let idx: i32 = 0;
+//    let using_right: bool = false;
+//    while(i < s.len) {
+//        if(s[i] == 32) {
+//            using_right = true;
+//        }
+//        else {
+//            if(using_right) {
+//                right[idx] = s[i];
+//            }
+//            else {
+//                left[idx] = s[i];
+//            }
+//            idx = idx + 1;
+//        }
+//        i = i + 1;
+//    }
+    let res = S{
         .left = s,
-        .right = " world"
-    }
+        .right = s2
+    };
+    res
 };
-const x = f(s);
+const x = f(s, " world\n");
+const y = f("goodbye", " me");
 print(x.left);
 print(x.right);
+print(y.left);
+print(y.right);

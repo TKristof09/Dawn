@@ -230,21 +230,27 @@ let do_mem_node linker extra_node_deps min_integer_types g n (m : Node.mem_kind)
         work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
             let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
             match ptr.typ with
-            | Struct (Value { name = _; fields })
-            | Ptr (Struct (Value { name = _; fields })) -> (
-                let field_type = Types.get_field_type ptr.typ field in
-                match field_type with
-                | None -> (~new_type:ALL, ~extra_deps:[])
-                | Some (ConstArray (Value arr)) -> (
-                    let offs = Graph.get_dependency g n 3 |> Option.value_exn in
-                    match offs.typ with
-                    | Integer _ when Types.is_constant offs.typ ->
-                        let i = Types.get_integer_const_exn offs.typ in
-                        (* TODO: bounds check on the idx would be nice *)
-                        let idx = (Z.to_int i - 8) / Types.get_size arr.element_type in
-                        (~new_type:(List.nth_exn (arr.values :> Types.t list) idx), ~extra_deps:[])
-                    | _ -> (~new_type:arr.element_type, ~extra_deps:[]))
-                | Some field_type -> (~new_type:field_type, ~extra_deps:[]))
+            (* TODO remove this *)
+            (* | Struct (Value { name = _; fields }) *)
+            (* | Ptr (Struct (Value { name = _; fields })) -> ( *)
+            (*     let field_type = Types.get_field_type ptr.typ field in *)
+            (*     match field_type with *)
+            (*     | None -> (~new_type:ALL, ~extra_deps:[]) *)
+            (*     | Some (ConstArray (Value arr)) -> ( *)
+            (*         let offs = Graph.get_dependency g n 3 |> Option.value_exn in *)
+            (*         match offs.typ with *)
+            (*         | Integer _ when Types.is_constant offs.typ -> *)
+            (*             let i = Types.get_integer_const_exn offs.typ in *)
+            (*             (* TODO: bounds check on the idx would be nice *) *)
+            (*             let idx = (Z.to_int i - 8) / Types.get_size arr.element_type in *)
+            (*             (~new_type:(List.nth_exn (arr.values :> Types.t list) idx), ~extra_deps:[]) *)
+            (*         | _ -> (~new_type:arr.element_type, ~extra_deps:[])) *)
+            (*     | Some field_type -> (~new_type:field_type, ~extra_deps:[])) *)
+            | Ptr p ->
+                [%log.warn "hello %a" Types.pp p];
+                let offs = Graph.get_dependency g n 3 |> Option.value_exn in
+                assert (Z.equal (Types.get_integer_const_exn offs.typ) Z.zero);
+                (~new_type:p, ~extra_deps:[])
             | ANY -> (~new_type:ANY, ~extra_deps:[])
             | ALL -> (~new_type:ALL, ~extra_deps:[])
             | _ -> assert false)
@@ -256,6 +262,28 @@ let do_mem_node linker extra_node_deps min_integer_types g n (m : Node.mem_kind)
         work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
             let input = Graph.get_dependency g n 1 |> Option.value_exn in
             (~new_type:(Ptr input.typ), ~extra_deps:[]))
+    | AddrOfField field ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
+            let input = Graph.get_dependency g n 1 |> Option.value_exn in
+            match input.typ with
+            | Struct _ ->
+                let t = Types.get_field_type input.typ field |> Option.value_exn in
+                (~new_type:(Ptr t), ~extra_deps:[])
+            | ANY -> (~new_type:(Ptr ANY), ~extra_deps:[])
+            | _ -> (~new_type:(Ptr ALL), ~extra_deps:[]))
+    | Deref ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
+            let input = Graph.get_dependency g n 2 |> Option.value_exn in
+            let t =
+                match input.typ with
+                | Ptr p -> p
+                | ANY -> ANY
+                | _ -> ALL
+            in
+            (~new_type:t, ~extra_deps:[]))
+    | Copy ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun _ _ ->
+            (~new_type:Memory, ~extra_deps:[]))
 
 let do_node extra_node_deps min_integer_types (g : (Node.t, Graph.readwrite) Graph.t) linker
     (n : Node.t) =

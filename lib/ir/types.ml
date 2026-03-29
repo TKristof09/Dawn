@@ -106,6 +106,7 @@ let rec human_readable t =
     | Integer _ -> "integer"
     | Bool _ -> "bool"
     | Struct (Value s) -> s.name
+    | Struct _ -> "struct"
     | Ptr p -> "*" ^ human_readable p
     | Void -> "void"
     | FunPtr (Value { params; ret; fun_indices }) ->
@@ -218,7 +219,8 @@ let make_struct name fields =
         | Bool _
         | Ptr _
         | ConstArray _
-        | FunPtr _ ->
+        | FunPtr _
+        | Struct _ ->
             true
         | _ -> false
     in

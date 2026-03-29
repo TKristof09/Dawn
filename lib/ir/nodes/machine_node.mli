@@ -21,6 +21,7 @@ type machine_node_kind =
     | Int of Z.t
     | Ptr
     | AddrOf
+    | Deref
     | ZeroExtend
     | SignExtend
     | Add
@@ -55,6 +56,7 @@ type machine_node_kind =
     | Store
     | Load
     | Noop
+    | RepMov of int
     | Ideal of ideal
 [@@deriving show { with_path = false }, sexp_of]
 

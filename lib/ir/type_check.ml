@@ -1,7 +1,7 @@
 open Core
 
-let expect_types (loc : Ast.loc) ~expected ~inputs =
-    match List.zip expected inputs with
+let expect_types (loc : Ast.loc) ~expected ~actual =
+    match List.zip expected actual with
     | Unequal_lengths -> assert false
     | Ok l ->
         let errors =
@@ -19,7 +19,7 @@ let expect_types (loc : Ast.loc) ~expected ~inputs =
           Some errors
 
 let do_data_node g (n : Node.t) (k : Node.data_kind) =
-    let inputs =
+    let actual =
         Graph.get_dependencies g n |> List.tl_exn |> List.filter_opt |> List.map ~f:(fun n -> n.typ)
     in
     match k with
@@ -28,7 +28,7 @@ let do_data_node g (n : Node.t) (k : Node.data_kind) =
     | Mul
     | Div ->
         let expected = [ Types.i64; Types.i64 ] in
-        expect_types n.loc ~expected ~inputs
+        expect_types n.loc ~expected ~actual
     | Lsh
     | Rsh
     | BAnd
@@ -40,7 +40,7 @@ let do_data_node g (n : Node.t) (k : Node.data_kind) =
     | Gt
     | GEq ->
         let expected = [ Types.i64; Types.i64 ] in
-        expect_types n.loc ~expected ~inputs
+        expect_types n.loc ~expected ~actual
     | Constant -> None
     | Proj _ -> None
     | Phi ->
@@ -63,7 +63,7 @@ let do_data_node g (n : Node.t) (k : Node.data_kind) =
                 | _ -> None)
         in
         let expected = List.init (List.length inputs) ~f:(Fun.const n.typ) in
-        expect_types n.loc ~expected ~inputs
+        expect_types n.loc ~expected ~actual
     | Param _ ->
         (* Error reporting happens at FunctionCall nodes for better error location tracking *)
         None
@@ -98,7 +98,7 @@ let do_ctrl_node g (n : Node.t) (k : Node.ctrl_kind) =
             | Tuple (Value [ _; _; ret_type ]) -> ret_type
             | _ -> assert false
         in
-        expect_types ret.loc ~expected:[ expected_ret_type ] ~inputs:[ actual_ret_type ]
+        expect_types ret.loc ~expected:[ expected_ret_type ] ~actual:[ actual_ret_type ]
     | Return ->
         (* return type checked in the Function node check because that has easier access to expected signature *)
         None
@@ -125,7 +125,7 @@ let do_ctrl_node g (n : Node.t) (k : Node.ctrl_kind) =
                   (List.length actual_args) (List.length expected) );
             ]
         else
-          expect_types n.loc ~expected ~inputs:actual_args
+          expect_types n.loc ~expected ~actual:actual_args
     | FunctionCallEnd -> None
 
 let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
@@ -166,7 +166,7 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
                 ]
         | Some field_type ->
             let expected = [ field_type; Types.i64 ] in
-            expect_types n.loc ~expected ~inputs:[ value.typ; offset.typ ])
+            expect_types n.loc ~expected ~actual:[ value.typ; offset.typ ])
     | Load name -> (
         let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
         let offset = Graph.get_dependency g n 3 |> Option.value_exn in
@@ -174,7 +174,7 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
         | (Struct _ as pointed_to_type)
         | Ptr pointed_to_type ->
             let field_type = Types.get_field_type pointed_to_type name in
-            if Option.is_none field_type then
+            if (not (String.is_empty name)) && Option.is_none field_type then
               if String.equal name "[]" then
                 Some
                   [
@@ -190,11 +190,59 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
                         (Types.human_readable pointed_to_type) );
                   ]
             else
-              expect_types n.loc ~expected:[ Types.i64 ] ~inputs:[ offset.typ ]
+              expect_types n.loc ~expected:[ Types.i64 ] ~actual:[ offset.typ ]
         | _ ->
             Some
               [ (n.loc, Printf.sprintf "Expected pointer, got %s" (Types.human_readable ptr.typ)) ])
     | AddrOf -> None
+    | AddrOfField field ->
+        let input = Graph.get_dependency g n 1 |> Option.value_exn in
+        let type_errors = expect_types n.loc ~expected:[ Struct All ] ~actual:[ input.typ ] in
+        if Option.is_none type_errors then
+          if Types.get_field_type input.typ field |> Option.is_none then
+            Some
+              [
+                ( n.loc,
+                  Printf.sprintf "Field %s not part of type %s" field
+                    (Types.human_readable input.typ) );
+              ]
+          else
+            None
+        else
+          type_errors
+    | Deref ->
+        let inp = Graph.get_dependency g n 2 |> Option.value_exn in
+        expect_types n.loc ~expected:[ Types.Ptr ALL ] ~actual:[ inp.typ ]
+    | Copy ->
+        let src = Graph.get_dependency g n 2 |> Option.value_exn in
+        let dst = Graph.get_dependency g n 3 |> Option.value_exn in
+        let type_errors =
+            expect_types n.loc ~expected:[ Types.Ptr ALL; Types.Ptr ALL ]
+              ~actual:[ src.typ; dst.typ ]
+        in
+        if Option.is_none type_errors then
+          let src_size =
+              match src.typ with
+              | Ptr p -> Types.get_size p
+              | _ -> assert false
+          in
+          let dst_size =
+              match dst.typ with
+              | Ptr p -> Types.get_size p
+              | _ -> assert false
+          in
+          if src_size <> dst_size then
+            Some
+              [
+                ( n.loc,
+                  Printf.sprintf
+                    "Two operands of mem copy are of different sizes (src: %d, dst: %d)" src_size
+                    dst_size );
+              ]
+          else
+            None
+        else
+          type_errors
 
 let type_check_node g (n : Node.t) =
     match n.kind with
