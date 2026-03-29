@@ -1,16 +1,16 @@
 open Core
 
-let create g loc (n : Node.t) i =
+let create g loc ?parent_fun (n : Node.t) i =
     let n =
         match n.typ with
         | Tuple (Value l) -> (
             match List.nth_exn l i with
             | Types.Control ->
-                let proj = Node.create_ctrl loc Control (Proj i) in
+                let proj = Node.create_ctrl ?parent_fun loc Control (Proj i) in
                 Graph.add_dependencies g proj [ Some n ];
                 proj
             | t ->
-                let proj = Node.create_data loc t (Proj i) in
+                let proj = Node.create_data ?parent_fun loc t (Proj i) in
                 Graph.add_dependencies g proj [ Some n ];
                 proj)
         | Tuple _ -> failwith "idk if this should be possible"

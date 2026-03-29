@@ -27,12 +27,12 @@ let create g loc fun_ptr_type =
     Graph.add_dependencies g fun_node [ Some start ];
     (fun_node, ret_node)
 
-let create_param g loc fun_node param_type i =
-    let n = Node.create_data loc param_type (Param i) in
+let create_param g loc ?parent_fun fun_node param_type i =
+    let n = Node.create_data ?parent_fun loc param_type (Param i) in
     Graph.add_dependencies g n [ Some fun_node ];
     n
 
-let add_call g loc ~ctrl ~mem ~fun_ptr args =
+let add_call g loc ?parent_fun ~ctrl ~mem ~fun_ptr args =
     let ret_typ =
         match fun_ptr.Node.typ with
         | FunPtr (Value { params = _; ret; fun_indices = _ }) -> ret
@@ -41,11 +41,13 @@ let add_call g loc ~ctrl ~mem ~fun_ptr args =
             | ForwardRef _ -> ALL
             | _ -> failwithf "Expected function pointer got: %s" (Types.show t) ())
     in
-    let call = Node.create_ctrl loc Control FunctionCall in
+    let call = Node.create_ctrl ?parent_fun loc Control FunctionCall in
     Graph.add_dependencies g call
       (Some ctrl :: Some fun_ptr :: Some mem :: List.map args ~f:Option.some);
     let call_end =
-        Node.create_ctrl loc (Tuple (Value [ Control; Memory; ret_typ ])) FunctionCallEnd
+        Node.create_ctrl ?parent_fun loc
+          (Tuple (Value [ Control; Memory; ret_typ ]))
+          FunctionCallEnd
     in
     Graph.add_dependencies g call_end [ Some call ];
     (call, call_end)
@@ -82,10 +84,17 @@ let link_call g ~(call_node : Node.t) ~(fun_node : Node.t) =
         Graph.add_dependencies g fun_node [ Some call_node ];
         List.iter l ~f:(fun (param, arg) -> Graph.add_dependencies g param [ arg ])
 
-let add_return g ret_node ~ctrl ~mem ~val_n =
+let add_return ?parent_fun g ret_node ~ctrl ~mem ~val_n =
     let region = Graph.get_dependency g ret_node 0 |> Option.value_exn in
     let phi_mem = Graph.get_dependency g ret_node 1 |> Option.value_exn in
     let phi_data = Graph.get_dependency g ret_node 2 |> Option.value_exn in
+
+    if Option.is_none ret_node.Node.parent_fun then (
+      region.parent_fun <- parent_fun;
+      phi_mem.parent_fun <- parent_fun;
+      phi_data.parent_fun <- parent_fun;
+      ret_node.parent_fun <- parent_fun);
+
     Graph.add_dependencies g phi_data [ Some val_n ];
     Graph.add_dependencies g phi_mem [ Some mem ];
     Graph.add_dependencies g region [ Some ctrl ];

@@ -168,7 +168,7 @@ let dup_loop g (n : Node.t) =
         n_dup
     | _ -> assert false
 
-let merge g loc ~(this : Node.t) ~(other : Node.t) =
+let merge ?parent_fun g loc ~(this : Node.t) ~(other : Node.t) =
     (* Same as `get` but can't have it assign the name to the phi node in the current table as we can't mutate the tabl while iterating *)
     let get_no_insert g tbl name =
         let symbol : Node.t Variable.t =
@@ -193,7 +193,7 @@ let merge g loc ~(this : Node.t) ~(other : Node.t) =
         let diff_fn ~name ~this:(v_this : Node.t Variable.t) ~other:_ =
             if not (Node.equal v_this.node old_ctrl) then (
               let phi =
-                  Phi_node.create g loc region
+                  Phi_node.create ?parent_fun g loc region
                     [ get_no_insert g this_tbl name; get_no_insert g other_tbl name ]
               in
               Graph.add_dependencies g this [ Some phi ];
@@ -207,7 +207,7 @@ let merge g loc ~(this : Node.t) ~(other : Node.t) =
         Graph.remove_node g other
     | _ -> assert false
 
-let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
+let merge_loop ?parent_fun g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
     match (this.kind, body.kind, exit.kind) with
     | Scope this_tbl, Scope body_tbl, Scope exit_tbl ->
         let phis = ref [] in
@@ -233,7 +233,9 @@ let merge_loop g ~(this : Node.t) ~(body : Node.t) ~(exit : Node.t) =
                     Phi_node.add_backedge_input g v_this.node v_body.node));
 
         (* TODO: we put phis to bottom type for now. we'll have constant propagation that calculates better type later in SCCP *)
-        Core.List.iter !phis ~f:(fun n -> n.typ <- ALL);
+        Core.List.iter !phis ~f:(fun n ->
+            n.typ <- ALL;
+            n.parent_fun <- parent_fun);
         Symbol_table.iter exit_tbl (fun ~name ~symbol ~depth:_ ->
             match symbol with
             | None -> ()

@@ -41,6 +41,9 @@ and mem_kind =
     | Load of string
     | Store of string
     | AddrOf
+    | AddrOfField of string
+    | Deref
+    | Copy
 
 and kind =
     | Data of data_kind
@@ -55,6 +58,7 @@ and t = {
     mutable kind : kind;
     id : int;
     loc : Ast.loc;
+    mutable parent_fun : int option;
   }
 [@@deriving sexp_of]
 
@@ -66,9 +70,9 @@ val equal : t -> t -> bool
 
 val compare : t -> t -> int
 val hash : t -> int
-val create_data : Ast.loc -> Types.t -> data_kind -> t
-val create_ctrl : Ast.loc -> Types.t -> ctrl_kind -> t
-val create_mem : Ast.loc -> Types.t -> mem_kind -> t
+val create_data : ?parent_fun:int -> Ast.loc -> Types.t -> data_kind -> t
+val create_ctrl : ?parent_fun:int -> Ast.loc -> Types.t -> ctrl_kind -> t
+val create_mem : ?parent_fun:int -> Ast.loc -> Types.t -> mem_kind -> t
 val create_scope : unit -> t
 val create_forward_ref : string -> t
 val show : t -> string

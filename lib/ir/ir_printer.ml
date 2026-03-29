@@ -29,6 +29,7 @@ let node_label node =
         | Data (Param i) -> Printf.sprintf "Param %d" i
         | Mem (Load s) -> Printf.sprintf "Load %s" s
         | Mem (Store s) -> Printf.sprintf "Store %s" s
+        | Mem (AddrOfField s) -> Printf.sprintf "AddrOfField %s" s
         | Data d -> show_sexp (Node.sexp_of_data_kind d)
         | Ctrl c -> show_sexp (Node.sexp_of_ctrl_kind c)
         | Mem m -> show_sexp (Node.sexp_of_mem_kind m)
@@ -37,7 +38,7 @@ let node_label node =
     in
     kind_str
 
-let get_edge_color (def : Node.t) (use : Node.t) =
+let get_edge_style (def : Node.t) (use : Node.t) =
     let rec aux (def_typ : Types.t) (use_typ : Types.t) =
         match def_typ with
         | Control -> (
@@ -60,39 +61,84 @@ let get_edge_color (def : Node.t) (use : Node.t) =
               | _ -> assert false)
         | _ -> ""
     in
-    aux def.typ use.typ
+    match (def.kind, use.kind) with
+    | Ctrl (Function _), Data (Param _) -> aux def.typ use.typ
+    | _, Data (Param _) ->
+        let style = aux def.typ use.typ in
+        if String.is_empty style then
+          "style=dashed"
+        else
+          style ^ ",style=dashed"
+    | _, _ -> aux def.typ use.typ
 
 let pp_dot fmt g =
-    Format.fprintf fmt "digraph G {@\n";
-    Format.fprintf fmt "ordering=\"in\";@\n";
+    Format.fprintf fmt "digraph G {\n";
+    Format.fprintf fmt "splines=ortho\n";
+    Format.fprintf fmt "nodesep=0.8\n";
+    Format.fprintf fmt "ranksep=0.6\n";
 
     (* Create a subgraph for concentrated edges *)
     Format.fprintf fmt "subgraph main {@\n";
     Format.fprintf fmt "  concentrate=true;@\n";
-    Format.fprintf fmt "  style=invis;@\n";
 
     (* First pass: Add normal nodes *)
-    Graph.iter g ~f:(fun (node : Node.t) ->
-        match node.kind with
-        | Scope _ -> () (* Skip scopes for now *)
-        | Ctrl Start ->
-            Format.fprintf fmt "  { rank = source; %s [shape=%s,label=\"%s\",tooltip=\"%s\"]};@\n"
-              (node_to_dot_id node.id) (node_shape node) (node_label node)
-              (Types.show node.typ
-              |> String.substr_replace_all ~pattern:"\n" ~with_:" "
-              |> String.escaped)
-        | Ctrl Stop ->
-            Format.fprintf fmt "  { rank = sink; %s [shape=%s,label=\"%s\",tooltip=\"%s\"]};@\n"
-              (node_to_dot_id node.id) (node_shape node) (node_label node)
-              (Types.show node.typ
-              |> String.substr_replace_all ~pattern:"\n" ~with_:" "
-              |> String.escaped)
-        | _ ->
-            Format.fprintf fmt "  %s [shape=%s,label=\"%s\",tooltip=\"#%d: %s\"];@\n"
-              (node_to_dot_id node.id) (node_shape node) (node_label node) node.id
-              (Types.show node.typ
-              |> String.substr_replace_all ~pattern:"\n" ~with_:" "
-              |> String.escaped));
+    let functions = Hashtbl.create (module Int) in
+    Graph.iter g ~f:(fun node ->
+        match node.Node.kind with
+        | Data Constant ->
+            Graph.get_dependants g node
+            |> List.iter ~f:(fun dep ->
+                match dep.parent_fun with
+                | None -> Hashtbl.add_multi functions ~key:0 ~data:node
+                | Some fun_idx -> Hashtbl.add_multi functions ~key:fun_idx ~data:node)
+        | _ -> (
+            match node.parent_fun with
+            | None -> Hashtbl.add_multi functions ~key:0 ~data:node
+            | Some fun_idx -> Hashtbl.add_multi functions ~key:fun_idx ~data:node));
+
+    Hashtbl.iteri functions ~f:(fun ~key:fun_idx ~data:nodes ->
+        Format.fprintf fmt "subgraph cluster_func_%d {\n" fun_idx;
+        if fun_idx = 0 then
+          Format.fprintf fmt "  label=\"Top level\";"
+        else
+          Format.fprintf fmt "  label=\"Function #%d\";" fun_idx;
+
+        List.iter nodes ~f:(fun (node : Node.t) ->
+            match node.kind with
+            | Scope _ -> () (* Skip scopes for now *)
+            | Ctrl Start ->
+                Format.fprintf fmt
+                  "  { rank = source; %s [shape=%s,label=\"%s\",tooltip=\"%s\"]};@\n"
+                  (node_to_dot_id node.id) (node_shape node) (node_label node)
+                  (Types.show node.typ
+                  |> String.substr_replace_all ~pattern:"\n" ~with_:" "
+                  |> String.escaped)
+            | Ctrl Stop ->
+                Format.fprintf fmt "  { rank = sink; %s [shape=%s,label=\"%s\",tooltip=\"%s\"]};@\n"
+                  (node_to_dot_id node.id) (node_shape node) (node_label node)
+                  (Types.show node.typ
+                  |> String.substr_replace_all ~pattern:"\n" ~with_:" "
+                  |> String.escaped)
+            | Data Constant ->
+                Graph.get_dependants g node
+                |> List.filter ~f:(fun use ->
+                    match use.parent_fun with
+                    | None -> 0 = fun_idx
+                    | Some idx -> idx = fun_idx)
+                |> List.iter ~f:(fun use ->
+                    Format.fprintf fmt "  %s_%s [shape=%s,label=\"%s\",tooltip=\"#%d: %s\"];@\n"
+                      (node_to_dot_id node.id) (node_to_dot_id use.id) (node_shape node)
+                      (node_label node) node.id
+                      (Types.show node.typ
+                      |> String.substr_replace_all ~pattern:"\n" ~with_:" "
+                      |> String.escaped))
+            | _ ->
+                Format.fprintf fmt "  %s [shape=%s,label=\"%s\",tooltip=\"#%d: %s\"];@\n"
+                  (node_to_dot_id node.id) (node_shape node) (node_label node) node.id
+                  (Types.show node.typ
+                  |> String.substr_replace_all ~pattern:"\n" ~with_:" "
+                  |> String.escaped));
+        Format.fprintf fmt "}\n");
 
     (* Second pass: Add edges *)
     Graph.iter g ~f:(fun node ->
@@ -104,12 +150,21 @@ let pp_dot fmt g =
             List.iteri deps ~f:(fun i dep ->
                 match dep with
                 | None -> ()
-                | Some dep ->
-                    let style = get_edge_color dep node in
-
-                    Format.fprintf fmt
-                      "  %s -> %s[arrowsize=0.5,headlabel=%d,tooltip=\"#%d->#%d (%d)\",%s];@\n"
-                      (node_to_dot_id dep.id) (node_to_dot_id node.id) i dep.id node.id i style));
+                | Some dep -> (
+                    match (dep.kind, node.kind) with
+                    | Ctrl Start, Ctrl (Function _) -> ()
+                    | _ ->
+                        let style = get_edge_style dep node in
+                        let dep_id =
+                            match dep.kind with
+                            | Data Constant ->
+                                Printf.sprintf "%s_%s" (node_to_dot_id dep.id)
+                                  (node_to_dot_id node.id)
+                            | _ -> node_to_dot_id dep.id
+                        in
+                        Format.fprintf fmt
+                          "  %s -> %s[arrowsize=0.5,headlabel=%d,tooltip=\"#%d->#%d (%d)\",%s];@\n"
+                          dep_id (node_to_dot_id node.id) i dep.id node.id i style)));
 
     Format.fprintf fmt "}@\n";
 
@@ -144,6 +199,9 @@ let to_dot g = Format.asprintf "%a" pp_dot g
 let pp_dot_machine fmt g =
     Format.fprintf fmt "digraph G {@\n";
     Format.fprintf fmt "ordering=\"in\";@\n";
+    Format.fprintf fmt "splines=ortho\n";
+    Format.fprintf fmt "nodesep=0.8\n";
+    Format.fprintf fmt "ranksep=0.6\n";
 
     (* Create a subgraph for concentrated edges *)
     Format.fprintf fmt "subgraph main {@\n";
@@ -165,16 +223,25 @@ let pp_dot_machine fmt g =
               (node_to_dot_id node.id)
               (Machine_node.show_machine_node_kind node.kind)
               node.id node.ir_node.id
-        | _ ->
-            Format.fprintf fmt "  %s [label=\"%s\",tooltip=\"#%d (#%d)\"];@\n"
-              (node_to_dot_id node.id)
-              (String.escaped (Machine_node.show_machine_node_kind node.kind))
-              node.id node.ir_node.id);
+        | _ -> (
+            match node.ir_node.kind with
+            | Data Constant ->
+                Graph.get_dependants g node
+                |> List.iter ~f:(fun use ->
+                    Format.fprintf fmt "  %s_%s [label=\"%s\",tooltip=\"#%d (#%d)\"];@\n"
+                      (node_to_dot_id node.id) (node_to_dot_id use.id)
+                      (String.escaped (Machine_node.show_machine_node_kind node.kind))
+                      node.id node.ir_node.id)
+            | _ ->
+                Format.fprintf fmt "  %s [label=\"%s\",tooltip=\"#%d (#%d)\"];@\n"
+                  (node_to_dot_id node.id)
+                  (String.escaped (Machine_node.show_machine_node_kind node.kind))
+                  node.id node.ir_node.id));
 
     (* Second pass: Add edges *)
     Graph.iter g ~f:(fun node ->
-        match node.kind with
-        | Int _ -> ()
+        match node.ir_node.kind with
+        | Data Constant -> ()
         | _ ->
             let deps = Graph.get_dependencies g node in
             List.iteri deps ~f:(fun i dep ->
@@ -185,12 +252,18 @@ let pp_dot_machine fmt g =
                         match (dep.kind, node.kind) with
                         | CalleeSave _, Return -> "style=dashed,arrowhead=none"
                         | FunctionProlog _, CalleeSave _ -> "style=dashed,arrowhead=none"
-                        | _ -> get_edge_color dep.ir_node node.ir_node
+                        | _ -> get_edge_style dep.ir_node node.ir_node
+                    in
+                    let dep_id =
+                        match dep.ir_node.kind with
+                        | Data Constant ->
+                            Printf.sprintf "%s_%s" (node_to_dot_id dep.id) (node_to_dot_id node.id)
+                        | _ -> node_to_dot_id dep.id
                     in
 
                     Format.fprintf fmt
                       "  %s -> %s[arrowsize=0.5,headlabel=%d,tooltip=\"#%d->#%d (%d)\",%s];@\n"
-                      (node_to_dot_id dep.id) (node_to_dot_id node.id) i dep.id node.id i style));
+                      dep_id (node_to_dot_id node.id) i dep.id node.id i style));
 
     Format.fprintf fmt "}@\n";
     Format.fprintf fmt "}@\n"

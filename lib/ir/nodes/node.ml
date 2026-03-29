@@ -43,6 +43,9 @@ and mem_kind =
     | Load of string
     | Store of string
     | AddrOf
+    | AddrOfField of string
+    | Deref
+    | Copy
 
 and kind =
     | Data of data_kind
@@ -57,6 +60,7 @@ and t = {
     mutable kind : kind;
     id : int;
     loc : Ast.loc;
+    mutable parent_fun : int option;
   }
 [@@deriving sexp_of]
 
@@ -113,9 +117,15 @@ let semantic_equal n1 deps1 n2 deps2 =
          deps1 deps2
 
 let hash n = Int.hash n.id
-let create_data loc typ kind = { typ; min_typ = None; kind = Data kind; id = next_id (); loc }
-let create_ctrl loc typ kind = { typ; min_typ = None; kind = Ctrl kind; id = next_id (); loc }
-let create_mem loc typ kind = { typ; min_typ = None; kind = Mem kind; id = next_id (); loc }
+
+let create_data ?parent_fun loc typ kind =
+    { typ; min_typ = None; kind = Data kind; id = next_id (); loc; parent_fun }
+
+let create_ctrl ?parent_fun loc typ kind =
+    { typ; min_typ = None; kind = Ctrl kind; id = next_id (); loc; parent_fun }
+
+let create_mem ?parent_fun loc typ kind =
+    { typ; min_typ = None; kind = Mem kind; id = next_id (); loc; parent_fun }
 
 let create_scope () =
     {
@@ -124,6 +134,7 @@ let create_scope () =
       kind = Scope (Symbol_table.create ());
       id = next_id ();
       loc = { filename = ""; line = 0; col = 0 };
+      parent_fun = None;
     }
 
 let create_forward_ref name =
@@ -133,6 +144,7 @@ let create_forward_ref name =
       kind = ForwardRef name;
       id = next_id ();
       loc = { filename = ""; line = 0; col = 0 };
+      parent_fun = None;
     }
 
 let is_ctrl n =

@@ -1,6 +1,6 @@
 open Core
 
-let create g loc ctrl nodes =
+let create g loc ?parent_fun ctrl nodes =
     match nodes with
     | [ _ ] -> assert false
     | _ ->
@@ -8,7 +8,7 @@ let create g loc ctrl nodes =
             let typ =
                 List.map nodes ~f:(fun (n : Node.t) -> n.typ) |> List.reduce_exn ~f:Types.meet
             in
-            let n = Node.create_data loc typ Phi in
+            let n = Node.create_data ?parent_fun loc typ Phi in
             Graph.add_dependencies g n (List.map (ctrl :: nodes) ~f:Option.some);
             n
         in

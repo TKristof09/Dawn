@@ -16,12 +16,12 @@ let rec get_type g scope t =
         Types.make_array (get_type g scope t) Types.i64
     | _ -> failwith "todo"
 
-let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
+let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_node linker =
     let loc = s.loc in
     match s.node with
-    | Ast.ExprStatement e -> do_expr g e scope cur_ret_node linker |> ignore
+    | Ast.ExprStatement e -> do_expr g e scope parent_fun cur_ret_node linker |> ignore
     | Ast.Declaration_assign (name, typ, e, qualifier) ->
-        let n = do_expr g e scope cur_ret_node linker |> Option.value_exn in
+        let n = do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn in
 
         (* type annotation sets the min type. TODO: ast type should be an optional later with type inference *)
         (if not (Ast.equal_var_type typ (Type "")) then
@@ -60,7 +60,9 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
             match t with
             | Integer _ ->
                 let default_init =
-                    do_expr g { loc = s.loc; node = Int Z.zero } scope cur_ret_node linker
+                    do_expr g
+                      { loc = s.loc; node = Int Z.zero }
+                      scope parent_fun cur_ret_node linker
                     |> Option.value_exn
                 in
                 default_init.min_typ <- Some t;
@@ -71,13 +73,13 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
             (* let arr_type = get_type g scope typ in *)
             let element_type = get_type g scope t in
             let ctrl = Scope_node.get_ctrl g scope in
-            let count = do_expr g count scope cur_ret_node linker |> Option.value_exn in
+            let count = do_expr g count scope parent_fun cur_ret_node linker |> Option.value_exn in
             count.min_typ <- Some Types.i64;
-            let el_size = Const_node.create_int g loc (Types.get_size element_type) in
-            let size = Arithmetic_nodes.create_mul g loc count el_size in
+            let el_size = Const_node.create_int ?parent_fun g loc (Types.get_size element_type) in
+            let size = Arithmetic_nodes.create_mul ?parent_fun g loc count el_size in
             let size =
-                Arithmetic_nodes.create_add g loc size
-                  (Const_node.create_int g loc (Types.get_size Types.i64))
+                Arithmetic_nodes.create_add ?parent_fun g loc size
+                  (Const_node.create_int ?parent_fun g loc (Types.get_size Types.i64))
             in
             size.min_typ <- Some Types.i64;
             let mem = Scope_node.get_mem g scope in
@@ -89,49 +91,51 @@ let rec do_statement g (s : Ast.statement Ast.node) scope cur_ret_node linker =
             in
             count.min_typ <- Some count_type;
             let arr_type = Types.make_array element_type count_type in
-            let n = Mem_nodes.create_new g loc ~ctrl ~mem ~size arr_type in
-            let mem = Proj_node.create g loc n 0 in
-            let ptr = Proj_node.create g loc n 1 in
+            let n = Mem_nodes.create_new ?parent_fun g loc ~ctrl ~mem ~size arr_type in
+            let mem = Proj_node.create ?parent_fun g loc n 0 in
+            let ptr = Proj_node.create ?parent_fun g loc n 1 in
             ptr.min_typ <- Some (Ptr arr_type);
             let offset =
                 Types.get_offset arr_type "len"
                 |> Option.value_exn
                 |> Z.of_int
                 |> Types.make_int_const ~fixed_width:64
-                |> Const_node.create_from_type g loc
+                |> Const_node.create_from_type ?parent_fun g loc
             in
             offset.min_typ <- Some Types.i64;
-            let store = Mem_nodes.create_store g loc ~mem ~ptr ~offset "len" ~value:count in
+            let store =
+                Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr ~offset "len" ~value:count
+            in
             Scope_node.define g scope name ptr false;
             Scope_node.set_mem g scope store
         | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type typ) ())
     | Ast.While (cond, body) ->
-        let loop_node = Loop_node.create g loc (Scope_node.get_ctrl g scope) in
+        let loop_node = Loop_node.create ?parent_fun g loc (Scope_node.get_ctrl g scope) in
         let body_scope = Scope_node.dup_loop g scope in
         Scope_node.set_ctrl g body_scope loop_node;
         Scope_node.set_ctrl g scope loop_node;
-        let n_cond = do_expr g cond body_scope cur_ret_node linker |> Option.value_exn in
+        let n_cond = do_expr g cond body_scope parent_fun cur_ret_node linker |> Option.value_exn in
         let exit_scope = Scope_node.dup g body_scope in
-        let n_if = If_node.create g loc ~ctrl:loop_node ~pred:n_cond in
-        let n_true = Proj_node.create g loc n_if 0 in
-        let n_false = Proj_node.create g loc n_if 1 in
+        let n_if = If_node.create ?parent_fun g loc ~ctrl:loop_node ~pred:n_cond in
+        let n_true = Proj_node.create ?parent_fun g loc n_if 0 in
+        let n_false = Proj_node.create ?parent_fun g loc n_if 1 in
         Scope_node.set_ctrl g body_scope n_true;
         Scope_node.set_ctrl g exit_scope n_false;
-        let _ = do_expr g body body_scope cur_ret_node linker in
+        let _ = do_expr g body body_scope parent_fun cur_ret_node linker in
         Loop_node.set_back_edge g loop_node (Scope_node.get_ctrl g body_scope);
-        Scope_node.merge_loop g ~this:scope ~body:body_scope ~exit:exit_scope
+        Scope_node.merge_loop ?parent_fun g ~this:scope ~body:body_scope ~exit:exit_scope
 
-and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
+and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
     let loc = e.loc in
     let binop lhs rhs f =
-        let lhs = do_expr g lhs scope cur_ret_node linker |> Option.value_exn in
-        let rhs = do_expr g rhs scope cur_ret_node linker |> Option.value_exn in
-        Some (f g loc lhs rhs)
+        let lhs = do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn in
+        let rhs = do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn in
+        Some (f g loc ?parent_fun lhs rhs)
     in
     match e.node with
-    | Ast.Int i -> Some (Const_node.create_zint g loc i)
-    | Ast.Bool b -> Some (Const_node.create_bool g loc b)
-    | Ast.String s -> Some (Const_node.create_string g loc s)
+    | Ast.Int i -> Some (Const_node.create_zint ?parent_fun g loc i)
+    | Ast.Bool b -> Some (Const_node.create_bool ?parent_fun g loc b)
+    | Ast.String s -> Some (Const_node.create_string ?parent_fun g loc s)
     | Ast.Variable (name, idx_expr) -> (
         match idx_expr with
         | None ->
@@ -141,39 +145,41 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
             let mem = Scope_node.get_mem g scope in
             let ptr = Scope_node.get g scope name in
 
-            let index = do_expr g idx_expr scope cur_ret_node linker |> Option.value_exn in
+            let index =
+                do_expr g idx_expr scope parent_fun cur_ret_node linker |> Option.value_exn
+            in
             let base = Types.get_offset ptr.typ "[]" |> Option.value ~default:(-1) in
             let el_typ = Types.get_field_type ptr.typ "[]" |> Option.value ~default:ALL in
-            let el_size = Const_node.create_int g loc (Types.get_size el_typ) in
+            let el_size = Const_node.create_int ?parent_fun g loc (Types.get_size el_typ) in
             let offset =
-                Arithmetic_nodes.create_add g loc
-                  (Const_node.create_int g loc base)
-                  (Arithmetic_nodes.create_mul g loc index el_size)
+                Arithmetic_nodes.create_add ?parent_fun g loc
+                  (Const_node.create_int ?parent_fun g loc base)
+                  (Arithmetic_nodes.create_mul ?parent_fun g loc index el_size)
             in
             offset.min_typ <- Some Types.i64;
-            let load = Mem_nodes.create_load g loc ~mem ~ptr "[]" ~offset el_typ in
+            let load = Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr "[]" ~offset el_typ in
             load.min_typ <- Some el_typ;
             Some load)
     | Ast.VarAssign (name, expr) ->
-        let n = do_expr g expr scope cur_ret_node linker |> Option.value_exn in
+        let n = do_expr g expr scope parent_fun cur_ret_node linker |> Option.value_exn in
         Scope_node.assign g scope name n;
         Some n
     | Ast.ArrayVarAssign (name, index, value) ->
-        let index = do_expr g index scope cur_ret_node linker |> Option.value_exn in
-        let value = do_expr g value scope cur_ret_node linker |> Option.value_exn in
+        let index = do_expr g index scope parent_fun cur_ret_node linker |> Option.value_exn in
+        let value = do_expr g value scope parent_fun cur_ret_node linker |> Option.value_exn in
         let ptr = Scope_node.get g scope name in
         let mem = Scope_node.get_mem g scope in
         let base = Types.get_offset ptr.typ "[]" |> Option.value ~default:(-1) in
         let el_typ = Types.get_field_type ptr.typ "[]" |> Option.value_exn in
-        let el_size = Const_node.create_int g loc (Types.get_size el_typ) in
+        let el_size = Const_node.create_int ?parent_fun g loc (Types.get_size el_typ) in
         let offset =
-            Arithmetic_nodes.create_add g loc
-              (Const_node.create_int g loc base)
-              (Arithmetic_nodes.create_mul g loc index el_size)
+            Arithmetic_nodes.create_add ?parent_fun g loc
+              (Const_node.create_int ?parent_fun g loc base)
+              (Arithmetic_nodes.create_mul ?parent_fun g loc index el_size)
         in
         offset.min_typ <- Some Types.i64;
         value.min_typ <- Some el_typ;
-        let store_mem = Mem_nodes.create_store g loc ~mem ~ptr ~offset "[]" ~value in
+        let store_mem = Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr ~offset "[]" ~value in
         Scope_node.set_mem g scope store_mem;
         Some value
     | Ast.Add (lhs, rhs) -> binop lhs rhs Arithmetic_nodes.create_add
@@ -192,39 +198,43 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
     | Ast.GEq (lhs, rhs) -> binop lhs rhs Bool_nodes.create_geq
     | Ast.Block (statements, expr) ->
         Scope_node.push scope;
-        List.iter statements ~f:(fun s -> do_statement g s scope cur_ret_node linker |> ignore);
+        List.iter statements ~f:(fun s ->
+            do_statement g s scope parent_fun cur_ret_node linker |> ignore);
         let n =
-            Option.value_map expr ~default:None ~f:(fun e -> do_expr g e scope cur_ret_node linker)
+            Option.value_map expr ~default:None ~f:(fun e ->
+                do_expr g e scope parent_fun cur_ret_node linker)
         in
         Scope_node.pop g scope;
         n
     | Ast.IfElse (cond, body, else_body) -> (
-        let n_cond = do_expr g cond scope cur_ret_node linker |> Option.value_exn in
+        let n_cond = do_expr g cond scope parent_fun cur_ret_node linker |> Option.value_exn in
         let ctrl = Scope_node.get_ctrl g scope in
-        let n_if = If_node.create g loc ~ctrl ~pred:n_cond in
-        let n_true = Proj_node.create g loc n_if 0 in
-        let n_false = Proj_node.create g loc n_if 1 in
+        let n_if = If_node.create ?parent_fun g loc ~ctrl ~pred:n_cond in
+        let n_true = Proj_node.create ?parent_fun g loc n_if 0 in
+        let n_false = Proj_node.create ?parent_fun g loc n_if 1 in
         let false_scope = Scope_node.dup g scope in
         Scope_node.set_ctrl g scope n_true;
-        let body_true = do_expr g body scope cur_ret_node linker in
+        let body_true = do_expr g body scope parent_fun cur_ret_node linker in
         Scope_node.set_ctrl g false_scope n_false;
         match else_body with
         | None ->
-            Scope_node.merge g loc ~this:scope ~other:false_scope;
+            Scope_node.merge ?parent_fun g loc ~this:scope ~other:false_scope;
             None
         | Some else_body -> (
-            let body_false = do_expr g else_body false_scope cur_ret_node linker in
-            Scope_node.merge g loc ~this:scope ~other:false_scope;
+            let body_false = do_expr g else_body false_scope parent_fun cur_ret_node linker in
+            Scope_node.merge ?parent_fun g loc ~this:scope ~other:false_scope;
             match (body_true, body_false) with
             | None, None -> None
             | Some body_true, Some body_false ->
-                Some (Phi_node.create g loc (Scope_node.get_ctrl g scope) [ body_true; body_false ])
+                Some
+                  (Phi_node.create ?parent_fun g loc (Scope_node.get_ctrl g scope)
+                     [ body_true; body_false ])
             | _, _ -> failwith "The two branches must have the same type"))
     | Ast.FnCall (expr, args) ->
-        let fun_ptr = do_expr g expr scope cur_ret_node linker |> Option.value_exn in
+        let fun_ptr = do_expr g expr scope parent_fun cur_ret_node linker |> Option.value_exn in
         let args =
             List.map args ~f:(fun arg ->
-                do_expr g arg scope cur_ret_node linker |> Option.value_exn)
+                do_expr g arg scope parent_fun cur_ret_node linker |> Option.value_exn)
         in
         let big_ret_type =
             match fun_ptr.typ with
@@ -254,24 +264,28 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
                 (* Allocate place for big return type and pass ptr as first arg *)
                 let ctrl = Scope_node.get_ctrl g scope in
                 let mem = Scope_node.get_mem g scope in
-                let size = Types.get_size deref_ret_type |> Const_node.create_int g loc in
-                let new_node = Mem_nodes.create_new g loc ~ctrl ~mem ~size deref_ret_type in
-                let mem = Proj_node.create g loc new_node 0 in
-                let ret_struct = Proj_node.create g loc new_node 1 in
+                let size =
+                    Types.get_size deref_ret_type |> Const_node.create_int ?parent_fun g loc
+                in
+                let new_node =
+                    Mem_nodes.create_new ?parent_fun g loc ~ctrl ~mem ~size deref_ret_type
+                in
+                let mem = Proj_node.create ?parent_fun g loc new_node 0 in
+                let ret_struct = Proj_node.create ?parent_fun g loc new_node 1 in
                 ret_struct.min_typ <- Some deref_ret_type;
-                let ptr = Mem_nodes.create_addr_of g loc ret_struct in
+                let ptr = Mem_nodes.create_addr_of ?parent_fun g loc ret_struct in
                 Scope_node.set_mem g scope mem;
                 ptr :: args
         in
         let call_node, call_end =
-            Fun_node.add_call g loc ~ctrl:(Scope_node.get_ctrl g scope)
+            Fun_node.add_call ?parent_fun g loc ~ctrl:(Scope_node.get_ctrl g scope)
               ~mem:(Scope_node.get_mem g scope) ~fun_ptr args
         in
-        let ctrl = Proj_node.create g loc call_end 0 in
+        let ctrl = Proj_node.create ?parent_fun g loc call_end 0 in
         Scope_node.set_ctrl g scope ctrl;
-        let return_mem = Proj_node.create g loc call_end 1 in
+        let return_mem = Proj_node.create ?parent_fun g loc call_end 1 in
         Scope_node.set_mem g scope return_mem;
-        let return_val = Proj_node.create g loc call_end 2 in
+        let return_val = Proj_node.create ?parent_fun g loc call_end 2 in
         Some return_val
     (* | Ast.Return ->  *)
     | Ast.FnDeclaration (typ, param_names, body) ->
@@ -300,24 +314,29 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         in
         let fun_node, ret_node = Fun_node.create g loc fun_ptr_type in
         let fun_idx = Linker.define linker fun_node in
+        fun_node.parent_fun <- Some fun_idx;
+
         (match fun_node.kind with
         | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx })
         | _ -> assert false);
-        let fun_ptr = Const_node.create_fun_ptr g loc fun_node fun_idx in
+        let fun_ptr = Const_node.create_fun_ptr ?parent_fun g loc fun_node fun_idx in
         Scope_node.push scope;
         let old_ctrl = Scope_node.get_ctrl g scope in
         let old_mem = Scope_node.get_mem g scope in
         Scope_node.set_ctrl g scope fun_node;
-        let mem = Fun_node.create_param g loc fun_node Memory 0 in
+        let mem = Fun_node.create_param ~parent_fun:fun_idx g loc fun_node Memory 0 in
         Scope_node.set_mem g scope mem;
         List.zip_exn param_types param_names
         |> List.iteri ~f:(fun i (ptype, pname) ->
-            let param_node = Fun_node.create_param g loc fun_node ptype (i + 1) in
+            let param_node =
+                Fun_node.create_param ~parent_fun:fun_idx g loc fun_node ptype (i + 1)
+            in
             param_node.min_typ <- Some ptype;
             Scope_node.define g scope pname param_node false);
         let body_n =
-            do_expr g body scope (Some ret_node) linker
-            |> Option.value ~default:(Const_node.create_from_type g body.loc Types.Void)
+            do_expr g body scope (Some fun_idx) (Some ret_node) linker
+            |> Option.value
+                 ~default:(Const_node.create_from_type ~parent_fun:fun_idx g body.loc Types.Void)
         in
         body_n.min_typ <- Some (get_type g scope ret_type);
         if big_ret then (
@@ -349,10 +368,10 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
                   in
                   Scope_node.set_mem g scope store)
           | _ -> assert false);
-          Fun_node.add_return g ret_node ~ctrl:(Scope_node.get_ctrl g scope)
+          Fun_node.add_return ~parent_fun:fun_idx g ret_node ~ctrl:(Scope_node.get_ctrl g scope)
             ~mem:(Scope_node.get_mem g scope) ~val_n:ret_ptr)
         else
-          Fun_node.add_return g ret_node ~ctrl:(Scope_node.get_ctrl g scope)
+          Fun_node.add_return ~parent_fun:fun_idx g ret_node ~ctrl:(Scope_node.get_ctrl g scope)
             ~mem:(Scope_node.get_mem g scope) ~val_n:body_n;
         Scope_node.pop g scope;
         Scope_node.set_ctrl g scope old_ctrl;
@@ -375,27 +394,30 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         in
         let fun_node, ret_node = Fun_node.create g loc fun_ptr_type in
         let fun_idx = Linker.define linker fun_node in
+        fun_node.parent_fun <- Some fun_idx;
         Linker.set_name linker fun_idx external_name;
         (match fun_node.kind with
         | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx })
         | _ -> assert false);
-        let fun_ptr = Const_node.create_fun_ptr g loc fun_node fun_idx in
+        let fun_ptr = Const_node.create_fun_ptr ~parent_fun:fun_idx g loc fun_node fun_idx in
         (* TODO the extern node should probably also pretend to use the MEMORY
            since it could store stuff into the passed in ptr when return value
            doesnt fit into a single register *)
-        let ret_val = Extern_node.create g loc ret_type external_name in
+        let ret_val = Extern_node.create ~parent_fun:fun_idx g loc ret_type external_name in
         ret_val.min_typ <- Some ret_type;
-        let mem = Fun_node.create_param g loc fun_node Memory 0 in
+        let mem = Fun_node.create_param ~parent_fun:fun_idx g loc fun_node Memory 0 in
         List.mapi param_types ~f:(fun i param_type ->
-            let param_node = Fun_node.create_param g loc fun_node param_type (i + 1) in
+            let param_node =
+                Fun_node.create_param ~parent_fun:fun_idx g loc fun_node param_type (i + 1)
+            in
             param_node.min_typ <- Some param_type;
             Some param_node)
         |> Graph.add_dependencies g ret_val;
-        Fun_node.add_return g ret_node ~ctrl:fun_node ~mem ~val_n:ret_val;
+        Fun_node.add_return ~parent_fun:fun_idx g ret_node ~ctrl:fun_node ~mem ~val_n:ret_val;
         Some fun_ptr
     | TypeDeclaration t ->
         let typ = Types.of_ast_type t in
-        let c = Const_node.create_from_type g loc (Type (Value typ)) in
+        let c = Const_node.create_from_type ?parent_fun g loc (Type (Value typ)) in
         Some c
     | TypeInstantiation (type_name, fields) ->
         let typ_constant = Scope_node.get g scope type_name in
@@ -407,12 +429,12 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
         let ctrl = Scope_node.get_ctrl g scope in
         let mem = Scope_node.get_mem g scope in
         let type_size = Types.get_size typ in
-        let size = Const_node.create_int g loc type_size in
-        let n = Mem_nodes.create_new g loc ~ctrl ~mem ~size typ in
-        let mem = Proj_node.create g loc n 0 in
+        let size = Const_node.create_int ?parent_fun g loc type_size in
+        let n = Mem_nodes.create_new ?parent_fun g loc ~ctrl ~mem ~size typ in
+        let mem = Proj_node.create ?parent_fun g loc n 0 in
         Scope_node.set_mem g scope mem;
-        let ptr = Proj_node.create g loc n 1 in
-        ptr.min_typ <- Some typ;
+        let struct_node = Proj_node.create ?parent_fun g loc n 1 in
+        struct_node.min_typ <- Some typ;
         let field_names =
             match typ with
             | Struct (Value { name = _; fields }) -> List.map fields ~f:fst |> String.Set.of_list
@@ -433,14 +455,11 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
                         failwithf "%s:%d: Field %s is not part of type %s" loc.filename loc.line
                           name type_name ()
                     else
-                      let value = do_expr g e scope cur_ret_node linker |> Option.value_exn in
-                      value.min_typ <- Some (Types.get_field_type typ name |> Option.value_exn);
-                      let offset =
-                          Types.get_offset typ name
-                          |> Option.value_exn
-                          |> Const_node.create_int g loc
+                      let value =
+                          do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn
                       in
-                      offset.min_typ <- Some Types.i64;
+                      let field_type = Types.get_field_type typ name |> Option.value_exn in
+                      value.min_typ <- Some field_type;
                       let mem = Scope_node.get_mem g scope in
                       let store = Mem_nodes.create_store g loc ~mem ~ptr ~offset name ~value in
                       Scope_node.set_mem g scope store;
@@ -450,14 +469,14 @@ and do_expr g (e : Ast.expr Ast.node) scope cur_ret_node linker =
           failwithf "%s:%d: Following fields were not initialised: %s" loc.filename loc.line
             (Set.to_list remaining_field_names |> String.concat ~sep:", ")
             ();
-        Some ptr
+        Some struct_node
     | FieldAccess (e, field_name) ->
-        let base = do_expr g e scope cur_ret_node linker |> Option.value_exn in
         let offset =
             Types.get_offset base.typ field_name
             |> Option.value ~default:(-1)
             |> Const_node.create_int g loc
         in
+        let base = do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn in
         offset.min_typ <- Some Types.i64;
         let mem = Scope_node.get_mem g scope in
         let field_typ = Types.get_field_type base.typ field_name |> Option.value ~default:ALL in
@@ -498,7 +517,7 @@ let of_ast ast linker =
             if i < 64 then Printf.sprintf "i%d" (i + 1) else Printf.sprintf "u%d" (i - 64 + 1))
     in
     List.iter builtin_types ~f:(define_builtin_type g scope);
-    Core.List.iter ast ~f:(fun s -> do_statement g s scope None linker);
+    Core.List.iter ast ~f:(fun s -> do_statement g s scope None None linker);
     let ctrl = Scope_node.get_ctrl g scope in
     Graph.set_stop_ctrl g ctrl;
     Scope_node.set_ctrl g scope (Graph.get_stop g);

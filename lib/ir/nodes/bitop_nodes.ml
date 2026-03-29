@@ -1,14 +1,21 @@
 open Core
 
-let common g loc (lhs : Node.t) (rhs : Node.t) (kind : Node.data_kind) =
-    let n = Node.create_data loc (Integer Any) kind in
+let common g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) (kind : Node.data_kind) =
+    let n = Node.create_data ?parent_fun loc (Integer Any) kind in
     Graph.add_dependencies g n [ None; Some lhs; Some rhs ];
     Graph.finalize_node g n
 
-let create_lsh g loc (lhs : Node.t) (rhs : Node.t) = common g loc lhs rhs Lsh
-let create_rsh g loc (lhs : Node.t) (rhs : Node.t) = common g loc lhs rhs Rsh
-let create_band g loc (lhs : Node.t) (rhs : Node.t) = common g loc lhs rhs BAnd
-let create_bor g loc (lhs : Node.t) (rhs : Node.t) = common g loc lhs rhs BOr
+let create_lsh g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
+    common g loc ?parent_fun lhs rhs Lsh
+
+let create_rsh g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
+    common g loc ?parent_fun lhs rhs Rsh
+
+let create_band g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
+    common g loc ?parent_fun lhs rhs BAnd
+
+let create_bor g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
+    common g loc ?parent_fun lhs rhs BOr
 
 let compute_type g (n : Node.t) =
     let op =
