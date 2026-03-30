@@ -20,7 +20,7 @@ let do_node g (n : Node.t) =
         | Data Constant ->
             let v = Types.get_integer_const_exn def.typ in
             let t = Types.make_int_const ~fixed_width v in
-            let n = Const_node.create_from_type g loc t in
+            let n = Const_node.create_from_type ?parent_fun:def.parent_fun g loc t in
             Graph.set_dependency g use (Some n) dep_idx
         | _ -> (
             let cast_typ =
@@ -34,7 +34,7 @@ let do_node g (n : Node.t) =
             in
             match has_cast with
             | None ->
-                let cast_node = Node.create_data loc cast_typ Cast in
+                let cast_node = Node.create_data ?parent_fun:def.parent_fun loc cast_typ Cast in
                 (* TODO: should we use the def's control input or the use's or just put none and let the scheduler figure it out? *)
                 Graph.add_dependencies g cast_node [ Graph.get_dependency g def 0; Some def ];
                 Graph.set_dependency g use (Some cast_node) dep_idx

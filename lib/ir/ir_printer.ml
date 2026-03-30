@@ -48,17 +48,13 @@ let get_edge_style (def : Node.t) (use : Node.t) =
         | DeadControl -> "color=green,style=dashed,arrowhead=none"
         | Memory -> "color=blue"
         | Tuple (Value l) -> (
-            if Types.equal def_typ use_typ then
-              ""
-            else
-              match
-                use.kind
-              with
-              | Ctrl (Proj i)
-              | Data (Proj i) ->
-                  aux (List.nth_exn l i) use_typ
-              | Ctrl (Function _) -> "color=red"
-              | _ -> assert false)
+            match use.kind with
+            | Ctrl (Proj i)
+            | Data (Proj i) ->
+                aux (List.nth_exn l i) use_typ
+            | Ctrl (Function _) -> "color=red"
+            | Ctrl FunctionCallEnd -> ""
+            | _ -> assert false)
         | _ -> ""
     in
     match (def.kind, use.kind) with

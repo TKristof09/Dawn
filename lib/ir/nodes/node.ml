@@ -106,6 +106,7 @@ let semantic_equal n1 deps1 n2 deps2 =
         | _, _ -> Poly.equal n1.kind n2.kind
     in
     is_same_kind n1 n2
+    && Option.equal Int.equal n1.parent_fun n2.parent_fun
     && List.equal
          (fun a b ->
            match (a, b) with

@@ -85,36 +85,10 @@ and common_dom g (lhs : Machine_node.t) (rhs : Machine_node.t) =
       else
         common_dom g lhs (dom g rhs)
 
-let get_function g n =
-    let rec aux (cur : Machine_node.t) =
-        match cur.kind with
-        | FunctionProlog i -> i
-        | Ideal Start -> 0
-        | _ ->
-            let p =
-                (* TODO: this hack is so bad, dom should just not throw exceptions... *)
-                match Graph.get_dependency g cur 0 with
-                | None -> (
-                    if Machine_node.is_control_node cur then
-                      dom g cur
-                    else
-                      let non_const =
-                          Graph.get_dependencies g cur
-                          |> List.find ~f:(function
-                            | None -> false
-                            | Some n -> (
-                                match n.kind with
-                                | Int _ -> false
-                                | _ -> true))
-                      in
-                      match non_const with
-                      | Some p -> Option.value_exn p
-                      | None -> Graph.get_dependencies g cur |> List.filter_opt |> List.hd_exn)
-                | Some _ -> dom g cur
-            in
-            aux p
-    in
-    aux n
+let get_function (n : Machine_node.t) =
+    match n.ir_node.parent_fun with
+    | None -> 0
+    | Some idx -> idx
 
 let schedule_early g =
     let already_scheduled = Hash_set.create ~size:(Graph.get_num_nodes g) (module Machine_node) in
@@ -320,12 +294,15 @@ let schedule_flat g =
                   | _ -> ()));
         let ready =
             Hash_set.filter not_ready ~f:(fun n ->
-                let deps =
-                    Graph.get_dependencies g n
-                    |> List.filter_opt
-                    |> Hash_set.of_list (module Machine_node)
-                in
-                Hash_set.for_all deps ~f:(fun x -> not (Hash_set.mem not_ready x)))
+                match n.kind with
+                | Param _ -> true
+                | _ ->
+                    let deps =
+                        Graph.get_dependencies g n
+                        |> List.filter_opt
+                        |> Hash_set.of_list (module Machine_node)
+                    in
+                    Hash_set.for_all deps ~f:(fun x -> not (Hash_set.mem not_ready x)))
         in
         let not_ready = Hash_set.diff not_ready ready in
         let is_ready node =
@@ -353,8 +330,10 @@ let schedule_flat g =
     cfg
     |> List.filter ~f:Machine_node.is_blockhead
     |> List.map ~f:(fun bb ->
-        bb :: (Graph.get_dependants g bb |> List.filter ~f:(Fun.negate Machine_node.is_blockhead))
-        |> schedule_main)
+        bb
+        :: (Graph.get_dependants g bb
+           |> List.filter ~f:(Fun.negate Machine_node.is_blockhead)
+           |> schedule_main))
 
 let duplicate_constants g function_graphs =
     let start = Graph.get_start g in
@@ -376,7 +355,7 @@ let duplicate_constants g function_graphs =
             | Param _ -> false
             | _ -> true)
         |> List.iter ~f:(fun use ->
-            let fun_idx = get_function g use in
+            let fun_idx = get_function use in
             if fun_idx <> 0 then
               let dep_idx, _ =
                   List.findi_exn (Graph.get_dependencies g use) ~f:(fun _ dep ->
@@ -409,7 +388,7 @@ let duplicate_constants g function_graphs =
 let schedule g =
     let g = Machine_node.convert_graph g in
     let per_function_graphs =
-        Graph.partition g ~f:(get_function g)
+        Graph.partition g ~f:get_function
           ~get_start:(fun n ->
             match n.kind with
             | FunctionProlog _ -> true
@@ -469,20 +448,29 @@ let schedule g =
                       Graph.remove_dependency g ~node:fun_prolog ~dep:n
                   | _ -> ())));
 
-        (* link the return node to the stop node so that the scheduling
-           algorithms can reach the nodes (since the algorithms start from the
-           stop node) *)
         let ret_node =
             Graph.find g ~f:(fun n ->
                 match n.kind with
                 | Return -> true
                 | _ -> false)
         in
-
         match ret_node with
         | None -> ()
         | Some ret_node ->
-            (* if there is a return there must be a fun prolog *)
+            (* unlink call ends *)
+            let call_ends =
+                Graph.get_dependants g ret_node
+                |> List.filter ~f:(fun n ->
+                    match n.kind with
+                    | FunctionCallEnd -> true
+                    | _ -> false)
+            in
+            List.iter call_ends ~f:(fun n -> Graph.remove_dependency g ~node:n ~dep:ret_node);
+
+            (* set up callee saved nodes *)
+            (* if there is a return there must be a fun prolog (only top level
+               has no function prolog but it also has stop node and not return
+               node *)
             let fun_prolog = fun_prolog |> Option.value_exn in
             List.iter (Registers.Mask.callee_save |> Registers.Mask.to_list) ~f:(fun r ->
                 match r with

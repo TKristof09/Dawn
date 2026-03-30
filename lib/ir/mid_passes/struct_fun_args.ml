@@ -121,6 +121,7 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
         |> List.iteri ~f:(fun i arg ->
             let param_input_idx = i + 1 in
             let call_node = Graph.get_dependency g fun_node param_input_idx |> Option.value_exn in
+            let parent_fun = call_node.parent_fun in
             let mem =
                 Graph.get_dependencies g call_node
                 |> List.find_map_exn
@@ -135,15 +136,14 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
                     (* offset 0 because using addr of field already *)
                     let offset =
                         Types.make_int_const ~fixed_width:64 Z.zero
-                        |> Const_node.create_from_type ?parent_fun:arg.parent_fun g arg.loc
+                        |> Const_node.create_from_type ?parent_fun g arg.loc
                     in
                     let field_ptr =
-                        Mem_nodes.create_addr_of_field ?parent_fun:arg.parent_fun g arg.loc arg
-                          desc.field_name
+                        Mem_nodes.create_addr_of_field ?parent_fun g arg.loc arg desc.field_name
                     in
                     let field_val =
-                        Mem_nodes.create_load ?parent_fun:arg.parent_fun g arg.loc ~mem
-                          ~ptr:field_ptr desc.field_name ~offset arg.typ
+                        Mem_nodes.create_load ?parent_fun g arg.loc ~mem ~ptr:field_ptr
+                          desc.field_name ~offset arg.typ
                     in
                     field_val.typ <-
                       Types.get_field_type arg.typ desc.field_name |> Option.value_exn;
@@ -151,12 +151,11 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
                     let input =
                         if desc.byte_start_inside_eightbyte <> 0 then (
                           let shift_amount =
-                              Const_node.create_int ?parent_fun:arg.parent_fun g arg.loc
+                              Const_node.create_int ?parent_fun g arg.loc
                                 (8 * desc.byte_start_inside_eightbyte)
                           in
                           let shifted =
-                              Bitop_nodes.create_lsh ?parent_fun:arg.parent_fun g arg.loc field_val
-                                shift_amount
+                              Bitop_nodes.create_lsh ?parent_fun g arg.loc field_val shift_amount
                           in
                           let ~new_type, ~extra_deps:_ = Bitop_nodes.compute_type g shifted in
                           shifted.typ <- new_type;
@@ -168,9 +167,7 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
             in
             let value =
                 List.reduce_exn components ~f:(fun c1 c2 ->
-                    let combined =
-                        Bitop_nodes.create_bor ?parent_fun:arg.parent_fun g arg.loc c1 c2
-                    in
+                    let combined = Bitop_nodes.create_bor ?parent_fun g arg.loc c1 c2 in
                     let ~new_type, ~extra_deps:_ = Bitop_nodes.compute_type g combined in
                     combined.typ <- new_type;
                     combined)
@@ -251,15 +248,13 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
                 else
                   input
             in
-            let offset =
-                Types.get_offset typ desc.field_name
-                |> Option.value_exn
-                |> Z.of_int
-                |> Types.make_int_const ~fixed_width:64
-                |> Const_node.create_from_type ?parent_fun:param.parent_fun g param.loc
+            let offset = Const_node.create_int ?parent_fun:param.parent_fun g param.loc 0 in
+            let field_ptr =
+                Mem_nodes.create_addr_of_field ?parent_fun:param.parent_fun g param.loc ptr
+                  desc.field_name
             in
-            Mem_nodes.create_store ?parent_fun:param.parent_fun g param.loc ~mem ~ptr ~offset
-              desc.field_name ~value)
+            Mem_nodes.create_store ?parent_fun:param.parent_fun g param.loc ~mem ~ptr:field_ptr
+              ~offset desc.field_name ~value)
     in
 
     Graph.get_dependants g param

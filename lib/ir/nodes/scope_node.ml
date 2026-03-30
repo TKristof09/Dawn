@@ -188,7 +188,7 @@ let merge ?parent_fun g loc ~(this : Node.t) ~(other : Node.t) =
     in
     match (this.kind, other.kind) with
     | Scope this_tbl, Scope other_tbl ->
-        let region = Region_node.create g loc (get_ctrl g this, get_ctrl g other) in
+        let region = Region_node.create ?parent_fun g loc (get_ctrl g this, get_ctrl g other) in
         let old_ctrl = get_ctrl g this in
         let diff_fn ~name ~this:(v_this : Node.t Variable.t) ~other:_ =
             if not (Node.equal v_this.node old_ctrl) then (
