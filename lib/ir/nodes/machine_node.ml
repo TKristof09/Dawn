@@ -470,6 +470,7 @@ let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
         | None ->
             let node = { id = next_id (); kind; ir_node = n } in
             Graph.add_dependencies machine_g node [];
+            Hashtbl.add_exn memo ~key:n ~data:node;
             Graph.add_dependencies machine_g node
               (List.map deps ~f:(Option.map ~f:(convert_node memo g machine_g)));
             node
@@ -482,6 +483,7 @@ let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
             let kind = kind_imm value in
             let node = { id = next_id (); kind; ir_node = n } in
             Graph.add_dependencies machine_g node [];
+            Hashtbl.add_exn memo ~key:n ~data:node;
             let deps = List.filteri deps ~f:(fun i _ -> i <> idx) in
             Graph.add_dependencies machine_g node
               (List.map deps ~f:(Option.map ~f:(convert_node memo g machine_g)));
@@ -500,6 +502,7 @@ let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
                 let kind = kind_imm v in
                 let node = { id = next_id (); kind; ir_node = n } in
                 Graph.add_dependencies machine_g node [];
+                Hashtbl.add_exn memo ~key:n ~data:node;
                 let deps = List.filteri deps ~f:(fun i _ -> i <> 2) in
                 Graph.add_dependencies machine_g node
                   (List.map deps ~f:(Option.map ~f:(convert_node memo g machine_g)));
@@ -507,6 +510,7 @@ let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
             | _ ->
                 let node = { id = next_id (); kind; ir_node = n } in
                 Graph.add_dependencies machine_g node [];
+                Hashtbl.add_exn memo ~key:n ~data:node;
                 Graph.add_dependencies machine_g node
                   (List.map deps ~f:(Option.map ~f:(convert_node memo g machine_g)));
                 node)
@@ -527,11 +531,13 @@ let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
         in
         let node = { id = next_id (); kind; ir_node = n } in
         Graph.add_dependencies machine_g node [ Some (Graph.get_start machine_g) ];
+        Hashtbl.add_exn memo ~key:n ~data:node;
         node
     | Proj i ->
         let kind = DProj i in
         let node = { id = next_id (); kind; ir_node = n } in
         Graph.add_dependencies machine_g node [];
+        Hashtbl.add_exn memo ~key:n ~data:node;
         let deps =
             Graph.get_dependencies g n
             |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
@@ -568,6 +574,7 @@ let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
                 let set_node = { id = next_id (); kind = Set m_cmp; ir_node = n } in
                 let cmp_node = { id = next_id (); kind = Cmp; ir_node = n } in
 
+                Hashtbl.add_exn memo ~key:n ~data:set_node;
                 let deps = List.map cmp_deps ~f:(Option.map ~f:(convert_node memo g machine_g)) in
                 Graph.add_dependencies machine_g cmp_node deps;
                 Graph.add_dependencies machine_g set_node [ List.hd_exn deps; Some cmp_node ];
@@ -593,9 +600,10 @@ let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
                       | Gt -> Lt
                       | GEq -> LEq
                 in
-                let set_node = { id = next_id (); kind = Set m_cmp; ir_node = n } in
                 let cmp_node = { id = next_id (); kind = CmpImm value; ir_node = n } in
+                let set_node = { id = next_id (); kind = Set m_cmp; ir_node = n } in
                 let deps = List.filteri cmp_deps ~f:(fun i _ -> i <> idx) in
+                Hashtbl.add_exn memo ~key:n ~data:set_node;
                 let deps = List.map deps ~f:(Option.map ~f:(convert_node memo g machine_g)) in
                 Graph.add_dependencies machine_g cmp_node deps;
                 Graph.add_dependencies machine_g set_node [ List.hd_exn deps; Some cmp_node ];
@@ -606,6 +614,7 @@ let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
         let kind = Ideal Phi in
         let node = { id = next_id (); kind; ir_node = n } in
         Graph.add_dependencies machine_g node [];
+        Hashtbl.add_exn memo ~key:n ~data:node;
         let deps =
             Graph.get_dependencies g n
             |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
@@ -617,6 +626,7 @@ let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
         let kind = Div in
         let node = { id = next_id (); kind; ir_node = n } in
         Graph.add_dependencies machine_g node [];
+        Hashtbl.add_exn memo ~key:n ~data:node;
         Graph.add_dependencies machine_g node
           (Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g)));
         node
@@ -628,12 +638,17 @@ let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
         let kind = Param i in
         let node = { id = next_id (); kind; ir_node = n } in
         Graph.add_dependencies machine_g node [];
-        let dep = Graph.get_dependency g n 0 |> Option.map ~f:(convert_node memo g machine_g) in
-        Graph.add_dependencies machine_g node [ dep ];
+        Hashtbl.add_exn memo ~key:n ~data:node;
+        let deps =
+            Graph.get_dependencies g n
+            |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
+        in
+        Graph.add_dependencies machine_g node deps;
         node
     | External name ->
         let node = { id = next_id (); kind = Ideal (External name); ir_node = n } in
         Graph.add_dependencies machine_g node [];
+        Hashtbl.add_exn memo ~key:n ~data:node;
         let deps =
             Graph.get_dependencies g n
             |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
@@ -654,6 +669,7 @@ let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
         in
         let node = { id = next_id (); kind; ir_node = n } in
         Graph.add_dependencies machine_g node [];
+        Hashtbl.add_exn memo ~key:n ~data:node;
         Graph.add_dependencies machine_g node
           (Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g)));
         node
@@ -662,6 +678,7 @@ and of_ctrl_node memo g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
     let simple kind =
         let node = { id = next_id (); kind; ir_node = n } in
         Graph.add_dependencies machine_g node [];
+        Hashtbl.add_exn memo ~key:n ~data:node;
         let deps =
             Graph.get_dependencies g n
             |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
@@ -687,6 +704,7 @@ and of_ctrl_node memo g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
             let kind = Jmp op in
             let node = { id = next_id (); kind; ir_node = n } in
             Graph.add_dependencies machine_g node [];
+            Hashtbl.add_exn memo ~key:n ~data:node;
             let deps =
                 Graph.get_dependencies g n
                 |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
@@ -701,6 +719,7 @@ and of_ctrl_node memo g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
             let kind = Jmp NEq in
             let node = { id = next_id (); kind; ir_node = n } in
             Graph.add_dependencies machine_g node [];
+            Hashtbl.add_exn memo ~key:n ~data:node;
             let deps =
                 Graph.get_dependencies g n
                 |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
@@ -710,6 +729,7 @@ and of_ctrl_node memo g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
             node)
     | Stop ->
         let node = Graph.get_stop machine_g in
+        Hashtbl.add_exn memo ~key:n ~data:node;
         let deps =
             Graph.get_dependencies g n
             |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
@@ -725,6 +745,7 @@ and of_ctrl_node memo g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
     | Function { ret = _; signature = _; idx } ->
         let node = { id = next_id (); kind = FunctionProlog idx; ir_node = n } in
         Graph.add_dependencies machine_g node [];
+        Hashtbl.add_exn memo ~key:n ~data:node;
         let deps =
             Graph.get_dependencies g n
             |> List.filter ~f:(function
@@ -745,6 +766,7 @@ and of_ctrl_node memo g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
         let kind = FunctionCall fun_idx in
         let node = { id = next_id (); kind; ir_node = n } in
         Graph.add_dependencies machine_g node [];
+        Hashtbl.add_exn memo ~key:n ~data:node;
         let deps =
             deps
             |> List.filter_map ~f:(function
@@ -763,6 +785,7 @@ and of_mem_node memo g machine_g kind (n : Node.t) =
     let simple kind =
         let node = { id = next_id (); kind; ir_node = n } in
         Graph.add_dependencies machine_g node [];
+        Hashtbl.add_exn memo ~key:n ~data:node;
         let deps =
             Graph.get_dependencies g n
             |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
@@ -785,6 +808,7 @@ and of_mem_node memo g machine_g kind (n : Node.t) =
             let offs = Graph.get_dependency g n 3 |> Option.value_exn in
             assert (Z.equal (Types.get_integer_const_exn offs.typ) Z.zero);
             let node = { id = next_id (); kind = AddrOf; ir_node = n } in
+            Hashtbl.add_exn memo ~key:n ~data:node;
             let deps =
                 [ None; Graph.get_dependency g n 2 ]
                 |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
@@ -799,6 +823,8 @@ and of_mem_node memo g machine_g kind (n : Node.t) =
         let base_addr = simple AddrOf in
         let field_addr = { id = next_id (); kind = AddImm (Z.of_int offs); ir_node = n } in
         Graph.add_dependencies machine_g field_addr [ None; Some base_addr ];
+        (* use set because the call to simple AddrOf already adds this key so we need to overwrite it *)
+        Hashtbl.set memo ~key:n ~data:field_addr;
         field_addr
     | Deref -> (
         match n.typ with
@@ -826,7 +852,7 @@ and convert_node memo g machine_g (n : Node.t) =
             | Scope _ -> assert false
             | ForwardRef _ -> assert false
         in
-        Hashtbl.add_exn memo ~key:n ~data:res;
+        assert (Hashtbl.mem memo n);
         res
 
 let find_dep machine_g n ~f =
