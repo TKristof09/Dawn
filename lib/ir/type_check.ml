@@ -63,7 +63,7 @@ let do_data_node g (n : Node.t) (k : Node.data_kind) =
                 | _ -> None)
         in
         let expected = List.init (List.length inputs) ~f:(Fun.const n.typ) in
-        expect_types n.loc ~expected ~actual
+        expect_types n.loc ~expected ~actual:inputs
     | Param _ ->
         (* Error reporting happens at FunctionCall nodes for better error location tracking *)
         None
@@ -141,59 +141,21 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
         let offset = Graph.get_dependency g n 3 |> Option.value_exn in
         let value = Graph.get_dependency g n 4 |> Option.value_exn in
 
-        let pointed_to_type =
-            match ptr.typ with
-            | Ptr p -> p
-            | Struct _ -> ptr.typ
-            | _ -> assert false
-        in
-        let field_type = Types.get_field_type pointed_to_type name in
-        match field_type with
-        | None ->
-            if String.equal name "[]" then
-              Some
-                [
-                  ( n.loc,
-                    Printf.sprintf "%s is not an array, can't index into it"
-                      (Types.human_readable pointed_to_type) );
-                ]
-            else
-              Some
-                [
-                  ( n.loc,
-                    Printf.sprintf "Field %s is not part of type %s" name
-                      (Types.human_readable pointed_to_type) );
-                ]
-        | Some field_type ->
-            let expected = [ field_type; Types.i64 ] in
-            expect_types n.loc ~expected ~actual:[ value.typ; offset.typ ])
-    | Load name -> (
-        let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
-        let offset = Graph.get_dependency g n 3 |> Option.value_exn in
         match ptr.typ with
-        | (Struct _ as pointed_to_type)
-        | Ptr pointed_to_type ->
-            let field_type = Types.get_field_type pointed_to_type name in
-            if (not (String.is_empty name)) && Option.is_none field_type then
-              if String.equal name "[]" then
-                Some
-                  [
-                    ( n.loc,
-                      Printf.sprintf "%s is not an array, can't index into it"
-                        (Types.human_readable pointed_to_type) );
-                  ]
-              else
-                Some
-                  [
-                    ( n.loc,
-                      Printf.sprintf "Field %s is not part of type %s" name
-                        (Types.human_readable pointed_to_type) );
-                  ]
-            else
-              expect_types n.loc ~expected:[ Types.i64 ] ~actual:[ offset.typ ]
+        | Ptr p ->
+            let expected = [ p; Types.i64 ] in
+            expect_types n.loc ~expected ~actual:[ value.typ; offset.typ ]
         | _ ->
             Some
-              [ (n.loc, Printf.sprintf "Expected pointer, got %s" (Types.human_readable ptr.typ)) ])
+              [
+                ( n.loc,
+                  Printf.sprintf "Memory store expected pointer got %s"
+                    (Types.human_readable ptr.typ) );
+              ])
+    | Load name ->
+        let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
+        let offset = Graph.get_dependency g n 3 |> Option.value_exn in
+        expect_types n.loc ~expected:[ Types.Ptr ALL; Types.i64 ] ~actual:[ ptr.typ; offset.typ ]
     | AddrOf -> None
     | AddrOfField field ->
         let input = Graph.get_dependency g n 1 |> Option.value_exn in

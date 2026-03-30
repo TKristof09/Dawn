@@ -246,11 +246,7 @@ let do_mem_node linker extra_node_deps min_integer_types g n (m : Node.mem_kind)
             (*             (~new_type:(List.nth_exn (arr.values :> Types.t list) idx), ~extra_deps:[]) *)
             (*         | _ -> (~new_type:arr.element_type, ~extra_deps:[])) *)
             (*     | Some field_type -> (~new_type:field_type, ~extra_deps:[])) *)
-            | Ptr p ->
-                [%log.warn "hello %a" Types.pp p];
-                let offs = Graph.get_dependency g n 3 |> Option.value_exn in
-                assert (Z.equal (Types.get_integer_const_exn offs.typ) Z.zero);
-                (~new_type:p, ~extra_deps:[])
+            | Ptr p -> (~new_type:p, ~extra_deps:[])
             | ANY -> (~new_type:ANY, ~extra_deps:[])
             | ALL -> (~new_type:ALL, ~extra_deps:[])
             | _ -> assert false)

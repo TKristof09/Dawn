@@ -94,17 +94,12 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
             let n = Mem_nodes.create_new ?parent_fun g loc ~ctrl ~mem ~size arr_type in
             let mem = Proj_node.create ?parent_fun g loc n 0 in
             let ptr = Proj_node.create ?parent_fun g loc n 1 in
-            ptr.min_typ <- Some (Ptr arr_type);
-            let offset =
-                Types.get_offset arr_type "len"
-                |> Option.value_exn
-                |> Z.of_int
-                |> Types.make_int_const ~fixed_width:64
-                |> Const_node.create_from_type ?parent_fun g loc
-            in
-            offset.min_typ <- Some Types.i64;
+            ptr.min_typ <- Some arr_type;
+            let len_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc ptr "len" in
+            let offset = Const_node.create_int ?parent_fun g loc 0 in
             let store =
-                Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr ~offset "len" ~value:count
+                Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr:len_ptr ~offset "len"
+                  ~value:count
             in
             Scope_node.define g scope name ptr false;
             Scope_node.set_mem g scope store
@@ -148,16 +143,14 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
             let index =
                 do_expr g idx_expr scope parent_fun cur_ret_node linker |> Option.value_exn
             in
-            let base = Types.get_offset ptr.typ "[]" |> Option.value ~default:(-1) in
+            let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc ptr "[]" in
             let el_typ = Types.get_field_type ptr.typ "[]" |> Option.value ~default:ALL in
             let el_size = Const_node.create_int ?parent_fun g loc (Types.get_size el_typ) in
-            let offset =
-                Arithmetic_nodes.create_add ?parent_fun g loc
-                  (Const_node.create_int ?parent_fun g loc base)
-                  (Arithmetic_nodes.create_mul ?parent_fun g loc index el_size)
-            in
+            let offset = Arithmetic_nodes.create_mul ?parent_fun g loc index el_size in
             offset.min_typ <- Some Types.i64;
-            let load = Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr "[]" ~offset el_typ in
+            let load =
+                Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr "[]" ~offset el_typ
+            in
             load.min_typ <- Some el_typ;
             Some load)
     | Ast.VarAssign (name, expr) ->
@@ -169,17 +162,15 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
         let value = do_expr g value scope parent_fun cur_ret_node linker |> Option.value_exn in
         let ptr = Scope_node.get g scope name in
         let mem = Scope_node.get_mem g scope in
-        let base = Types.get_offset ptr.typ "[]" |> Option.value ~default:(-1) in
+        let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc ptr "[]" in
         let el_typ = Types.get_field_type ptr.typ "[]" |> Option.value_exn in
         let el_size = Const_node.create_int ?parent_fun g loc (Types.get_size el_typ) in
-        let offset =
-            Arithmetic_nodes.create_add ?parent_fun g loc
-              (Const_node.create_int ?parent_fun g loc base)
-              (Arithmetic_nodes.create_mul ?parent_fun g loc index el_size)
-        in
+        let offset = Arithmetic_nodes.create_mul ?parent_fun g loc index el_size in
         offset.min_typ <- Some Types.i64;
         value.min_typ <- Some el_typ;
-        let store_mem = Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr ~offset "[]" ~value in
+        let store_mem =
+            Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr:field_ptr ~offset "[]" ~value
+        in
         Scope_node.set_mem g scope store_mem;
         Some value
     | Ast.Add (lhs, rhs) -> binop lhs rhs Arithmetic_nodes.create_add
@@ -389,7 +380,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
         (match fun_node.kind with
         | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx })
         | _ -> assert false);
-        let fun_ptr = Const_node.create_fun_ptr ~parent_fun:fun_idx g loc fun_node fun_idx in
+        let fun_ptr = Const_node.create_fun_ptr ?parent_fun g loc fun_node fun_idx in
         (* TODO the extern node should probably also pretend to use the MEMORY
            since it could store stuff into the passed in ptr when return value
            doesnt fit into a single register *)
