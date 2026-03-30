@@ -139,9 +139,19 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
         | Int i ->
             let reg = Hashtbl.find_exn reg_assoc n in
             let op_str = asm_of_op n.kind in
-            Printf.sprintf "\t%s %s, %s" op_str
-              (asm_of_loc reg (Types.get_size n.ir_node.typ))
-              (Z.to_string i)
+            (* NOTE: Use at least 32bit reg as the smaller ones don't zero extend the upper bits. 
+
+               Also, based on my research: smaller width movs such as mov al, N
+               are a partial register write so it can introduce false
+               depedencies in the CPU execution since the register's higher
+               bits depend on the earlier value. 32bit or 64bit mov sets the
+               entire register value so the new value is independent of
+               previous values so it can actually be a bit faster. Only
+               downside is slightly larger instruction size.
+               https://stackoverflow.com/questions/53562739/if-i-have-an-8-bit-value-is-there-any-advantage-to-using-an-8-bit-register-inst
+               *)
+            let reg_size = max 4 (Types.get_size n.ir_node.typ) in
+            Printf.sprintf "\t%s %s, %s" op_str (asm_of_loc reg reg_size) (Z.to_string i)
         | Ptr ->
             let reg = Hashtbl.find_exn reg_assoc n in
             let op_str = asm_of_op n.kind in
