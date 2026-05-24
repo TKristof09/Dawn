@@ -420,9 +420,13 @@ end = struct
               match n.kind with
               (* prefer callee save for risky pick as they cover big area (entire function) *)
               | Machine_node.CalleeSave _ -> 100000 - 1
-              | Mov when Set.length r.nodes = 1 ->
-                  (* don't try to split splits *)
-                  -1000
+              | Mov when Set.length r.nodes = 1 && Registers.Mask.mem r.reg_mask (Stack (-1)) ->
+                  (* Choose movs first as these are created when spilling an
+                     lrg and these are the ones that we can place on the stack
+                     too. This only applies to the spill part (which has the
+                     stack slot in the lrg's reg mask) and not to the reload
+                     which has to go in some more constrained register *)
+                  100_000
               | _ ->
                   (* prefer to split ranges that have a big area so they free
                      up stuff for longer (we approximate big area by large
@@ -438,7 +442,7 @@ end = struct
             if not (Machine_node.equal cfg_def cfg_use) then
               (* single def cheaply clonable that is not close to its use is good to pick as it would just get cloned close to its use *)
               (* TODO: we shouldnt only check its first dependant *)
-              100000
+              100_000
             else
               base_score
           else
@@ -767,178 +771,15 @@ let split_self_conflict g program lrg (self_conflicting_nodes : NodeSet.t) =
             insert_before g program lrg ~node_to_spill:dep ~before_this:n
         | _ -> program)
 
-let split_empty_mask g program (lrg : Range.t) =
-    let single_reg_defs =
-        Set.filter lrg.nodes ~f:(fun n ->
-            let num_regs =
-                match Machine_node.get_out_reg_mask g n 0 with
-                | Some mask -> Registers.Mask.length mask
-                | None -> 0
-            in
-            num_regs = 1)
-    in
-    let single_reg_def_count = Set.length single_reg_defs in
-    let single_reg_use_count = Set.length lrg.single_reg_uses in
-    if
-      single_reg_def_count <= 1
-      && single_reg_use_count <= 1
-      && single_reg_def_count + single_reg_use_count > 0
-    then
-      let program =
-          if Set.length single_reg_defs = 1 then
-            duplicate_after g program lrg (Set.choose_exn single_reg_defs)
-          else
-            program
-      in
-      let program =
-          match Set.choose lrg.single_reg_uses with
-          | Some use ->
-              let def =
-                  Graph.get_dependencies g use
-                  |> List.find_exn ~f:(function
-                    | None -> false
-                    | Some def -> Set.mem lrg.nodes def)
-                  |> Option.value_exn
-              in
-              insert_before g program lrg ~before_this:use ~node_to_spill:def
-          | _ -> program
-      in
-      program
-    else if Set.length lrg.nodes = 1 && single_reg_def_count <= 1 && single_reg_use_count >= 2 then
-      let program =
-          let def = Set.choose_exn lrg.nodes in
-          (* TODO: group uses into register classes instead of splitting before each use *)
-          List.fold (Graph.get_dependants g def) ~init:program ~f:(fun program use ->
-              insert_before g program lrg ~before_this:use ~node_to_spill:def)
-      in
-      program
-    else
-      program
-
-let ldepth g (n : Machine_node.t) (cfg : Machine_node.t) =
-    ignore n;
-    let d = loop_depth g cfg in
-    d
-
-let split_by_loop g program (lrg : Range.t) =
-    let min_d, max_d =
-        Set.fold lrg.nodes ~init:(Int.max_value, Int.min_value) ~f:(fun (min_d, max_d) def ->
-            let d_def = ldepth g def (Graph.get_dependency g def 0 |> Option.value_exn) in
-            let min_phi, max_phi =
-                if Poly.equal def.kind (Ideal Phi) then
-                  let region = Graph.get_dependency g def 0 |> Option.value_exn in
-                  let cfgs =
-                      Graph.get_dependencies g region
-                      |> List.tl_exn
-                      |> List.map ~f:(fun o -> Option.value_exn o)
-                  in
-                  let inputs =
-                      Graph.get_dependencies g def
-                      |> List.tl_exn
-                      |> List.map ~f:(fun o -> Option.value_exn o)
-                  in
-                  List.zip_exn cfgs inputs
-                  |> List.fold ~init:(Int.max_value, Int.min_value)
-                       ~f:(fun (min_d, max_d) (cfg, input) ->
-                         let d = ldepth g input cfg in
-                         (min d min_d, max d max_d))
-                else
-                  (Int.max_value, Int.min_value)
-            in
-            let min_use, max_use =
-                List.fold (Graph.get_dependants g def) ~init:(Int.max_value, Int.min_value)
-                  ~f:(fun (min_d, max_d) use ->
-                    match use.kind with
-                    | Ideal Phi ->
-                        (* Phi nodes are already accounted for outside this
-                           loop since if a phi node is connected to the lrg as
-                           a use then it is also in the lrg as a def since phi
-                           nodes merge lrgs of their inputs and themself. See
-                           build_live_ranges *)
-                        (min_d, max_d)
-                    | _ ->
-                        let d = ldepth g use (Graph.get_dependency g use 0 |> Option.value_exn) in
-                        (min d min_d, max d max_d))
-            in
-            ( min d_def (min min_phi (min min_use min_d)),
-              max d_def (max max_phi (max max_use max_d)) ))
-    in
-    let all =
-        Set.to_list lrg.nodes
-        |> List.map ~f:(fun n -> NodeSet.of_list (n :: Graph.get_dependants g n))
-        |> NodeSet.union_list
-    in
-    Set.fold all ~init:program ~f:(fun program n ->
-        let program =
-            if Set.mem lrg.nodes n then
-              let cfg = Graph.get_dependency g n 0 |> Option.value_exn in
-              let single_user_split_adjacent =
-                  match Graph.get_dependants g n with
-                  | [ x ] when Poly.equal x.kind Mov -> true
-                  | _ -> false
-              in
-              let program =
-                  if
-                    (min_d = max_d || loop_depth g cfg <= min_d || Poly.equal n.kind (Ideal Phi))
-                    && (not (Machine_node.is_cheap_to_clone n))
-                    && not (false && single_user_split_adjacent)
-                  then
-                    duplicate_after g program lrg n
-                  else
-                    program
-              in
-              program
-            else
-              program
-        in
-        match n.kind with
-        | Ideal Phi ->
-            let cfg = Graph.get_dependency g n 0 |> Option.value_exn in
-            let region = Graph.get_dependency g n 0 |> Option.value_exn in
-            let cfgs =
-                Graph.get_dependencies g region
-                |> List.tl_exn
-                |> List.map ~f:(fun o -> Option.value_exn o)
-            in
-            let inputs =
-                Graph.get_dependencies g n
-                |> List.tl_exn
-                |> List.map ~f:(fun o -> Option.value_exn o)
-            in
-            List.zip_exn cfgs inputs
-            |> List.foldi ~init:program ~f:(fun i program (cfg_in, input) ->
-                if
-                  (not (Poly.equal input.kind Mov))
-                  && not
-                       (Poly.equal cfg.kind (Ideal Loop)
-                       && i = 1
-                       && Poly.equal input.kind (Ideal Phi)
-                       && Machine_node.equal cfg_in cfg)
-                then
-                  insert_before g program lrg ~before_this:n ~node_to_spill:input
-                else
-                  program)
-        | _ ->
-            List.filter_map (Graph.get_dependencies g n) ~f:(function
-              | None -> None
-              | Some n -> if Set.mem lrg.nodes n then Some n else None)
-            |> List.fold ~init:program ~f:(fun program use ->
-                let cfg = Graph.get_dependency g n 0 |> Option.value_exn in
-                if min_d = max_d || Machine_node.is_cheap_to_clone use || loop_depth g cfg <= min_d
-                then
-                  insert_before ~skip:false g program lrg ~before_this:n ~node_to_spill:use
-                else
-                  program))
-
 let split g program (lrg : Range.t) =
-    (* TODO: actually calculate this *)
-    if
-      Registers.Mask.is_empty lrg.reg_mask
-      && (Set.length lrg.nodes = 1 || Set.length lrg.single_reg_uses = 1)
-    then
-      split_empty_mask g program lrg
-    else
-      split_by_loop g program lrg
+    Set.fold lrg.nodes ~init:program ~f:(fun prog n ->
+        (* create reloads before every use *)
+        let prog =
+            List.fold (Graph.get_dependants g n) ~init:prog ~f:(fun prog use ->
+                insert_before g prog lrg ~before_this:use ~node_to_spill:n)
+        in
+        (* create spill, this makes every reload that we just created use the spill rather than the original n *)
+        duplicate_after g prog lrg n)
 
 let cleanup_mov g n reg_assign =
     let dep = Graph.get_dependency g n 1 |> Option.value_exn in
@@ -1002,5 +843,6 @@ let allocate g program =
     let reg_assign = Hashtbl.create (module Machine_node) in
     Hashtbl.iteri lrg_to_reg ~f:(fun ~key:range ~data:reg ->
         Set.iter range.nodes ~f:(fun n -> Hashtbl.set reg_assign ~key:n ~data:reg));
+    [%log.debug "\n%s\n" ([%derive.show: Machine_node.t list] program)];
     let program = post_alloc_cleanup g program reg_assign in
     (program, reg_assign)
