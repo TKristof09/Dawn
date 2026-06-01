@@ -96,10 +96,8 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
             let ptr = Proj_node.create ?parent_fun g loc n 1 in
             ptr.min_typ <- Some arr_type;
             let len_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc ptr "len" in
-            let offset = Const_node.create_int ?parent_fun g loc 0 in
             let store =
-                Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr:len_ptr ~offset "len"
-                  ~value:count
+                Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr:len_ptr "len" ~value:count
             in
             Scope_node.define g scope name ptr false;
             Scope_node.set_mem g scope store
@@ -143,14 +141,13 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
             let index =
                 do_expr g idx_expr scope parent_fun cur_ret_node linker |> Option.value_exn
             in
-            let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc ptr "[]" in
-            let el_typ = Types.get_field_type ptr.typ "[]" |> Option.value ~default:ALL in
-            let el_size = Const_node.create_int ?parent_fun g loc (Types.get_size el_typ) in
-            let offset = Arithmetic_nodes.create_mul ?parent_fun g loc index el_size in
-            offset.min_typ <- Some Types.i64;
-            let load =
-                Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr "[]" ~offset el_typ
+            let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc ptr ~index "[]" in
+            let el_typ =
+                match field_ptr.typ with
+                | Ptr p -> p
+                | _ -> assert false
             in
+            let load = Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr "[]" el_typ in
             load.min_typ <- Some el_typ;
             Some load)
     | Ast.VarAssign (name, expr) ->
@@ -162,15 +159,14 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
         let value = do_expr g value scope parent_fun cur_ret_node linker |> Option.value_exn in
         let ptr = Scope_node.get g scope name in
         let mem = Scope_node.get_mem g scope in
-        let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc ptr "[]" in
-        let el_typ = Types.get_field_type ptr.typ "[]" |> Option.value_exn in
-        let el_size = Const_node.create_int ?parent_fun g loc (Types.get_size el_typ) in
-        let offset = Arithmetic_nodes.create_mul ?parent_fun g loc index el_size in
-        offset.min_typ <- Some Types.i64;
-        value.min_typ <- Some el_typ;
-        let store_mem =
-            Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr:field_ptr ~offset "[]" ~value
+        let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc ptr ~index "[]" in
+        let el_typ =
+            match field_ptr.typ with
+            | Ptr p -> p
+            | _ -> assert false
         in
+        value.min_typ <- Some el_typ;
+        let store_mem = Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr:field_ptr "[]" ~value in
         Scope_node.set_mem g scope store_mem;
         Some value
     | Ast.Add (lhs, rhs) -> binop lhs rhs Arithmetic_nodes.create_add
@@ -441,24 +437,14 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
                       in
                       let field_type = Types.get_field_type typ name |> Option.value_exn in
                       value.min_typ <- Some field_type;
+                      let dst = Mem_nodes.create_addr_of_field ?parent_fun g loc struct_node name in
                       let mem = Scope_node.get_mem g scope in
                       let mem =
                           match field_type with
                           | Struct _ ->
-                              let dst =
-                                  Mem_nodes.create_addr_of_field ?parent_fun g loc struct_node name
-                              in
                               let src = Mem_nodes.create_addr_of ?parent_fun g loc value in
                               Mem_nodes.create_copy ?parent_fun g loc ~mem ~src ~dst
-                          | _ ->
-                              let offset =
-                                  Types.get_offset typ name
-                                  |> Option.value_exn
-                                  |> Const_node.create_int ?parent_fun g loc
-                              in
-                              offset.min_typ <- Some Types.i64;
-                              Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr:struct_node ~offset
-                                name ~value
+                          | _ -> Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr:dst name ~value
                       in
                       Scope_node.set_mem g scope mem;
                       Set.remove remaining_field_names name)
@@ -470,13 +456,11 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
         Some struct_node
     | FieldAccess (e, field_name) ->
         let base = do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn in
-        let offset = Const_node.create_int ?parent_fun g loc 0 in
-        offset.min_typ <- Some Types.i64;
         let mem = Scope_node.get_mem g scope in
         let field_typ = Types.get_field_type base.typ field_name |> Option.value ~default:ALL in
         let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc base field_name in
         let load =
-            Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr "" ~offset field_typ
+            Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr field_name field_typ
         in
         load.min_typ <- Some field_typ;
         Some load

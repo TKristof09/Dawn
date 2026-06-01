@@ -133,17 +133,12 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
             in
             let components =
                 List.map descriptors ~f:(fun desc ->
-                    (* offset 0 because using addr of field already *)
-                    let offset =
-                        Types.make_int_const ~fixed_width:64 Z.zero
-                        |> Const_node.create_from_type ?parent_fun g arg.loc
-                    in
                     let field_ptr =
                         Mem_nodes.create_addr_of_field ?parent_fun g arg.loc arg desc.field_name
                     in
                     let field_val =
                         Mem_nodes.create_load ?parent_fun g arg.loc ~mem ~ptr:field_ptr
-                          desc.field_name ~offset arg.typ
+                          desc.field_name arg.typ
                     in
                     field_val.typ <-
                       Types.get_field_type arg.typ desc.field_name |> Option.value_exn;
@@ -248,13 +243,12 @@ let patch_up g ~in_mem ~fun_node (param : Node.t) decomp =
                 else
                   input
             in
-            let offset = Const_node.create_int ?parent_fun:param.parent_fun g param.loc 0 in
             let field_ptr =
                 Mem_nodes.create_addr_of_field ?parent_fun:param.parent_fun g param.loc ptr
                   desc.field_name
             in
             Mem_nodes.create_store ?parent_fun:param.parent_fun g param.loc ~mem ~ptr:field_ptr
-              ~offset desc.field_name ~value)
+              desc.field_name ~value)
     in
 
     Graph.get_dependants g param

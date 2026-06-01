@@ -264,7 +264,11 @@ let do_mem_node linker extra_node_deps min_integer_types g n (m : Node.mem_kind)
             match input.typ with
             | Struct _ ->
                 let t = Types.get_field_type input.typ field |> Option.value_exn in
-                (~new_type:(Ptr t), ~extra_deps:[])
+                if Graph.get_dependency g n 2 |> Option.is_some && Types.is_a t (Array All) then
+                  let t = Types.get_array_element_type t in
+                  (~new_type:(Ptr t), ~extra_deps:[])
+                else
+                  (~new_type:(Ptr t), ~extra_deps:[])
             | ANY -> (~new_type:(Ptr ANY), ~extra_deps:[])
             | _ -> (~new_type:(Ptr ALL), ~extra_deps:[]))
     | Deref ->

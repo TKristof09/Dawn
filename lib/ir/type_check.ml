@@ -138,13 +138,12 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
           Some [ (n.loc, Printf.sprintf "Expected integer got %s" (Types.human_readable size.typ)) ]
     | Store name -> (
         let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
-        let offset = Graph.get_dependency g n 3 |> Option.value_exn in
-        let value = Graph.get_dependency g n 4 |> Option.value_exn in
+        let value = Graph.get_dependency g n 3 |> Option.value_exn in
 
         match ptr.typ with
         | Ptr p ->
-            let expected = [ p; Types.i64 ] in
-            expect_types n.loc ~expected ~actual:[ value.typ; offset.typ ]
+            let expected = [ p ] in
+            expect_types n.loc ~expected ~actual:[ value.typ ]
         | _ ->
             Some
               [
@@ -154,22 +153,28 @@ let do_mem_node g (n : Node.t) (k : Node.mem_kind) =
               ])
     | Load name ->
         let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
-        let offset = Graph.get_dependency g n 3 |> Option.value_exn in
-        expect_types n.loc ~expected:[ Types.Ptr ALL; Types.i64 ] ~actual:[ ptr.typ; offset.typ ]
+        expect_types n.loc ~expected:[ Types.Ptr ALL ] ~actual:[ ptr.typ ]
     | AddrOf -> None
     | AddrOfField field ->
         let input = Graph.get_dependency g n 1 |> Option.value_exn in
         let type_errors = expect_types n.loc ~expected:[ Struct All ] ~actual:[ input.typ ] in
+        let field_type = Types.get_field_type input.typ field in
         if Option.is_none type_errors then
-          if Types.get_field_type input.typ field |> Option.is_none then
-            Some
-              [
-                ( n.loc,
-                  Printf.sprintf "Field %s not part of type %s" field
-                    (Types.human_readable input.typ) );
-              ]
-          else
-            None
+          match
+            field_type
+          with
+          | None ->
+              Some
+                [
+                  ( n.loc,
+                    Printf.sprintf "Field %s not part of type %s" field
+                      (Types.human_readable input.typ) );
+                ]
+          | Some t ->
+              if Graph.get_dependency g n 2 |> Option.is_some && not (Types.is_a t (Array All)) then
+                Some [ (n.loc, Printf.sprintf "Field %s is not indexable" field) ]
+              else
+                None
         else
           type_errors
     | Deref ->

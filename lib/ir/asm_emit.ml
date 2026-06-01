@@ -390,27 +390,21 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
               (asm_of_loc size_reg (Types.get_size size.ir_node.typ))
               (asm_of_loc ptr_reg 8)
         | Store ->
-            let value = Graph.get_dependency g n 4 |> Option.value_exn in
+            let value = Graph.get_dependency g n 3 |> Option.value_exn in
             let reg = Hashtbl.find_exn reg_assoc value in
             let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
             let ptr_reg = Hashtbl.find_exn reg_assoc ptr in
-            let offset = Graph.get_dependency g n 3 |> Option.value_exn in
-            let offset_reg = Hashtbl.find_exn reg_assoc offset in
             let op_str = asm_of_op n.kind in
-            Printf.sprintf "\t%s [%s + %s], %s" op_str (asm_of_loc ptr_reg 8)
-              (asm_of_loc offset_reg (Types.get_size offset.ir_node.typ))
+            Printf.sprintf "\t%s [%s], %s" op_str (asm_of_loc ptr_reg 8)
               (asm_of_loc reg (Types.get_size value.ir_node.typ))
         | Load ->
             let reg = Hashtbl.find_exn reg_assoc n in
             let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
-            let offset = Graph.get_dependency g n 3 |> Option.value_exn in
             let ptr_reg = Hashtbl.find_exn reg_assoc ptr in
-            let offset_reg = Hashtbl.find_exn reg_assoc offset in
             let output_size = Types.get_size n.ir_node.typ in
             let s =
-                Printf.sprintf "\t%s %s, [%s + %s]" (asm_of_op n.kind) (asm_of_loc reg output_size)
+                Printf.sprintf "\t%s %s, [%s]" (asm_of_op n.kind) (asm_of_loc reg output_size)
                   (asm_of_loc ptr_reg 8)
-                  (asm_of_loc offset_reg (Types.get_size offset.ir_node.typ))
             in
             s
         | RepMov num ->

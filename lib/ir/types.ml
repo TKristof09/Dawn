@@ -43,10 +43,7 @@ let sexp_of_integer { min; max; num_widens; fixed_width } =
 
 let equal_integer { min; max; num_widens; fixed_width }
     { min = min'; max = max'; num_widens = num_widens'; fixed_width = fixed_width' } =
-    Z.equal min min'
-    && Z.equal max max'
-    && num_widens = num_widens'
-    && Option.equal Int.equal fixed_width fixed_width'
+    Z.equal min min' && Z.equal max max' && Option.equal Int.equal fixed_width fixed_width'
 
 type fun_ptr = {
     params : t list;
@@ -63,9 +60,11 @@ and struct_type = {
     fields : (string * t) list;
   }
 
-and const_array = {
+and arr = {
+    (* Invariant Array.for_all values ~f:(fun v -> is_a v element_type) should always hold *)
+    (* TODO: since we want the invariant to hold we should make this type abstract from outside *)
     element_type : t;
-    values : t list;
+    values : t array;
   }
 
 and t =
@@ -76,18 +75,125 @@ and t =
     | FunPtr of fun_ptr sub_lattice
     | Ptr of t
     | Struct of struct_type sub_lattice
-    | ConstArray of const_array sub_lattice
+    | Array of arr sub_lattice
+    | ConstArray of arr sub_lattice
     | Type of t sub_lattice
     | Void
     | Memory
     | Control
     | DeadControl
     | ALL
-[@@deriving show { with_path = false }, sexp_of, equal]
+[@@deriving show { with_path = false }, sexp_of]
+
+let get_top = function
+    | ANY -> ANY
+    | Integer _ -> Integer Any
+    | Bool _ -> Bool Any
+    | Tuple _ -> Tuple Any
+    | FunPtr _ -> FunPtr Any
+    | Ptr _ -> Ptr ANY
+    | Struct _ -> Struct Any
+    | ConstArray _ -> ConstArray Any
+    | Array _ -> Array Any
+    | Type _ -> Type Any
+    | Void -> Void
+    | Memory -> Memory
+    | Control -> DeadControl
+    | DeadControl -> DeadControl
+    | ALL -> ANY
+
+let get_bottom = function
+    | ANY -> ALL
+    | Integer _ -> Integer All
+    | Bool _ -> Bool All
+    | Tuple _ -> Tuple All
+    | FunPtr _ -> FunPtr All
+    | Ptr _ -> Ptr ALL
+    | Struct _ -> Struct All
+    | ConstArray _ -> ConstArray All
+    | Array _ -> Array All
+    | Type _ -> Type All
+    | Void -> Void
+    | Memory -> Memory
+    | Control -> DeadControl
+    | DeadControl -> DeadControl
+    | ALL -> ALL
+
+let rec equal a b =
+    let equal_fun_ptr a b =
+        let equal_indices a b =
+            match (a, b) with
+            | `Include s, `Include s' -> Int.Set.equal s s'
+            | `Exclude s, `Exclude s' -> Int.Set.equal s s'
+            | _, _ -> false
+        in
+        equal a.ret b.ret
+        && List.equal equal a.params b.params
+        && equal_indices a.fun_indices b.fun_indices
+    in
+    let equal_struct a b =
+        String.equal a.name b.name
+        && List.equal (fun (n, t) (n', t') -> String.equal n n' && equal t t') a.fields b.fields
+    in
+    let equal_arr a b =
+        let shorter =
+            if Array.length a.values < Array.length b.values then a.values else b.values
+        in
+        let longer = if Array.length a.values < Array.length b.values then b.values else a.values in
+        equal a.element_type b.element_type
+        && Array.foldi longer ~init:true ~f:(fun i acc x ->
+            if i < Array.length shorter then
+              acc && equal shorter.(i) x
+            else
+              acc && equal x (get_bottom x))
+    in
+    match (a, b) with
+    | ANY, ANY -> true
+    | ANY, _ -> false
+    | _, ANY -> false
+    | Integer a, Integer b -> equal_sub_lattice equal_integer a b
+    | Integer _, _ -> false
+    | _, Integer _ -> false
+    | Bool a, Bool b -> equal_sub_lattice Bool.equal a b
+    | Bool _, _ -> false
+    | _, Bool _ -> false
+    | Tuple a, Tuple b -> equal_sub_lattice (List.equal equal) a b
+    | Tuple _, _ -> false
+    | _, Tuple _ -> false
+    | FunPtr a, FunPtr b -> equal_sub_lattice equal_fun_ptr a b
+    | FunPtr _, _ -> false
+    | _, FunPtr _ -> false
+    | Ptr a, Ptr b -> equal a b
+    | Ptr _, _ -> false
+    | _, Ptr _ -> false
+    | Struct a, Struct b -> equal_sub_lattice equal_struct a b
+    | Struct _, _ -> false
+    | _, Struct _ -> false
+    | Array a, Array b -> equal_sub_lattice equal_arr a b
+    | Array _, _ -> false
+    | _, Array _ -> false
+    | ConstArray a, ConstArray b -> equal_sub_lattice equal_arr a b
+    | ConstArray _, _ -> false
+    | _, ConstArray _ -> false
+    | Type a, Type b -> equal_sub_lattice equal a b
+    | Type _, _ -> false
+    | _, Type _ -> false
+    | Void, Void -> true
+    | Void, _ -> false
+    | _, Void -> false
+    | Memory, Memory -> true
+    | Memory, _ -> false
+    | _, Memory -> false
+    | Control, Control -> true
+    | Control, _ -> false
+    | _, Control -> false
+    | DeadControl, DeadControl -> true
+    | DeadControl, _ -> false
+    | _, DeadControl -> false
+    | ALL, ALL -> true
 
 let rec human_readable t =
     let human_readable_int { min; max; num_widens; fixed_width } =
-        (* Format.asprintf "%a" pp_integer { min; max; num_widens; fixed_width } *)
         let bits =
             match fixed_width with
             | Some w -> w
@@ -99,7 +205,7 @@ let rec human_readable t =
                   let bits_pos = if Z.lt max Z.zero then 0 else Z.numbits (Z.add max Z.one) in
                   1 + Int.max bits_neg bits_pos
         in
-        Printf.sprintf "i%d" (Int.max 1 bits)
+        Printf.sprintf "%c%d" (if Z.geq min Z.zero then 'u' else 'i') (Int.max 1 bits)
     in
     match t with
     | Integer (Value i) -> human_readable_int i
@@ -117,25 +223,62 @@ let rec human_readable t =
     | Type Any
     | Type All ->
         "type"
+    | Array (Value { element_type; values = _ })
+    | ConstArray (Value { element_type; values = _ }) ->
+        human_readable element_type ^ " array"
     | ANY -> "unknown type"
     | ALL -> "invalid type"
     | _ -> failwithf "No human readable label for %s" (show t) ()
 
-let get_top = function
-    | ANY -> ANY
-    | Integer _ -> Integer Any
-    | Bool _ -> Bool Any
-    | Tuple _ -> Tuple Any
-    | FunPtr _ -> FunPtr Any
-    | Ptr _ -> Ptr ANY
-    | Struct _ -> Struct Any
-    | ConstArray _ -> ConstArray Any
-    | Type _ -> Type Any
-    | Void -> Void
-    | Memory -> Memory
-    | Control -> DeadControl
-    | DeadControl -> DeadControl
-    | ALL -> ANY
+let rec is_constant t =
+    let is_constant_lattice = function
+        | Any
+        | All ->
+            false
+        | Value _ -> true
+    in
+    match t with
+    | ANY
+    | ALL
+    | Control
+    | DeadControl
+    | Memory ->
+        false
+    | Integer (Value { min; max; num_widens = _ }) -> Z.equal min max
+    | Integer _ -> false
+    | Bool x -> is_constant_lattice x
+    | Tuple x -> is_constant_lattice x
+    | FunPtr x -> (
+        match x with
+        | Any
+        | All ->
+            false
+        | Value f -> is_constant f.ret && List.for_all f.params ~f:(fun t -> is_constant t))
+    | Struct x -> (
+        match x with
+        | Any
+        | All ->
+            false
+        | Value s -> List.for_all s.fields ~f:(fun (_, t) -> is_constant t))
+    | Ptr p -> is_constant p
+    | Array a
+    | ConstArray a -> (
+        match a with
+        | Any
+        | All ->
+            false
+        | Value { element_type; values } ->
+            is_constant element_type && Array.for_all values ~f:is_constant)
+    | Type x -> is_constant_lattice x
+    | Void -> true
+
+let get_integer_const_exn = function
+    | Integer (Value { min; max; num_widens = _ }) ->
+        if Z.equal min max then
+          min
+        else
+          raise (Invalid_argument "Not an integer constant")
+    | _ -> raise (Invalid_argument "Not an integer constant")
 
 let int64_min = Z.neg (Z.pow (Z.of_int 2) 63)
 let uint64_max = Z.sub (Z.pow (Z.of_int 2) 64) Z.one
@@ -219,6 +362,7 @@ let make_struct name fields =
         | Bool _
         | Ptr _
         | ConstArray _
+        | Array _
         | FunPtr _
         | Struct _ ->
             true
@@ -230,10 +374,11 @@ let make_struct name fields =
 let make_array_inner name element_type len_type =
     let is_valid_element_type =
         match element_type with
-        | Integer _
-        | Bool _
-        | Ptr _
+        | Array _
         | ConstArray _ ->
+            true
+        | Ptr _ ->
+            (* This is for slices, would probably make sense to put these in a separate function though  *)
             true
         | _ -> false
     in
@@ -258,14 +403,21 @@ let make_array element_type len_type =
             | _ -> failwith "TODO")
         | _ -> assert false
     in
+    let values =
+        if is_constant len_type then
+          Array.create ~len:(get_integer_const_exn len_type |> Z.to_int) (get_top element_type)
+        else
+          [||]
+    in
+    let element_type = Array (Value { element_type; values }) in
     make_array_inner name element_type len_type
 
 let make_string s =
     let len = String.length s |> Z.of_int in
     let values =
         s
-        |> String.to_list
-        |> List.map ~f:(fun c -> make_int_const ~fixed_width:8 (Char.to_int c |> Z.of_int))
+        |> String.to_array
+        |> Array.map ~f:(fun c -> make_int_const ~fixed_width:8 (Char.to_int c |> Z.of_int))
     in
     let typ = ConstArray (Value { element_type = u8; values }) in
     make_array_inner "str" (Ptr typ) (make_int_const ~fixed_width:64 len)
@@ -288,9 +440,10 @@ let rec of_ast_type (ast_type : Ast.var_type) : t =
         | None -> (
             match s with
             | "str" ->
+                (* This is just a slice but want a specific name *)
                 make_array_inner "str"
-                  (Ptr (ConstArray (Value { element_type = u8; values = [] })))
-                  (Integer All)
+                  (Ptr (Array (Value { element_type = u8; values = [||] })))
+                  u64
             | "bool" -> Bool All
             | "void" -> Void
             | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type ast_type) ()))
@@ -321,8 +474,20 @@ let rec meet t t' =
                    | None, None -> None
                    | Some w, None
                    | None, Some w ->
-                       Some w
-                   | Some w, Some w' -> Some (Int.max w w')
+                       (* if bigger than previous fixed width  then remove the
+                          fixed width since we'll need more anyway *)
+                       if Z.numbits max_range > w || Z.numbits min_range > w then
+                         None
+                       else
+                         Some w
+                   | Some w, Some w' ->
+                       let w = Int.max w w' in
+                       (* if bigger than previous fixed width  then remove the
+                          fixed width since we'll need more anyway *)
+                       if Z.numbits max_range > w || Z.numbits min_range > w then
+                         None
+                       else
+                         Some w
                in
                if Z.equal min_range int64_min && Z.equal max_range uint64_max then
                  All
@@ -385,16 +550,43 @@ let rec meet t t' =
            constant anyhow but need to think more *)
         let l =
             meet_sub_lattice a a' ~f:(fun x x' ->
-                if List.equal Poly.equal x.values x'.values then
+                if Array.equal Poly.equal x.values x'.values then
                   Value x
                 else
                   let element_type = meet x.element_type x'.element_type in
                   if equal element_type ALL then
                     All
                   else
-                    Value { element_type; values = [] })
+                    Value { element_type; values = [||] })
         in
         ConstArray l
+    | Array a, Array a' ->
+        let l =
+            meet_sub_lattice a a' ~f:(fun x x' ->
+                let element_type = meet x.element_type x'.element_type in
+                let padded_map2 a b ~f ~pad =
+                    let len_a = Array.length a in
+                    let len_b = Array.length b in
+                    let len = max len_a len_b in
+                    Array.init len ~f:(fun i ->
+                        let x = if i < len_a then a.(i) else pad in
+                        let y = if i < len_b then b.(i) else pad in
+                        f x y)
+                in
+                if equal element_type ALL then
+                  All
+                else
+                  Value
+                    {
+                      element_type;
+                      values = padded_map2 x.values x'.values ~f:meet ~pad:(get_bottom element_type);
+                    })
+        in
+        Array l
+    | Array a, ConstArray c
+    | ConstArray c, Array a ->
+        (* demote the constant array into normal array *)
+        meet (Array a) (Array c)
     | Type t, Type t' ->
         let l =
             meet_sub_lattice t t' ~f:(fun t t' ->
@@ -425,6 +617,7 @@ let rec meet t t' =
     | DeadControl, _
     | Memory, _
     | ConstArray _, _
+    | Array _, _
     | Type _, _
     | Void, _ ->
         ALL
@@ -510,20 +703,46 @@ let rec join t t' =
                   | Unequal_lengths -> assert false)
         in
         Struct l
-    | Ptr p, Ptr p' -> join p p'
+    | Ptr p, Ptr p' -> Ptr (join p p')
+    | Array a, Array a' ->
+        let l =
+            join_sub_lattice a a' ~f:(fun x x' ->
+                let element_type = join x.element_type x'.element_type in
+                let padded_map2 a b ~f ~pad =
+                    let len_a = Array.length a in
+                    let len_b = Array.length b in
+                    let len = max len_a len_b in
+                    Array.init len ~f:(fun i ->
+                        let x = if i < len_a then a.(i) else pad in
+                        let y = if i < len_b then b.(i) else pad in
+                        f x y)
+                in
+                if equal element_type ANY then
+                  Any
+                else
+                  Value
+                    {
+                      element_type;
+                      values = padded_map2 x.values x'.values ~f:join ~pad:(get_top element_type);
+                    })
+        in
+        Array l
     | ConstArray a, ConstArray a' ->
         let l =
             join_sub_lattice a a' ~f:(fun x x' ->
-                if List.equal Poly.equal x.values x'.values then
+                if Array.equal Poly.equal x.values x'.values then
                   Value x
                 else
                   let element_type = join x.element_type x'.element_type in
                   if equal element_type ANY then
                     Any
                   else
-                    Value { element_type; values = [] })
+                    Value { element_type; values = [||] })
         in
         ConstArray l
+    | Array a, ConstArray c
+    | ConstArray c, Array a ->
+        failwithf "%s TODO" __LOC__ ()
     | Type t, Type t' ->
         let l =
             join_sub_lattice t t' ~f:(fun t t' ->
@@ -553,45 +772,11 @@ let rec join t t' =
     | Control, _
     | DeadControl, _
     | Memory, _
+    | Array _, _
     | ConstArray _, _
     | Type _, _
     | Void, _ ->
         ANY
-
-let rec is_constant t =
-    let is_constant_lattice = function
-        | Any
-        | All ->
-            false
-        | Value _ -> true
-    in
-    match t with
-    | ANY
-    | ALL
-    | Control
-    | DeadControl
-    | Memory ->
-        false
-    | Integer (Value { min; max; num_widens = _ }) -> Z.equal min max
-    | Integer _ -> false
-    | Bool x -> is_constant_lattice x
-    | Tuple x -> is_constant_lattice x
-    | FunPtr x -> (
-        match x with
-        | Any
-        | All ->
-            false
-        | Value f -> is_constant f.ret && List.for_all f.params ~f:(fun t -> is_constant t))
-    | Struct x -> (
-        match x with
-        | Any
-        | All ->
-            false
-        | Value s -> List.for_all s.fields ~f:(fun (_, t) -> is_constant t))
-    | Ptr p -> is_constant p
-    | ConstArray x -> is_constant_lattice x
-    | Type x -> is_constant_lattice x
-    | Void -> true
 
 let get_fun_idx t =
     match t with
@@ -646,18 +831,15 @@ let get_string t =
                 None)
         with
         | None -> None
-        | Some { element_type; values } when is_a element_type u8 -> (
-            match List.hd_exn values with
-            | Integer _ ->
-                List.map values ~f:(function
-                  | Integer (Value { min; max; num_widens = _; fixed_width = _ })
-                    when Z.equal min max ->
-                      (* TODO: nicer error message than just Char.of_int_exn i guess *)
-                      Z.to_int min |> Char.of_int_exn
-                  | _ -> assert false)
-                |> String.of_char_list
-                |> Option.some
-            | _ -> None)
+        | Some { element_type; values } when is_a element_type u8 ->
+            Array.map values ~f:(function
+              | Integer (Value { min; max; num_widens = _; fixed_width = _ }) when Z.equal min max
+                ->
+                  (* TODO: nicer error message than just Char.of_int_exn i guess *)
+                  Z.to_int min |> Char.of_int_exn
+              | _ -> assert false)
+            |> String.of_array
+            |> Option.some
         | _ -> None)
     | _ -> None
 
@@ -672,13 +854,12 @@ let rec get_field_type t field_name =
     | Ptr (Struct _ as s) -> get_field_type s field_name
     | _ -> None
 
-let get_integer_const_exn = function
-    | Integer (Value { min; max; num_widens = _ }) ->
-        if Z.equal min max then
-          min
-        else
-          raise (Invalid_argument "Not an integer constant")
-    | _ -> raise (Invalid_argument "Not an integer constant")
+let get_array_element_type t =
+    match t with
+    | Array (Value { element_type; values = _ })
+    | ConstArray (Value { element_type; values = _ }) ->
+        element_type
+    | _ -> assert false
 
 let rec get_size t =
     match t with

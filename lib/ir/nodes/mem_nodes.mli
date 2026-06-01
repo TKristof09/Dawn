@@ -14,7 +14,6 @@ val create_store :
   ?parent_fun:int ->
   mem:Node.t ->
   ptr:Node.t ->
-  offset:Node.t ->
   string ->
   value:Node.t ->
   Node.t
@@ -26,7 +25,6 @@ val create_load :
   mem:Node.t ->
   ptr:Node.t ->
   string ->
-  offset:Node.t ->
   Types.t ->
   Node.t
 
@@ -34,7 +32,13 @@ val create_addr_of :
   (Node.t, Graph.readwrite) Graph.t -> Ast.loc -> ?parent_fun:int -> Node.t -> Node.t
 
 val create_addr_of_field :
-  (Node.t, Graph.readwrite) Graph.t -> Ast.loc -> ?parent_fun:int -> Node.t -> string -> Node.t
+  (Node.t, Graph.readwrite) Graph.t ->
+  Ast.loc ->
+  ?parent_fun:int ->
+  Node.t ->
+  ?index:Node.t ->
+  string ->
+  Node.t
 
 val create_deref :
   (Node.t, Graph.readwrite) Graph.t -> Ast.loc -> ?parent_fun:int -> mem:Node.t -> Node.t -> Node.t

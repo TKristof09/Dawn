@@ -797,7 +797,7 @@ and of_mem_node memo g machine_g kind (n : Node.t) =
     | Node.New -> simple New
     | Store _ ->
         (* TODO check for ops like add that can address memory directly *)
-        let value = Graph.get_dependency g n 4 |> Option.value_exn in
+        let value = Graph.get_dependency g n 3 |> Option.value_exn in
         let size = Types.get_size value.typ in
         assert (size <= 8);
         simple Store
@@ -805,8 +805,6 @@ and of_mem_node memo g machine_g kind (n : Node.t) =
         (* TODO check for ops like add that can address memory directly *)
         match n.typ with
         | Struct _ ->
-            let offs = Graph.get_dependency g n 3 |> Option.value_exn in
-            assert (Z.equal (Types.get_integer_const_exn offs.typ) Z.zero);
             let node = { id = next_id (); kind = AddrOf; ir_node = n } in
             Hashtbl.add_exn memo ~key:n ~data:node;
             let deps =
@@ -820,16 +818,43 @@ and of_mem_node memo g machine_g kind (n : Node.t) =
     | AddrOfField f ->
         let input = Graph.get_dependency g n 1 |> Option.value_exn in
         let offs = Types.get_offset input.typ f |> Option.value_exn in
-        let base_addr = simple AddrOf in
+
+        let base_addr = { id = next_id (); kind = AddrOf; ir_node = n } in
+        Graph.add_dependencies machine_g base_addr [];
+        Hashtbl.add_exn memo ~key:n ~data:base_addr;
+        let dep = convert_node memo g machine_g input in
+        let ctrl = Graph.get_dependency g n 0 |> Option.map ~f:(convert_node memo g machine_g) in
+        Graph.add_dependencies machine_g base_addr [ ctrl; Some dep ];
+
         let field_addr = { id = next_id (); kind = AddImm (Z.of_int offs); ir_node = n } in
         Graph.add_dependencies machine_g field_addr [ None; Some base_addr ];
+        let addr =
+            match Graph.get_dependency g n 2 with
+            | Some idx ->
+                let idx = convert_node memo g machine_g idx in
+                let s =
+                    match n.typ with
+                    | Ptr p -> Types.get_size p
+                    | _ -> assert false
+                in
+                let m = { id = next_id (); kind = MulImm (Z.of_int s); ir_node = n } in
+                Graph.add_dependencies machine_g m [ None; Some idx ];
+                let a = { id = next_id (); kind = Add; ir_node = n } in
+                Graph.add_dependencies machine_g a [ None; Some field_addr; Some m ];
+                a
+            | None -> field_addr
+        in
         (* use set because the call to simple AddrOf already adds this key so we need to overwrite it *)
-        Hashtbl.set memo ~key:n ~data:field_addr;
-        field_addr
+        Hashtbl.set memo ~key:n ~data:addr;
+        addr
     | Deref -> (
         match n.typ with
         | Struct _ ->
-            Graph.get_dependency g n 2 |> Option.value_exn |> convert_node memo g machine_g
+            let mn =
+                Graph.get_dependency g n 2 |> Option.value_exn |> convert_node memo g machine_g
+            in
+            Hashtbl.set memo ~key:n ~data:mn;
+            mn
         | _ -> simple Deref)
     | Copy ->
         let src = Graph.get_dependency g n 2 |> Option.value_exn in

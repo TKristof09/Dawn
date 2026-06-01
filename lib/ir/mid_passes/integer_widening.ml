@@ -54,28 +54,38 @@ let do_node g (n : Node.t) =
         let rhs = Graph.get_dependency g n 2 |> Option.value_exn in
         let lhs_size = Types.get_size lhs.typ in
         let rhs_size = Types.get_size rhs.typ in
-        (* Lowering bit width requires explicit cast in the source code. Only widening is done automatically. *)
+        (* Lowering bit width requires explicit cast in the source code. Only
+           widening is done automatically. If no fixed width for n then all good. *)
         (* TODO: some nice error message*)
         if Option.is_some n_fixed_width then
           assert (n_size >= lhs_size && n_size >= rhs_size);
-        if lhs_size < n_size then
-          create_cast g lhs n n.loc (n_size * 8);
-        if rhs_size < n_size then
-          create_cast g rhs n n.loc (n_size * 8)
+        let size = max n_size (max lhs_size rhs_size) in
+        (* Don't need to do case if n_size < size since this happens only if n
+           has no fixed_width, in which case the width will be calculated from
+           the range anyway *)
+        if lhs_size < size then
+          create_cast g lhs n n.loc (size * 8);
+        if rhs_size < size then
+          create_cast g rhs n n.loc (size * 8)
     | Data Mul ->
         let n_size = Types.get_size n.typ in
         let lhs = Graph.get_dependency g n 1 |> Option.value_exn in
         let rhs = Graph.get_dependency g n 2 |> Option.value_exn in
         let lhs_size = Types.get_size lhs.typ in
         let rhs_size = Types.get_size rhs.typ in
-        (* Lowering bit width requires explicit cast in the source code. Only widening is done automatically. *)
-        assert (n_size >= lhs_size && n_size >= rhs_size);
+        (* Lowering bit width requires explicit cast in the source code. Only
+           widening is done automatically. If no fixed width for n then all good. *)
+        assert (Option.is_none n_fixed_width || (n_size >= lhs_size && n_size >= rhs_size));
         (* Mul needs at least 16bit inputs *)
         let n_size = max 2 n_size in
-        if lhs_size < n_size then
-          create_cast g lhs n n.loc (n_size * 8);
-        if rhs_size < n_size then
-          create_cast g rhs n n.loc (n_size * 8)
+        let size = max n_size (max lhs_size rhs_size) in
+        (* Don't need to do case if n_size < size since this happens only if n
+           has no fixed_width, in which case the width will be calculated from
+           the range anyway *)
+        if lhs_size < size then
+          create_cast g lhs n n.loc (size * 8);
+        if rhs_size < size then
+          create_cast g rhs n n.loc (size * 8)
     | Data Eq
     | Data NEq
     | Data Lt
@@ -125,12 +135,14 @@ let do_node g (n : Node.t) =
                     if not (Hash_set.mem already_casted arg) then (
                       Hash_set.add already_casted arg;
                       create_cast g arg n n.loc (param_size * 8)))))
-    | Mem (Store _)
-    | Mem (Load _) ->
-        let offs = Graph.get_dependency g n 3 |> Option.value_exn in
-        let offs_size = Types.get_size offs.typ in
-        if offs_size < 8 then
-          create_cast g offs n n.loc 64
+    | Mem (AddrOfField _) -> (
+        let offs = Graph.get_dependency g n 2 in
+        match offs with
+        | None -> ()
+        | Some offs ->
+            let offs_size = Types.get_size offs.typ in
+            if offs_size < 8 then
+              create_cast g offs n n.loc 64)
     | Mem New ->
         let size = Graph.get_dependency g n 2 |> Option.value_exn in
         let size_size = Types.get_size size.typ in

@@ -24,9 +24,9 @@ and struct_type = private {
     fields : (string * t) list;
   }
 
-and const_array = {
+and arr = {
     element_type : t;
-    values : t list;
+    values : t array;
   }
 
 and t =
@@ -37,7 +37,8 @@ and t =
     | FunPtr of fun_ptr sub_lattice
     | Ptr of t
     | Struct of struct_type sub_lattice
-    | ConstArray of const_array sub_lattice
+    | Array of arr sub_lattice
+    | ConstArray of arr sub_lattice
     | Type of t sub_lattice
     | Void
     | Memory
@@ -64,6 +65,7 @@ val is_const_array : t -> bool
 val get_offset : t -> string -> int option
 val is_a : t -> t -> bool
 val get_field_type : t -> string -> t option
+val get_array_element_type : t -> t
 val human_readable : t -> string
 val get_size : t -> int
 val get_top : t -> t
