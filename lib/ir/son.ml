@@ -4,10 +4,10 @@ let rec get_type g scope t =
     match t with
     | Ast.Type s -> (
         assert (not (String.is_empty s));
-        let n = Scope_node.get g scope s in
+        let (AnyNode n) = Scope_node.get g scope s in
         match n.typ with
         | Type (Value t) -> t
-        | _ -> failwithf "todo: i think this should be an error: %s" (Node.show n) ())
+        | _ -> failwithf "todo: i think this should be an error: %s" (Node2.show n) ())
     | Fn _ -> Types.of_ast_type t
     | Array (t, _) ->
         (* TODO: perhaps we want to keep the count known in the future to check
@@ -26,9 +26,9 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
         (* type annotation sets the min type. TODO: ast type should be an optional later with type inference *)
         (if not (Ast.equal_var_type typ (Type "")) then
            let typ = get_type g scope typ in
-           n.Node.min_typ <- Some typ);
+           n.Node2.min_typ <- Some typ);
 
-        (match n.Node.kind with
+        (match n.Node2.kind with
         | Data Constant -> (
             match n.typ with
             | Types.FunPtr (Value _) ->
@@ -118,27 +118,32 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
         Loop_node.set_back_edge g loop_node (Scope_node.get_ctrl g body_scope);
         Scope_node.merge_loop ?parent_fun g ~this:scope ~body:body_scope ~exit:exit_scope
 
-and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
+and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Node2.any_data option =
     let loc = e.loc in
     let binop lhs rhs f =
-        let lhs = do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn in
-        let rhs = do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn in
-        Some (f g loc ?parent_fun lhs rhs)
+        let (AnyData lhs) =
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
+        in
+        let (AnyData rhs) =
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
+        in
+        Some (Node2.AnyData (f g loc ?parent_fun lhs rhs))
     in
     match e.node with
-    | Ast.Int i -> Some (Const_node.create_zint ?parent_fun g loc i)
-    | Ast.Bool b -> Some (Const_node.create_bool ?parent_fun g loc b)
-    | Ast.String s -> Some (Const_node.create_string ?parent_fun g loc s)
+    | Ast.Int i -> Some (AnyData (Const_node.create_zint ?parent_fun g loc i))
+    | Ast.Bool b -> Some (AnyData (Const_node.create_bool ?parent_fun g loc b))
+    | Ast.String s -> Some (AnyData (Const_node.create_string ?parent_fun g loc s))
     | Ast.Variable (name, idx_expr) -> (
         match idx_expr with
         | None ->
-            let node = Scope_node.get g scope name in
-            Some node
+            let (AnyNode node) = Scope_node.get g scope name in
+            let node = Node2.as_data_exn node in
+            Some (AnyData node)
         | Some idx_expr ->
-            let mem = Scope_node.get_mem g scope in
-            let ptr = Scope_node.get g scope name in
+            let (AnyMem mem) = Scope_node.get_mem g scope in
+            let (AnyNode ptr) = Scope_node.get g scope name in
 
-            let index =
+            let (AnyData index) =
                 do_expr g idx_expr scope parent_fun cur_ret_node linker |> Option.value_exn
             in
             let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc ptr ~index "[]" in
@@ -151,14 +156,18 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
             load.min_typ <- Some el_typ;
             Some load)
     | Ast.VarAssign (name, expr) ->
-        let n = do_expr g expr scope parent_fun cur_ret_node linker |> Option.value_exn in
+        let (AnyData n) = do_expr g expr scope parent_fun cur_ret_node linker |> Option.value_exn in
         Scope_node.assign g scope name n;
-        Some n
+        Some (AnyData n)
     | Ast.ArrayVarAssign (name, index, value) ->
-        let index = do_expr g index scope parent_fun cur_ret_node linker |> Option.value_exn in
-        let value = do_expr g value scope parent_fun cur_ret_node linker |> Option.value_exn in
-        let ptr = Scope_node.get g scope name in
-        let mem = Scope_node.get_mem g scope in
+        let (AnyData index) =
+            do_expr g index scope parent_fun cur_ret_node linker |> Option.value_exn
+        in
+        let (AnyData value) =
+            do_expr g value scope parent_fun cur_ret_node linker |> Option.value_exn
+        in
+        let (AnyNode ptr) = Scope_node.get g scope name in
+        let (AnyMem mem) = Scope_node.get_mem g scope in
         let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc ptr ~index "[]" in
         let el_typ =
             match field_ptr.typ with
@@ -194,8 +203,10 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
         Scope_node.pop g scope;
         n
     | Ast.IfElse (cond, body, else_body) -> (
-        let n_cond = do_expr g cond scope parent_fun cur_ret_node linker |> Option.value_exn in
-        let ctrl = Scope_node.get_ctrl g scope in
+        let (AnyData n_cond) =
+            do_expr g cond scope parent_fun cur_ret_node linker |> Option.value_exn
+        in
+        let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
         let n_if = If_node.create ?parent_fun g loc ~ctrl ~pred:n_cond in
         let n_true = Proj_node.create ?parent_fun g loc n_if 0 in
         let n_false = Proj_node.create ?parent_fun g loc n_if 1 in
@@ -213,12 +224,14 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
             match (body_true, body_false) with
             | None, None -> None
             | Some body_true, Some body_false ->
+                let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
                 Some
-                  (Phi_node.create ?parent_fun g loc (Scope_node.get_ctrl g scope)
-                     [ body_true; body_false ])
+                  (AnyData (Phi_node.create_data ?parent_fun g loc ctrl [ body_true; body_false ]))
             | _, _ -> failwith "The two branches must have the same type"))
     | Ast.FnCall (expr, args) ->
-        let fun_ptr = do_expr g expr scope parent_fun cur_ret_node linker |> Option.value_exn in
+        let (AnyData fun_ptr) =
+            do_expr g expr scope parent_fun cur_ret_node linker |> Option.value_exn
+        in
         let args =
             List.map args ~f:(fun arg ->
                 do_expr g arg scope parent_fun cur_ret_node linker |> Option.value_exn)
@@ -242,15 +255,15 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
                                the recursive function has big return type *)
                     [%log.warn "Recursive functions don't yet work with big return types "];
                     None
-                | _ -> failwithf "Invalid fun ptr typ %s" (Node.show fun_ptr) ())
+                | _ -> failwithf "Invalid fun ptr typ %s" (Node2.show fun_ptr) ())
         in
         let args =
             match big_ret_type with
             | None -> args
             | Some deref_ret_type ->
                 (* Allocate place for big return type and pass ptr as first arg *)
-                let ctrl = Scope_node.get_ctrl g scope in
-                let mem = Scope_node.get_mem g scope in
+                let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
+                let (AnyMem mem) = Scope_node.get_mem g scope in
                 let size =
                     Types.get_size deref_ret_type |> Const_node.create_int ?parent_fun g loc
                 in
@@ -264,10 +277,9 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
                 Scope_node.set_mem g scope mem;
                 ptr :: args
         in
-        let call_node, call_end =
-            Fun_node.add_call ?parent_fun g loc ~ctrl:(Scope_node.get_ctrl g scope)
-              ~mem:(Scope_node.get_mem g scope) ~fun_ptr args
-        in
+        let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
+        let (AnyMem mem) = Scope_node.get_mem g scope in
+        let call_node, call_end = Fun_node.add_call ?parent_fun g loc ~ctrl ~mem ~fun_ptr args in
         let ctrl = Proj_node.create ?parent_fun g loc call_end 0 in
         Scope_node.set_ctrl g scope ctrl;
         let return_mem = Proj_node.create ?parent_fun g loc call_end 1 in
@@ -279,7 +291,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
             else
               return_val
         in
-        Some return_val
+        Some (AnyData return_val)
     (* | Ast.Return ->  *)
     | Ast.FnDeclaration (typ, param_names, body) ->
         (* TODO: when return value is big the function body will allocate
@@ -314,8 +326,8 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
         | _ -> assert false);
         let fun_ptr = Const_node.create_fun_ptr ?parent_fun g loc fun_node fun_idx in
         Scope_node.push scope;
-        let old_ctrl = Scope_node.get_ctrl g scope in
-        let old_mem = Scope_node.get_mem g scope in
+        let (AnyCtrl old_ctrl) = Scope_node.get_ctrl g scope in
+        let (AnyMem old_mem) = Scope_node.get_mem g scope in
         Scope_node.set_ctrl g scope fun_node;
         let mem = Fun_node.create_param ~parent_fun:fun_idx g loc fun_node Memory 0 in
         Scope_node.set_mem g scope mem;
@@ -326,34 +338,37 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
             in
             param_node.min_typ <- Some ptype;
             Scope_node.define g scope pname param_node false);
-        let body_n =
+        let (AnyData body_n) =
             do_expr g body scope (Some fun_idx) (Some ret_node) linker
             |> Option.value
-                 ~default:(Const_node.create_from_type ~parent_fun:fun_idx g body.loc Types.Void)
+                 ~default:
+                   (AnyData (Const_node.create_from_type ~parent_fun:fun_idx g body.loc Types.Void))
         in
         body_n.min_typ <- Some (get_type g scope ret_type);
-        if big_ret then (
-          (*  store the values into $ret if return value goes onto stack and put ptr as return value *)
-          let ret_ptr = Scope_node.get g scope "$ret" in
-          (match ret_ptr.typ with
-          | Ptr (Struct (Value { name; fields })) ->
-              let mem = Scope_node.get_mem g scope in
-              let body_ptr = Mem_nodes.create_addr_of ~parent_fun:fun_idx g ret_node.loc body_n in
-              let mem =
-                  Mem_nodes.create_copy ~parent_fun:fun_idx g ret_node.loc ~mem ~src:body_ptr
-                    ~dst:ret_ptr
-              in
-              Scope_node.set_mem g scope mem
-          | _ -> assert false);
-          Fun_node.add_return ~parent_fun:fun_idx g ret_node ~ctrl:(Scope_node.get_ctrl g scope)
-            ~mem:(Scope_node.get_mem g scope) ~val_n:ret_ptr)
-        else
-          Fun_node.add_return ~parent_fun:fun_idx g ret_node ~ctrl:(Scope_node.get_ctrl g scope)
-            ~mem:(Scope_node.get_mem g scope) ~val_n:body_n;
+        (if big_ret then (
+           (*  store the values into $ret if return value goes onto stack and put ptr as return value *)
+           let (AnyNode ret_ptr) = Scope_node.get g scope "$ret" in
+           (match ret_ptr.typ with
+           | Ptr (Struct (Value { name; fields })) ->
+               let mem = Scope_node.get_mem g scope in
+               let body_ptr = Mem_nodes.create_addr_of ~parent_fun:fun_idx g ret_node.loc body_n in
+               let mem =
+                   Mem_nodes.create_copy ~parent_fun:fun_idx g ret_node.loc ~mem ~src:body_ptr
+                     ~dst:ret_ptr
+               in
+               Scope_node.set_mem g scope mem
+           | _ -> assert false);
+           let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
+           let (AnyMem mem) = Scope_node.get_mem g scope in
+           Fun_node.add_return ~parent_fun:fun_idx g ret_node ~ctrl ~mem ~val_n:ret_ptr)
+         else
+           let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
+           let (AnyMem mem) = Scope_node.get_mem g scope in
+           Fun_node.add_return ~parent_fun:fun_idx g ret_node ~ctrl ~mem ~val_n:body_n);
         Scope_node.pop g scope;
         Scope_node.set_ctrl g scope old_ctrl;
         Scope_node.set_mem g scope old_mem;
-        Some fun_ptr
+        Some (AnyData fun_ptr)
     | Ast.ExternalFnDeclaration (typ, _, external_name) ->
         let ret_type, param_types =
             match typ with
@@ -389,15 +404,15 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
             in
             param_node.min_typ <- Some param_type;
             Some param_node)
-        |> Graph.add_dependencies g ret_val;
+        |> Node2.G.add_dependencies g ret_val;
         Fun_node.add_return ~parent_fun:fun_idx g ret_node ~ctrl:fun_node ~mem ~val_n:ret_val;
-        Some fun_ptr
+        Some (AnyData fun_ptr)
     | TypeDeclaration t ->
         let typ = Types.of_ast_type t in
         let c = Const_node.create_from_type ?parent_fun g loc (Type (Value typ)) in
         Some c
     | TypeInstantiation (type_name, fields) ->
-        let typ_constant = Scope_node.get g scope type_name in
+        let (AnyNode typ_constant) = Scope_node.get g scope type_name in
         let typ =
             match typ_constant.typ with
             | Type (Value t) -> t
@@ -432,7 +447,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
                         failwithf "%s:%d: Field %s is not part of type %s" loc.filename loc.line
                           name type_name ()
                     else
-                      let value =
+                      let (AnyData value) =
                           do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn
                       in
                       let field_type = Types.get_field_type typ name |> Option.value_exn in
@@ -455,8 +470,8 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker =
             ();
         Some struct_node
     | FieldAccess (e, field_name) ->
-        let base = do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn in
-        let mem = Scope_node.get_mem g scope in
+        let (AnyData base) = do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn in
+        let (AnyMem mem) = Scope_node.get_mem g scope in
         let field_typ = Types.get_field_type base.typ field_name |> Option.value ~default:ALL in
         let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc base field_name in
         let load =
@@ -478,15 +493,7 @@ let of_ast ast linker =
     let loc : Ast.loc = { filename = ""; line = 0; col = 0 } in
     let start = Start_node.create loc in
     let stop = Stop_node.create loc in
-    let g =
-        Graph.create
-          (module struct
-            include Node
-
-            let is_persistent = Node.is_scope
-          end)
-          start stop
-    in
+    let g = Node2.G.create start stop in
     let ctrl = Proj_node.create g loc start 0 in
     let mem = Proj_node.create g loc start 1 in
     let scope = Scope_node.create () in
@@ -500,13 +507,13 @@ let of_ast ast linker =
     List.iter builtin_types ~f:(define_builtin_type g scope);
     Core.List.iter ast ~f:(fun s -> do_statement g s scope None None linker);
     let ctrl = Scope_node.get_ctrl g scope in
-    Graph.set_stop_ctrl g ctrl;
-    Scope_node.set_ctrl g scope (Graph.get_stop g);
+    Node2.G.set_stop_ctrl g ctrl;
+    Scope_node.set_ctrl g scope (Node2.G.get_stop g);
     (* makes life easier and we dont need the scope anymore i think*)
-    Graph.remove_node g scope;
-    (* Graph.add_dependencies g stop (Graph.get_dependencies g scope |> List.tl_exn); *)
-    (* Graph.cleanup g; *)
-    Graph.get_dependants g (Graph.get_start g)
-    |> List.iter ~f:(fun n ->
-        if Graph.get_dependants g n |> List.is_empty then Graph.remove_node g n);
+    Node2.G.remove_node g scope;
+    (* Node2.G.add_dependencies g stop (Node2.G.get_dependencies g scope |> List.tl_exn); *)
+    (* Node2.G.cleanup g; *)
+    Node2.G.get_dependants g (Node2.G.get_start g)
+    |> List.iter ~f:(fun (AnyNode n) ->
+        if Node2.G.get_dependants g n |> List.is_empty then Node2.G.remove_node g n);
     g

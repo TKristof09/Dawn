@@ -1,22 +1,16 @@
 open Core
 
-let common g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) (kind : Node.data_kind) =
+let common g loc ?parent_fun (lhs : ('a, Node2.data) Node2.t) (rhs : ('b, Node2.data) Node2.t)
+    (kind : 'c Node2.data_kind) =
     let typ = Types.Integer Any in
-    let n = Node.create_data ?parent_fun loc typ kind in
-    Graph.add_dependencies g n [ None; Some lhs; Some rhs ];
-    Graph.finalize_node g n
+    let n = Node2.create_data ?parent_fun loc typ kind in
+    Node2.G.add_node g n { Node2.lhs = Some (AnyData lhs); rhs = Some (AnyData rhs) };
+    n
 
-let create_add g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
-    common g loc ?parent_fun lhs rhs Add
-
-let create_sub g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
-    common g loc ?parent_fun lhs rhs Sub
-
-let create_mul g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
-    common g loc ?parent_fun lhs rhs Mul
-
-let create_div g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
-    common g loc ?parent_fun lhs rhs Div
+let create_add g loc ?parent_fun lhs rhs = common g loc ?parent_fun lhs rhs Add
+let create_sub g loc ?parent_fun lhs rhs = common g loc ?parent_fun lhs rhs Sub
+let create_mul g loc ?parent_fun lhs rhs = common g loc ?parent_fun lhs rhs Mul
+let create_div g loc ?parent_fun lhs rhs = common g loc ?parent_fun lhs rhs Div
 
 let compute_type g (n : Node.t) =
     let op =

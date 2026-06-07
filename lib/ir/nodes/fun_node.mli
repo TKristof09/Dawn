@@ -1,36 +1,47 @@
-val create : (Node.t, Graph.readwrite) Graph.t -> Ast.loc -> Types.t -> Node.t * Node.t
+val create :
+  Node2.G.readwrite Node2.G.t ->
+  Ast.loc ->
+  Types.t ->
+  (Node2.fun_def, Node2.ctrl) Node2.t * (Node2.ret, Node2.ctrl) Node2.t
 
 val create_param :
-  (Node.t, Graph.readwrite) Graph.t ->
+  Node2.G.readwrite Node2.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  Node.t ->
+  (Node2.fun_def, Node2.ctrl) Node2.t ->
   Types.t ->
   int ->
-  Node.t
+  (Node2.any_data Node2.phi, Node2.data) Node2.t
 
 val add_call :
-  (Node.t, Graph.readwrite) Graph.t ->
+  Node2.G.readwrite Node2.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  ctrl:Node.t ->
-  mem:Node.t ->
-  fun_ptr:Node.t ->
-  Node.t list ->
-  Node.t * Node.t
+  ctrl:('a, Node2.ctrl) Node2.t ->
+  mem:('b, Node2.mem) Node2.t ->
+  fun_ptr:(unit, Node2.data) Node2.t ->
+  ('c, Node2.data) Node2.t list ->
+  (Node2.fun_call, Node2.ctrl) Node2.t * (Node2.fun_call_end, Node2.ctrl) Node2.t
 
 val add_return :
   ?parent_fun:int ->
-  (Node.t, Graph.readwrite) Graph.t ->
-  Node.t ->
-  ctrl:Node.t ->
-  mem:Node.t ->
-  val_n:Node.t ->
+  Node2.G.readwrite Node2.G.t ->
+  (Node2.ret, Node2.ctrl) Node2.t ->
+  ctrl:('a, Node2.ctrl) Node2.t ->
+  mem:('b, Node2.mem) Node2.t ->
+  val_n:('c, Node2.data) Node2.t ->
   unit
 
-val get_signature : Node.t -> Types.t
-val link_call : (Node.t, Graph.readwrite) Graph.t -> call_node:Node.t -> fun_node:Node.t -> unit
-val get_call_fun_ptr : (Node.t, 'a) Graph.t -> Node.t -> Node.t
+val get_signature : (Node2.fun_def, Node2.ctrl) Node2.t -> Types.t
+
+val link_call :
+  Node2.G.readwrite Node2.G.t ->
+  call_node:(Node2.fun_call, Node2.ctrl) Node2.t ->
+  fun_node:(Node2.fun_def, Node2.ctrl) Node2.t ->
+  unit
+
+val get_call_fun_ptr :
+  'a Node2.G.t -> (Node2.fun_call, Node2.ctrl) Node2.t -> (unit, Node2.data) Node2.t
 
 val compute_fun_node_type :
   (Node.t, 'a) Graph.t -> Node.t -> (new_type:Types.t * extra_deps:Node.t list)

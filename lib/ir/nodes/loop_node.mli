@@ -1,7 +1,14 @@
-val create : (Node.t, Graph.readwrite) Graph.t -> Ast.loc -> ?parent_fun:int -> Node.t -> Node.t
+val create :
+  Node2.G.readwrite Node2.G.t ->
+  Ast.loc ->
+  ?parent_fun:int ->
+  ('a, Node2.ctrl) Node2.t ->
+  (Node2.loop, Node2.ctrl) Node2.t
 (** Loop regions have two inputs, the first is the back edge the second is the head. The back edge
     will get filled later on. *)
 
-val set_back_edge : ('a, Graph.readwrite) Graph.t -> 'a -> 'a -> unit
-val get_back_edge : ('a, 'b) Graph.t -> 'a -> 'a
-val get_entry_edge : ('a, 'b) Graph.t -> 'a -> 'a
+val set_back_edge :
+  Node2.G.readwrite Node2.G.t ->
+  (Node2.loop, Node2.ctrl) Node2.t ->
+  ('a, Node2.ctrl) Node2.t ->
+  unit

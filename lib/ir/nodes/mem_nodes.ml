@@ -2,27 +2,28 @@ open Core
 
 let create_new g loc ?parent_fun ~ctrl ~mem ~size typ =
     let node_type = Types.Tuple (Value [ Memory; typ ]) in
-    let n = Node.create_mem ?parent_fun loc node_type New in
-    Graph.add_dependencies g n [ Some ctrl; Some mem; Some size ];
-    Graph.finalize_node g n
+    let n = Node2.create_mem ?parent_fun loc node_type New in
+    Node2.G.add_node g n { Node2.mem = Some (AnyMem mem); size = Some (AnyData size) };
+    n
 
-let create_store g loc ?parent_fun ~mem ~(ptr : Node.t) field_name ~value =
-    let n = Node.create_mem ?parent_fun loc Memory (Store field_name) in
-    Graph.add_dependencies g n [ None; Some mem; Some ptr; Some value ];
-    Graph.finalize_node g n
+let create_store g loc ?parent_fun ~mem ~ptr field_name ~value =
+    let n = Node2.create_mem ?parent_fun loc Memory (Store field_name) in
+    Node2.G.add_node g n
+      { Node2.mem = Some (AnyMem mem); ptr = Some (AnyMem ptr); value = Some (AnyData value) };
+    n
 
-let create_load g loc ?parent_fun ~mem ~(ptr : Node.t) field_name field_typ =
-    let n = Node.create_mem ?parent_fun loc field_typ (Load field_name) in
-    Graph.add_dependencies g n [ None; Some mem; Some ptr ];
-    Graph.finalize_node g n
+let create_load g loc ?parent_fun ~mem ~ptr field_name field_typ =
+    let n = Node2.create_mem ?parent_fun loc field_typ (Load field_name) in
+    Node2.G.add_node g n { Node2.mem = Some (AnyMem mem); ptr = Some (AnyMem ptr) };
+    n
 
-let create_addr_of g loc ?parent_fun (n : Node.t) =
-    let ptr = Node.create_mem ?parent_fun loc (Ptr n.typ) AddrOf in
-    Graph.add_dependencies g ptr [ None; Some n ];
-    Graph.finalize_node g ptr
+let create_addr_of g loc ?parent_fun place =
+    let n = Node2.create_mem ?parent_fun loc (Ptr place.Node2.typ) AddrOf in
+    Node2.G.add_node g n { Node2.place = Some (AnyData place); offset = None };
+    n
 
-let create_addr_of_field g loc ?parent_fun (n : Node.t) ?index field_name =
-    let t = Types.get_field_type n.typ field_name |> Option.value ~default:ALL in
+let create_addr_of_field g loc ?parent_fun place ?index field_name =
+    let t = Types.get_field_type place.Node2.typ field_name |> Option.value ~default:ALL in
     (* index only for array field type *)
     let t =
         match index with
@@ -37,21 +38,26 @@ let create_addr_of_field g loc ?parent_fun (n : Node.t) ?index field_name =
                 assert false)
     in
 
-    let ptr = Node.create_mem ?parent_fun loc (Ptr t) (AddrOfField field_name) in
-    Graph.add_dependencies g ptr [ None; Some n; index ];
-    Graph.finalize_node g ptr
+    let n = Node2.create_mem ?parent_fun loc (Ptr t) (AddrOfField field_name) in
+    Node2.G.add_node g n
+      {
+        Node2.place = Some (AnyData place);
+        offset = Option.map index ~f:(fun index -> Node2.AnyData index);
+      };
+    n
 
-let create_deref g loc ?parent_fun ~mem (n : Node.t) =
+let create_deref g loc ?parent_fun ~mem ptr =
     let t =
-        match n.typ with
+        match ptr.Node2.typ with
         | Ptr p -> p
         | _ -> assert false
     in
-    let ptr = Node.create_mem ?parent_fun loc t Deref in
-    Graph.add_dependencies g ptr [ None; Some mem; Some n ];
-    Graph.finalize_node g ptr
+    let n = Node2.create_mem ?parent_fun loc t Deref in
+    Node2.G.add_node g n { Node2.mem = Some (AnyMem mem); ptr = Some (AnyMem ptr) };
+    n
 
 let create_copy ?parent_fun g loc ~mem ~src ~dst =
-    let n = Node.create_mem ?parent_fun loc Memory Copy in
-    Graph.add_dependencies g n [ None; Some mem; Some src; Some dst ];
-    Graph.finalize_node g n
+    let n = Node2.create_mem ?parent_fun loc Memory Copy in
+    Node2.G.add_node g n
+      { Node2.mem = Some (AnyMem mem); src = Some (AnyMem src); dst = Some (AnyMem dst) };
+    n

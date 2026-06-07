@@ -1,3 +1,35 @@
+module type NODE = sig
+  type ('a, 'tag) t
+  type any = AnyNode : ('a, 'tag) t -> any
+
+  val id : ('a, 'tag) t -> int
+  val inputs_of : ('a, 'tag) t -> 'a -> any option list
+  val type_eq : ('a, 'taga) t -> ('b, 'tagb) t -> (('a, 'b) Type.eq * ('taga, 'tagb) Type.eq) option
+end
+
+module type S = sig
+  module N : NODE
+
+  type readonly
+  type readwrite
+  type 'q t
+
+  val create : unit -> readwrite t
+  val add_node : readwrite t -> ('a, 't) N.t -> 'a -> unit
+  val set_node_inputs : readwrite t -> ('a, 't) N.t -> 'a -> unit
+  val remove_node : readwrite t -> ('a, 't) N.t -> unit
+  val get_dependencies : 'q t -> ('a, 't) N.t -> 'a option
+  val get_dependencies_exn : 'q t -> ('a, 't) N.t -> 'a
+  val get_dependencies_list : 'q t -> ('a, 't) N.t -> N.any option list
+  val get_dependants : 'q t -> ('a, 't) N.t -> N.any list
+  val readonly : 'q t -> readonly t
+  val iter : 'q t -> f:(N.any -> unit) -> unit
+  val fold : 'q t -> init:'c -> f:('c -> N.any -> 'c) -> 'c
+  val get_num_nodes : 'q t -> int
+end
+
+module Make : (N : NODE) -> S with module N := N
+
 type readonly
 type readwrite
 type ('a, 'b) t
@@ -12,6 +44,8 @@ module type GraphNode = sig
   val hash : t -> int
   val compare : t -> t -> int
   val sexp_of_t : t -> Sexplib0.Sexp.t
+
+  (* TODO: This is for scope nodes so they don't get removed for not having any dependants. It feels very hacky though so i don't like it *)
   val is_persistent : t -> bool
 end
 

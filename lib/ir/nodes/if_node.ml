@@ -1,12 +1,10 @@
 open Core
 
-let create ?parent_fun g loc ~(ctrl : Node.t) ~(pred : Node.t) =
-    let n =
-        let n = Node.create_ctrl ?parent_fun loc (Tuple (Value [ Control; Control ])) If in
-        Graph.add_dependencies g n [ Some ctrl; Some pred ];
-        n
-    in
-    Graph.finalize_node g n
+let create ?parent_fun g loc ~ctrl ~pred =
+    let n = Node2.create_ctrl ?parent_fun loc (Tuple (Value [ Control; Control ])) If in
+    Node2.G.add_node g n
+      { Node2.cond = Some (AnyData pred); true_branch = None; false_branch = None };
+    n
 
 let compute_type g (n : Node.t) =
     let in_control = Graph.get_dependency g n 0 |> Option.value_exn in

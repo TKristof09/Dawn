@@ -1,31 +1,46 @@
 open Core
 
-let create g loc ?parent_fun ctrl nodes =
-    match nodes with
-    | [ _ ] -> assert false
-    | _ ->
-        let n =
-            let typ =
-                List.map nodes ~f:(fun (n : Node.t) -> n.typ) |> List.reduce_exn ~f:Types.meet
-            in
-            let n = Node.create_data ?parent_fun loc typ Phi in
-            Graph.add_dependencies g n (List.map (ctrl :: nodes) ~f:Option.some);
-            n
-        in
-        Graph.finalize_node g n
-
-let get_ctrl g n = Graph.get_dependencies g n |> Core.List.hd_exn |> Core.Option.value_exn
-
-let create_no_backedge g loc ctrl (dep : Node.t) =
-    let typ = dep.typ in
-    let n = Node.create_data loc typ Phi in
-    Graph.add_dependencies g n [ Some ctrl; None; Some dep ];
+let create_data g loc ?parent_fun ctrl nodes =
+    let typ = List.map nodes ~f:(fun (Node2.AnyData n) -> n.typ) |> List.reduce_exn ~f:Types.meet in
+    let n = Node2.create_data ?parent_fun loc typ Phi in
+    Node2.G.add_node g n { Node2.phi_inputs = List.map nodes ~f:Option.some };
     n
 
-let add_backedge_input g (n : Node.t) (dep : Node.t) =
+let create_mem g loc ?parent_fun ctrl nodes =
+    let typ = List.map nodes ~f:(fun (Node2.AnyMem n) -> n.typ) |> List.reduce_exn ~f:Types.meet in
+    let n = Node2.create_mem ?parent_fun loc typ Phi in
+    Node2.G.add_node g n { Node2.phi_inputs = List.map nodes ~f:Option.some };
+    n
+
+let get_ctrl g n = _
+
+let create_data_no_backedge g loc ?parent_fun ctrl dep =
+    let typ = dep.Node2.typ in
+    let n = Node2.create_data ?parent_fun loc typ Phi in
+    Node2.G.add_node g n { Node2.phi_inputs = [ None; Some (AnyData dep) ] };
+    n
+
+let create_mem_no_backedge g loc ?parent_fun ctrl dep =
+    let typ = dep.Node2.typ in
+    let n = Node2.create_mem ?parent_fun loc typ Phi in
+    Node2.G.add_node g n { Node2.phi_inputs = [ None; Some (AnyMem dep) ] };
+    n
+
+let add_backedge_input_data g n dep =
     (* keep the phi's original type as the type, it will get recomputed by the
        scope_node.merge_loop function after all phis have both their inputs *)
-    Graph.set_dependency g n (Some dep) 1
+    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+    Node2.G.set_node_inputs g n { Node2.phi_inputs = phi_inputs @ [ Some (Node2.AnyData dep) ] }
+
+let add_backedge_input_mem g n dep =
+    (* keep the phi's original type as the type, it will get recomputed by the
+       scope_node.merge_loop function after all phis have both their inputs *)
+    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+    Node2.G.set_node_inputs g n { Node2.phi_inputs = phi_inputs @ [ Some (Node2.AnyMem dep) ] }
+
+let add_input g phi inp =
+    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g phi in
+    Node2.G.set_node_inputs g phi { phi_inputs = phi_inputs @ [ Some inp ] }
 
 let compute_type g n =
     let region = Graph.get_dependency g n 0 |> Option.value_exn in

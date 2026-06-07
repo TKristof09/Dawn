@@ -1,7 +1,7 @@
 open Core
 
 type t = {
-    functions : (string * Node.t) Dynarray.t;
+    functions : (string * (Node2.fun_def, Node2.ctrl) Node2.t) Dynarray.t;
     mutable universe : Int.Set.t; (* cache it to not have to recreate the set on each link call *)
   }
 
@@ -25,13 +25,15 @@ let set_name linker idx new_name =
     Dynarray.set linker.functions (idx - 1) (new_name, fun_node)
 
 let link linker g call_node =
-    assert (Core.Poly.equal call_node.Node.kind (Ctrl FunctionCall));
     let fun_nodes = ref [] in
     let fun_ptr = Fun_node.get_call_fun_ptr g call_node in
     Types.iter_fun_indices fun_ptr.typ linker.universe ~f:(fun fun_idx ->
         let fun_node = Dynarray.get linker.functions (fun_idx - 1) |> snd in
-        [%log.debug "Linking %a to %s" Node.pp call_node (get_name linker fun_idx)];
-        if List.mem (Graph.get_dependants g call_node) fun_node ~equal:Node.equal then
+        [%log.debug "Linking %a to %s" Node2.pp call_node (get_name linker fun_idx)];
+        if
+          List.exists (Node2.G.get_dependants g call_node) ~f:(fun (AnyNode n) ->
+              Node2.equal n fun_node)
+        then
           ()
         else (
           Fun_node.link_call g ~call_node ~fun_node;

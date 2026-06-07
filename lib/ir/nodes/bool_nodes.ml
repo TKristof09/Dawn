@@ -1,28 +1,16 @@
 open Core
 
-let create_common g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) kind =
-    let typ = Types.Bool Any in
-    let n = Node.create_data ?parent_fun loc typ kind in
-    Graph.add_dependencies g n [ None; Some lhs; Some rhs ];
-    Graph.finalize_node g n
+let create_common g loc ?parent_fun lhs rhs kind =
+    let n = Node2.create_data ?parent_fun loc (Bool Any) kind in
+    Node2.G.add_node g n { Node2.lhs = Some (AnyData lhs); rhs = Some (AnyData rhs) };
+    n
 
-let create_eq g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
-    create_common g loc ?parent_fun lhs rhs Eq
-
-let create_neq g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
-    create_common g loc ?parent_fun lhs rhs NEq
-
-let create_lt g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
-    create_common g loc ?parent_fun lhs rhs Lt
-
-let create_leq g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
-    create_common g loc ?parent_fun lhs rhs LEq
-
-let create_gt g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
-    create_common g loc ?parent_fun lhs rhs Gt
-
-let create_geq g loc ?parent_fun (lhs : Node.t) (rhs : Node.t) =
-    create_common g loc ?parent_fun lhs rhs GEq
+let create_eq g loc ?parent_fun lhs rhs = create_common g loc ?parent_fun lhs rhs Eq
+let create_neq g loc ?parent_fun lhs rhs = create_common g loc ?parent_fun lhs rhs NEq
+let create_lt g loc ?parent_fun lhs rhs = create_common g loc ?parent_fun lhs rhs Lt
+let create_leq g loc ?parent_fun lhs rhs = create_common g loc ?parent_fun lhs rhs LEq
+let create_gt g loc ?parent_fun lhs rhs = create_common g loc ?parent_fun lhs rhs Gt
+let create_geq g loc ?parent_fun lhs rhs = create_common g loc ?parent_fun lhs rhs GEq
 
 let compute_type g (n : Node.t) =
     let op =
