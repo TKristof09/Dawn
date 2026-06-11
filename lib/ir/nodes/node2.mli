@@ -170,3 +170,39 @@ val show : ('a, 'b) t -> string
 
 module N : Graph.NODE with type ('a, 'tag) t = ('a, 'tag) t and type any = any
 module G : Graph.S with module N := N
+
+module Any : sig
+  type t = any
+
+  val compare : t -> t -> int
+  val equal : t -> t -> bool
+  val hash : t -> int
+  val sexp_of_t : t -> Sexplib0.Sexp.t
+end
+
+module AnyData : sig
+  type t = any_data
+
+  val compare : t -> t -> int
+  val equal : t -> t -> bool
+  val hash : t -> int
+  val sexp_of_t : t -> Sexplib0.Sexp.t
+end
+
+module AnyCtrl : sig
+  type t = any_ctrl
+
+  val compare : t -> t -> int
+  val equal : t -> t -> bool
+  val hash : t -> int
+  val sexp_of_t : t -> Sexplib0.Sexp.t
+end
+
+module AnyMem : sig
+  type t = any_mem
+
+  val compare : t -> t -> int
+  val equal : t -> t -> bool
+  val hash : t -> int
+  val sexp_of_t : t -> Sexplib0.Sexp.t
+end

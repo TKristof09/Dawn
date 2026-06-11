@@ -1,1 +1,1 @@
-val run : (Node.t, Graph.readwrite) Graph.t -> unit
+val run : Node2.G.readwrite Node2.G.t -> unit

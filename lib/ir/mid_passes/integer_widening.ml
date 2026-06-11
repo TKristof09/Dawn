@@ -40,6 +40,9 @@ let do_node : type a b. Node2.G.readwrite Node2.G.t -> (a, b) Node2.t -> unit =
                 let cast_node = Node2.create_data ?parent_fun:def.parent_fun loc cast_typ Cast in
                 (* TODO: should we use the def's control input or the use's or just put none and let the scheduler figure it out? *)
                 Node2.G.add_node g cast_node { Node2.inp = Some (AnyData def) };
+                (match Node2.G.get_ctrl g def with
+                | None -> ()
+                | Some (AnyNode ctrl) -> Node2.G.set_ctrl g cast_node ctrl);
                 AnyData cast_node
             | Some cast_node -> cast_node)
     in
@@ -160,39 +163,47 @@ let do_node : type a b. Node2.G.readwrite Node2.G.t -> (a, b) Node2.t -> unit =
                 | _ -> None)
         in
         let already_casted = Hash_set.create (module Node2.AnyData) in
-        List.iter functions ~f:(fun f ->
-            let params =
-                Node2.G.get_dependants g f
-                |> List.filter_map
-                     ~f:(fun (AnyNode n) : (Node2.any_data Node2.phi, Node2.data) Node2.t option ->
-                       match n.Node2.kind with
-                       | Data (Param _) -> Some n
-                       | _ -> None)
-            in
-            List.zip_exn params args
-            |> List.iter ~f:(fun (param, arg) ->
-                match arg with
-                | None -> assert false
-                | Some (AnyData arg) ->
-                    assert (Types.is_a arg.typ param.typ);
-                    if Types.equal Memory param.typ then
-                      ()
-                    else
-                      let param_size = Types.get_size param.typ in
-                      let arg_size = Types.get_size arg.typ in
-                      if arg_size < param_size then (
-                        let cast = create_cast g arg param n.loc (param_size * 8) in
-                        let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g param in
-                        let param_inputs =
-                            List.map phi_inputs ~f:(function
-                              | None -> None
-                              | Some (AnyData n) ->
-                                  if Node2.equal n arg then Some cast else Some (AnyData n))
-                        in
-                        Node2.G.set_node_inputs g param { Node2.phi_inputs = param_inputs };
-                        if not (Hash_set.mem already_casted (Node2.AnyData arg)) then (
-                          Hash_set.add already_casted arg;
-                          create_cast g arg n n.loc (param_size * 8)))))
+        let new_args =
+            List.fold functions ~init:args ~f:(fun args f ->
+                let params =
+                    Node2.G.get_dependants g f
+                    |> List.filter_map
+                         ~f:(fun
+                             (AnyNode n) : (Node2.any_data Node2.phi, Node2.data) Node2.t option ->
+                           match n.Node2.kind with
+                           | Data (Param _) -> Some n
+                           | _ -> None)
+                in
+                List.zip_exn params args
+                |> List.map ~f:(fun (param, arg) ->
+                    match arg with
+                    | None -> assert false
+                    | Some (AnyData arg) ->
+                        assert (Types.is_a arg.typ param.typ);
+                        if Types.equal Memory param.typ then
+                          Some (Node2.AnyData arg)
+                        else
+                          let param_size = Types.get_size param.typ in
+                          let arg_size = Types.get_size arg.typ in
+                          if arg_size < param_size then (
+                            let cast = create_cast g arg param n.loc (param_size * 8) in
+                            let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g param in
+                            let param_inputs =
+                                List.map phi_inputs ~f:(function
+                                  | None -> None
+                                  | Some (AnyData n) ->
+                                      if Node2.equal n arg then Some cast else Some (AnyData n))
+                            in
+                            Node2.G.set_node_inputs g param { Node2.phi_inputs = param_inputs };
+                            if not (Hash_set.mem already_casted (Node2.AnyData arg)) then (
+                              Hash_set.add already_casted (AnyData arg);
+                              Some (create_cast g arg n n.loc (param_size * 8)))
+                            else
+                              Some (Node2.AnyData arg))
+                          else
+                            Some (Node2.AnyData arg)))
+        in
+        Node2.G.set_node_inputs g n { Node2.fun_ptr; mem; args = new_args }
     | Mem (AddrOfField f) -> (
         let n = Node2.unpack_exn n (Mem (AddrOfField f)) in
         let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in

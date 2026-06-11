@@ -368,3 +368,39 @@ end
 
 include N
 module G = Graph.Make (N)
+
+module Any = struct
+  type t = any
+
+  let compare (AnyNode a) (AnyNode b) = Int.compare a.id b.id
+  let equal (AnyNode a) (AnyNode b) = Int.equal a.id b.id
+  let hash (AnyNode a) = Int.hash a.id
+  let sexp_of_t = sexp_of_any
+end
+
+module AnyData = struct
+  type t = any_data
+
+  let compare (AnyData a) (AnyData b) = Int.compare a.id b.id
+  let equal (AnyData a) (AnyData b) = Int.equal a.id b.id
+  let hash (AnyData a) = Int.hash a.id
+  let sexp_of_t = sexp_of_any_data
+end
+
+module AnyCtrl = struct
+  type t = any_ctrl
+
+  let compare (AnyCtrl a) (AnyCtrl b) = Int.compare a.id b.id
+  let equal (AnyCtrl a) (AnyCtrl b) = Int.equal a.id b.id
+  let hash (AnyCtrl a) = Int.hash a.id
+  let sexp_of_t = sexp_of_any_ctrl
+end
+
+module AnyMem = struct
+  type t = any_mem
+
+  let compare (AnyMem a) (AnyMem b) = Int.compare a.id b.id
+  let equal (AnyMem a) (AnyMem b) = Int.equal a.id b.id
+  let hash (AnyMem a) = Int.hash a.id
+  let sexp_of_t = sexp_of_any_mem
+end
