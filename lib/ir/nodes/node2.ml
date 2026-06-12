@@ -146,7 +146,8 @@ module N = struct
       id : int;
       loc : Ast.loc;
       mutable parent_fun : int option;
-      inputs_of : 'a -> any option list;
+      list_of_inputs : 'a -> any option list;
+      inputs_of_list : any option list -> 'a;
     }
   [@@deriving sexp_of]
 
@@ -172,7 +173,31 @@ module N = struct
       | None -> None
       | Some (AnyMem n) -> Some (AnyNode n)
 
-  let get_inputs_of : type a tag. (a, tag) kind -> a -> any option list =
+  let[@inline] data_of_any (n : any option) : any_data option =
+      match n with
+      | None -> None
+      | Some (AnyNode n) -> (
+          match n.kind with
+          | Data _ -> Some (AnyData n)
+          | _ -> None)
+
+  let[@inline] ctrl_of_any (n : any option) : any_ctrl option =
+      match n with
+      | None -> None
+      | Some (AnyNode n) -> (
+          match n.kind with
+          | Ctrl _ -> Some (AnyCtrl n)
+          | _ -> None)
+
+  let[@inline] mem_of_any (n : any option) : any_mem option =
+      match n with
+      | None -> None
+      | Some (AnyNode n) -> (
+          match n.kind with
+          | Mem _ -> Some (AnyMem n)
+          | _ -> None)
+
+  let get_list_of_inputs : type a tag. (a, tag) kind -> a -> any option list =
      fun k ->
       let binop_inputs = fun { lhs; rhs } -> [ any_of_data lhs; any_of_data rhs ] in
       match k with
@@ -223,6 +248,102 @@ module N = struct
       | Scope _ -> fun { vars } -> vars
       | ForwardRef _ -> fun () -> []
 
+  let get_inputs_of_list : type a tag. (a, tag) kind -> any option list -> a =
+     fun k ->
+      let binop_inputs = function
+          | [ x; y ] -> { lhs = data_of_any x; rhs = data_of_any y }
+          | _ -> assert false
+      in
+      match k with
+      | Data Constant -> Fun.const ()
+      | Data Add -> binop_inputs
+      | Data Sub -> binop_inputs
+      | Data Mul -> binop_inputs
+      | Data Div -> binop_inputs
+      | Data Lsh -> binop_inputs
+      | Data Rsh -> binop_inputs
+      | Data BAnd -> binop_inputs
+      | Data BOr -> binop_inputs
+      | Data Eq -> binop_inputs
+      | Data NEq -> binop_inputs
+      | Data Lt -> binop_inputs
+      | Data LEq -> binop_inputs
+      | Data Gt -> binop_inputs
+      | Data GEq -> binop_inputs
+      | Data (Proj _) -> (
+          function
+          | [ x ] -> { inp = data_of_any x }
+          | _ -> assert false)
+      | Data Phi -> fun lst -> { phi_inputs = List.map lst ~f:data_of_any }
+      | Data (Param _) -> fun lst -> { phi_inputs = List.map lst ~f:data_of_any }
+      | Data (External _) -> Fun.const ()
+      | Data Cast -> (
+          function
+          | [ x ] -> { inp = data_of_any x }
+          | _ -> assert false)
+      | Ctrl Start -> Fun.const ()
+      | Ctrl Stop -> (
+          function
+          | [ x ] -> { mem = mem_of_any x }
+          | _ -> assert false)
+      | Ctrl (Proj _) -> (
+          function
+          | [ x ] -> { inp = ctrl_of_any x }
+          | _ -> assert false)
+      | Ctrl If -> (
+          function
+          | [ x; y; z ] ->
+              { cond = data_of_any x; true_branch = ctrl_of_any y; false_branch = ctrl_of_any z }
+          | _ -> assert false)
+      | Ctrl Region -> fun lst -> { ctrl_inputs = List.map lst ~f:ctrl_of_any }
+      | Ctrl Loop -> (
+          function
+          | [ x; y ] -> { entry = ctrl_of_any x; backedge = ctrl_of_any y }
+          | _ -> assert false)
+      | Ctrl (Function _) -> fun lst -> { call_sites = List.map lst ~f:ctrl_of_any }
+      | Ctrl Return -> (
+          function
+          | [ x; y ] -> { mem = mem_of_any x; data = data_of_any y }
+          | _ -> assert false)
+      | Ctrl FunctionCall -> (
+          function
+          | x :: y :: rest ->
+              { fun_ptr = data_of_any x; mem = mem_of_any y; args = List.map rest ~f:data_of_any }
+          | _ -> assert false)
+      | Ctrl FunctionCallEnd -> fun lst -> { ret_nodes = List.map lst ~f:ctrl_of_any }
+      | Mem New -> (
+          function
+          | [ x; y ] -> { mem = mem_of_any x; size = data_of_any y }
+          | _ -> assert false)
+      | Mem (Load _) -> (
+          function
+          | [ x; y ] -> { mem = mem_of_any x; ptr = mem_of_any y }
+          | _ -> assert false)
+      | Mem (Store _) -> (
+          function
+          | [ x; y; z ] -> { mem = mem_of_any x; ptr = mem_of_any y; value = data_of_any z }
+          | _ -> assert false)
+      | Mem AddrOf -> (
+          function
+          | [ x; y ] -> { place = data_of_any x; offset = data_of_any y }
+          | _ -> assert false)
+      | Mem (AddrOfField _) -> (
+          function
+          | [ x; y ] -> { place = data_of_any x; offset = data_of_any y }
+          | _ -> assert false)
+      | Mem Deref -> (
+          function
+          | [ x; y ] -> { mem = mem_of_any x; ptr = mem_of_any y }
+          | _ -> assert false)
+      | Mem Copy -> (
+          function
+          | [ x; y; z ] -> { mem = mem_of_any x; src = mem_of_any y; dst = mem_of_any z }
+          | _ -> assert false)
+      | Mem Phi -> fun lst -> { phi_inputs = List.map lst ~f:mem_of_any }
+      | Mem Param -> fun lst -> { phi_inputs = List.map lst ~f:mem_of_any }
+      | Scope _ -> fun lst -> { vars = lst }
+      | ForwardRef _ -> Fun.const ()
+
   let create_data ?parent_fun loc typ kind =
       {
         typ;
@@ -231,7 +352,8 @@ module N = struct
         id = next_id ();
         loc;
         parent_fun;
-        inputs_of = get_inputs_of (Data kind);
+        list_of_inputs = get_list_of_inputs (Data kind);
+        inputs_of_list = get_inputs_of_list (Data kind);
       }
 
   let create_ctrl ?parent_fun loc typ kind =
@@ -242,7 +364,8 @@ module N = struct
         id = next_id ();
         loc;
         parent_fun;
-        inputs_of = get_inputs_of (Ctrl kind);
+        list_of_inputs = get_list_of_inputs (Ctrl kind);
+        inputs_of_list = get_inputs_of_list (Ctrl kind);
       }
 
   let create_mem ?parent_fun loc typ kind =
@@ -253,7 +376,8 @@ module N = struct
         id = next_id ();
         loc;
         parent_fun;
-        inputs_of = get_inputs_of (Mem kind);
+        list_of_inputs = get_list_of_inputs (Mem kind);
+        inputs_of_list = get_inputs_of_list (Mem kind);
       }
 
   let create_scope () =
@@ -265,7 +389,8 @@ module N = struct
         id = next_id ();
         loc = { filename = ""; line = 0; col = 0 };
         parent_fun = None;
-        inputs_of = get_inputs_of kind;
+        list_of_inputs = get_list_of_inputs kind;
+        inputs_of_list = get_inputs_of_list kind;
       }
 
   let create_forward_ref name =
@@ -276,12 +401,14 @@ module N = struct
         id = next_id ();
         loc = { filename = ""; line = 0; col = 0 };
         parent_fun = None;
-        inputs_of = get_inputs_of (ForwardRef name);
+        list_of_inputs = get_list_of_inputs (ForwardRef name);
+        inputs_of_list = get_inputs_of_list (ForwardRef name);
       }
 
   let id n = n.id
   let equal a b = a.id = b.id
-  let inputs_of n inps = n.inputs_of inps
+  let list_of_inputs n inps = n.list_of_inputs inps
+  let inputs_of_list n l = n.inputs_of_list l
   let pp _ _ = failwithf "todo %s" __LOC__ ()
   let show _ = failwithf "todo %s" __LOC__ ()
 

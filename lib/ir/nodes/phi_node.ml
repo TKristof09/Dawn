@@ -4,26 +4,28 @@ let create_data g loc ?parent_fun ctrl nodes =
     let typ = List.map nodes ~f:(fun (Node2.AnyData n) -> n.typ) |> List.reduce_exn ~f:Types.meet in
     let n = Node2.create_data ?parent_fun loc typ Phi in
     Node2.G.add_node g n { Node2.phi_inputs = List.map nodes ~f:Option.some };
+    Node2.G.set_ctrl g n ctrl;
     n
 
 let create_mem g loc ?parent_fun ctrl nodes =
     let typ = List.map nodes ~f:(fun (Node2.AnyMem n) -> n.typ) |> List.reduce_exn ~f:Types.meet in
     let n = Node2.create_mem ?parent_fun loc typ Phi in
     Node2.G.add_node g n { Node2.phi_inputs = List.map nodes ~f:Option.some };
+    Node2.G.set_ctrl g n ctrl;
     n
-
-let get_ctrl g n = _
 
 let create_data_no_backedge g loc ?parent_fun ctrl dep =
     let typ = dep.Node2.typ in
     let n = Node2.create_data ?parent_fun loc typ Phi in
     Node2.G.add_node g n { Node2.phi_inputs = [ None; Some (AnyData dep) ] };
+    Node2.G.set_ctrl g n ctrl;
     n
 
 let create_mem_no_backedge g loc ?parent_fun ctrl dep =
     let typ = dep.Node2.typ in
     let n = Node2.create_mem ?parent_fun loc typ Phi in
     Node2.G.add_node g n { Node2.phi_inputs = [ None; Some (AnyMem dep) ] };
+    Node2.G.set_ctrl g n ctrl;
     n
 
 let add_backedge_input_data g n dep =

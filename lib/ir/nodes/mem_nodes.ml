@@ -4,6 +4,7 @@ let create_new g loc ?parent_fun ~ctrl ~mem ~size typ =
     let node_type = Types.Tuple (Value [ Memory; typ ]) in
     let n = Node2.create_mem ?parent_fun loc node_type New in
     Node2.G.add_node g n { Node2.mem = Some (AnyMem mem); size = Some (AnyData size) };
+    Node2.G.set_ctrl g n ctrl;
     n
 
 let create_store g loc ?parent_fun ~mem ~ptr field_name ~value =

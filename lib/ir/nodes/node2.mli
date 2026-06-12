@@ -143,13 +143,13 @@ and ('a, 'tag) t = {
     id : int;
     loc : Ast.loc;
     mutable parent_fun : int option;
-    inputs_of : 'a -> any option list;
+    list_of_inputs : 'a -> any option list;
+    inputs_of_list : any option list -> 'a;
   }
 [@@deriving sexp_of]
 
 val id : ('a, 'tag) t -> int
 val equal : ('a, 'taga) t -> ('b, 'tagb) t -> bool
-val inputs_of : ('a, 'tag) t -> 'a -> any option list
 val type_eq : ('a, 'taga) t -> ('b, 'tagb) t -> (('a, 'b) Type.eq * ('taga, 'tagb) Type.eq) option
 
 val kind_eq :

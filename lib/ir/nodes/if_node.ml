@@ -4,6 +4,7 @@ let create ?parent_fun g loc ~ctrl ~pred =
     let n = Node2.create_ctrl ?parent_fun loc (Tuple (Value [ Control; Control ])) If in
     Node2.G.add_node g n
       { Node2.cond = Some (AnyData pred); true_branch = None; false_branch = None };
+    Node2.G.set_ctrl g n ctrl;
     n
 
 let compute_type g (n : Node.t) =

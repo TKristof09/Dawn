@@ -14,8 +14,6 @@ val create_mem :
   Node2.any_mem list ->
   (Node2.any_mem Node2.phi, Node2.mem) Node2.t
 
-val get_ctrl : 'a Node2.G.t -> ('b Node2.phi, 'c) Node2.t -> ('d, Node2.ctrl) Node2.t
-
 val create_data_no_backedge :
   Node2.G.readwrite Node2.G.t ->
   Ast.loc ->

@@ -3,7 +3,8 @@ module type NODE = sig
   type any = AnyNode : ('a, 'tag) t -> any
 
   val id : ('a, 'tag) t -> int
-  val inputs_of : ('a, 'tag) t -> 'a -> any option list
+  val list_of_inputs : ('a, 'tag) t -> 'a -> any option list
+  val inputs_of_list : ('a, 'tag) t -> any option list -> 'a
   val type_eq : ('a, 'taga) t -> ('b, 'tagb) t -> (('a, 'b) Type.eq * ('taga, 'tagb) Type.eq) option
 end
 
@@ -14,10 +15,15 @@ module type S = sig
   type readwrite
   type 'q t
 
-  val create : unit -> readwrite t
+  val create : start:N.any -> stop:N.any -> readwrite t
   val add_node : readwrite t -> ('a, 't) N.t -> 'a -> unit
   val set_node_inputs : readwrite t -> ('a, 't) N.t -> 'a -> unit
+  val set_ctrl : readwrite t -> ('a, 'ta) N.t -> ('b, 'tb) N.t -> unit
   val remove_node : readwrite t -> ('a, 't) N.t -> unit
+  val get_start : 'q t -> N.any
+  val get_stop : 'q t -> N.any
+  val get_ctrl : 'q t -> ('a, 't) N.t -> N.any option
+  val get_ctrl_exn : 'q t -> ('a, 't) N.t -> N.any
   val get_dependencies : 'q t -> ('a, 't) N.t -> 'a option
   val get_dependencies_exn : 'q t -> ('a, 't) N.t -> 'a
   val get_dependencies_list : 'q t -> ('a, 't) N.t -> N.any option list

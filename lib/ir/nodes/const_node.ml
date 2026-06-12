@@ -1,19 +1,15 @@
 open Core
 
-let create_zint g loc ?parent_fun i =
-    let n = Node2.create_data ?parent_fun loc (Types.make_int_const i) Constant in
+let common g loc parent_fun typ =
+    let n = Node2.create_data ?parent_fun loc typ Constant in
     Node2.G.add_node g n ();
+    let (AnyNode start) = Node2.G.get_start g in
+    Node2.G.set_ctrl g n start;
     n
 
-let create_int g loc ?parent_fun i =
-    let n = Node2.create_data ?parent_fun loc (Types.make_int_const (Z.of_int i)) Constant in
-    Node2.G.add_node g n ();
-    n
-
-let create_bool g loc ?parent_fun b =
-    let n = Node2.create_data ?parent_fun loc (Types.Bool (Value b)) Constant in
-    Node2.G.add_node g n ();
-    n
+let create_zint g loc ?parent_fun i = common g loc parent_fun (Types.make_int_const i)
+let create_int g loc ?parent_fun i = common g loc parent_fun (Types.make_int_const (Z.of_int i))
+let create_bool g loc ?parent_fun b = common g loc parent_fun (Types.Bool (Value b))
 
 let create_fun_ptr g loc ?parent_fun fun_node idx =
     let signature = Fun_node.get_signature fun_node in
@@ -23,18 +19,12 @@ let create_fun_ptr g loc ?parent_fun fun_node idx =
         | FunPtr _ -> failwith "Should be fine but idk"
         | _ -> failwithf "Expected function ptr but got %s" (Types.show signature) ()
     in
-    let n = Node2.create_data ?parent_fun loc typ Constant in
-    Node2.G.add_node g n ();
-    n
+    common g loc parent_fun typ
 
 let create_string g loc ?parent_fun s =
     let arr_typ = Types.make_string s in
-    let n = Node2.create_data ?parent_fun loc arr_typ Constant in
-    Node2.G.add_node g n ();
-    n
+    common g loc parent_fun arr_typ
 
 let create_from_type g loc ?parent_fun typ =
     assert (Types.is_constant typ);
-    let n = Node2.create_data ?parent_fun loc typ Constant in
-    Node2.G.add_node g n ();
-    n
+    common g loc parent_fun typ

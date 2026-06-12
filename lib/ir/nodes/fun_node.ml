@@ -11,7 +11,9 @@ let create g loc fun_ptr_type =
     let return_region = Node2.create_ctrl loc Control Region in
     Node2.G.add_node g return_region { Node2.ctrl_inputs = [] };
     Node2.G.add_node g return_value { Node2.phi_inputs = [] };
+    Node2.G.set_ctrl g return_value return_region;
     Node2.G.add_node g return_mem { Node2.phi_inputs = [] };
+    Node2.G.set_ctrl g return_mem return_region;
     let ret_node_typ : Types.t =
         match return_value.typ with
         | Tuple (Value t) -> Tuple (Value (Types.Control :: Memory :: t))
@@ -20,6 +22,7 @@ let create g loc fun_ptr_type =
     let ret_node = Node2.create_ctrl loc ret_node_typ Return in
     Node2.G.add_node g ret_node
       { Node2.data = Some (AnyData return_value); mem = Some (AnyMem return_mem) };
+    Node2.G.set_ctrl g ret_node return_region;
     let fun_node =
         Node2.create_ctrl loc Control
           (Function { ret = ret_node; signature = fun_ptr_type; idx = -1 })
@@ -30,6 +33,7 @@ let create g loc fun_ptr_type =
 let create_param g loc ?parent_fun fun_node param_type i =
     let n = Node2.create_data ?parent_fun loc param_type (Param i) in
     Node2.G.add_node g n { Node2.phi_inputs = [] };
+    Node2.G.set_ctrl g n fun_node;
     n
 
 let add_call g loc ?parent_fun ~ctrl ~mem ~fun_ptr args =
@@ -48,12 +52,14 @@ let add_call g loc ?parent_fun ~ctrl ~mem ~fun_ptr args =
         mem = Some (AnyMem mem);
         args = List.map args ~f:(fun a -> Some (Node2.AnyData a));
       };
+    Node2.G.set_ctrl g call ctrl;
     let call_end =
         Node2.create_ctrl ?parent_fun loc
           (Tuple (Value [ Control; Memory; ret_typ ]))
           FunctionCallEnd
     in
     Node2.G.add_node g call_end { Node2.ret_nodes = [] };
+    Node2.G.set_ctrl g call_end call;
     (call, call_end)
 
 let link_call g ~call_node ~fun_node =
@@ -75,7 +81,6 @@ let link_call g ~call_node ~fun_node =
             | _ -> get_params_nodes t)
     in
     let param_nodes = Node2.G.get_dependants g fun_node |> get_params_nodes in
-    (* drop ctrl and fun_ptr *)
     let { Node2.fun_ptr = _; mem = _; args } = Node2.G.get_dependencies_exn g call_node in
     match List.zip param_nodes args with
     | Unequal_lengths ->
@@ -94,10 +99,13 @@ let link_call g ~call_node ~fun_node =
             Phi_node.add_input g param arg)
 
 let add_return ?parent_fun g ret_node ~ctrl ~mem ~val_n =
-    let region = _ in
     let { Node2.mem = phi_mem; data = phi_data } = Node2.G.get_dependencies_exn g ret_node in
     let (AnyMem phi_mem) = Option.value_exn phi_mem in
     let (AnyData phi_data) = Option.value_exn phi_data in
+    let (AnyNode region) = Node2.G.get_ctrl g ret_node |> Option.value_exn in
+
+    let region = Node2.unpack_exn region (Ctrl Region) in
+    let { Node2.ctrl_inputs } = Node2.G.get_dependencies_exn g region in
 
     let phi_mem = Node2.unpack_exn phi_mem (Mem Phi) in
     let phi_data = Node2.unpack_exn phi_data (Data Phi) in
@@ -110,7 +118,7 @@ let add_return ?parent_fun g ret_node ~ctrl ~mem ~val_n =
 
     Phi_node.add_input g phi_data (Node2.AnyData val_n);
     Phi_node.add_input g phi_mem (Node2.AnyMem mem);
-    Graph.add_dependencies g region [ Some ctrl ];
+    Node2.G.set_node_inputs g region { Node2.ctrl_inputs = ctrl_inputs @ [ Some (AnyCtrl ctrl) ] };
     (* TODO do i care about this? we will set the types to ANY during SCCP anyway *)
     let ~new_type:typ, ~extra_deps:_ = Phi_node.compute_type g phi_mem in
     phi_mem.typ <- typ;

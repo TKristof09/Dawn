@@ -493,7 +493,7 @@ let of_ast ast linker =
     let loc : Ast.loc = { filename = ""; line = 0; col = 0 } in
     let start = Start_node.create loc in
     let stop = Stop_node.create loc in
-    let g = Node2.G.create start stop in
+    let g = Node2.G.create ~start:(AnyNode start) ~stop:(AnyNode stop) in
     let ctrl = Proj_node.create g loc start 0 in
     let mem = Proj_node.create g loc start 1 in
     let scope = Scope_node.create () in
@@ -506,14 +506,14 @@ let of_ast ast linker =
     in
     List.iter builtin_types ~f:(define_builtin_type g scope);
     Core.List.iter ast ~f:(fun s -> do_statement g s scope None None linker);
-    let ctrl = Scope_node.get_ctrl g scope in
-    Node2.G.set_stop_ctrl g ctrl;
-    Scope_node.set_ctrl g scope (Node2.G.get_stop g);
+    let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
+    Node2.G.set_ctrl g stop ctrl;
+    Scope_node.set_ctrl g scope stop;
     (* makes life easier and we dont need the scope anymore i think*)
     Node2.G.remove_node g scope;
     (* Node2.G.add_dependencies g stop (Node2.G.get_dependencies g scope |> List.tl_exn); *)
     (* Node2.G.cleanup g; *)
-    Node2.G.get_dependants g (Node2.G.get_start g)
+    Node2.G.get_dependants g start
     |> List.iter ~f:(fun (AnyNode n) ->
         if Node2.G.get_dependants g n |> List.is_empty then Node2.G.remove_node g n);
     g

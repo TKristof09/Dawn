@@ -61,8 +61,9 @@ and assign : type a b.
             in
             let symbol = Node2.unpack_exn symbol (Scope old_tbl) in
             let (AnyCtrl ctrl) = get_ctrl g symbol in
+            let (AnyNode tmp_ctrl) = Node2.G.get_ctrl_exn g tmp in
             match tmp.kind with
-            | Data Phi when Node2.equal (Phi_node.get_ctrl g tmp) ctrl -> Node2.AnyNode symbol
+            | Data Phi when Node2.equal tmp_ctrl ctrl -> Node2.AnyNode symbol
             | Data _ ->
                 let (AnyNode sym) = get g symbol name in
                 let phi =
@@ -135,9 +136,10 @@ and get g scope name : Node2.any =
             in
             let old_scope = Node2.unpack_exn symbol (Scope old_tbl) in
             let (AnyCtrl ctrl) = get_ctrl g old_scope in
+            let (AnyNode tmp_ctrl) = Node2.G.get_ctrl_exn g tmp in
             let new_symbol =
                 match tmp.kind with
-                | Data Phi when Node2.equal (Phi_node.get_ctrl g tmp) ctrl -> Node2.AnyNode tmp
+                | Data Phi when Node2.equal tmp_ctrl ctrl -> Node2.AnyNode tmp
                 | Data _ ->
                     let (AnyNode s) = get g old_scope name in
                     let s = Node2.as_data_exn s in
