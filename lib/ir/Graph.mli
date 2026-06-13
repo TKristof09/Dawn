@@ -16,6 +16,7 @@ module type S = sig
   type 'q t
 
   val create : start:N.any -> stop:N.any -> readwrite t
+  val readonly : 'q t -> readonly t
   val add_node : readwrite t -> ('a, 't) N.t -> 'a -> unit
   val set_node_inputs : readwrite t -> ('a, 't) N.t -> 'a -> unit
   val set_ctrl : readwrite t -> ('a, 'ta) N.t -> ('b, 'tb) N.t -> unit
@@ -28,9 +29,30 @@ module type S = sig
   val get_dependencies_exn : 'q t -> ('a, 't) N.t -> 'a
   val get_dependencies_list : 'q t -> ('a, 't) N.t -> N.any option list
   val get_dependants : 'q t -> ('a, 't) N.t -> N.any list
-  val readonly : 'q t -> readonly t
+
+  val replace_input : 'q t -> node:('a, 'ta) N.t -> from:('b, 'tb) N.t -> to_:('b, 'tb) N.t -> unit
+  (** [replace_input g node from to_] replaces all occurrences of [from] in [node]'s inputs with
+      [to_] *)
+
+  val replace_input_unsafe : 'q t -> node:('a, 'ta) N.t -> from:N.any -> to_:N.any -> unit
+  (** [replace_input_unsafe g node from to_] replaces all occurrences of [from] in [node]'s inputs
+      with [to_]
+
+      This is the unsafe version. It is up to the user to make sure that the replacement is
+      compatible with what the node expects as inputs. *)
+
+  val partition :
+    'q t ->
+    f:(N.any -> int) ->
+    get_start:(N.any -> bool) ->
+    get_stop:(N.any -> bool) ->
+    readwrite t list
+
+  val mem : 'q t -> N.any -> bool
   val iter : 'q t -> f:(N.any -> unit) -> unit
   val fold : 'q t -> init:'c -> f:('c -> N.any -> 'c) -> 'c
+  val find : 'q t -> f:(N.any -> bool) -> N.any option
+  val find_map : 'q t -> f:(N.any -> 'a option) -> 'a option
   val get_num_nodes : 'q t -> int
 end
 

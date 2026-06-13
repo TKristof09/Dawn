@@ -8,25 +8,6 @@ let next_id () =
 
 let reset_id () = id_counter := 0
 
-type cmp =
-    | Eq
-    | NEq
-    | Lt
-    | LEq
-    | Gt
-    | GEq
-[@@deriving show { with_path = false }, sexp_of]
-
-type ideal =
-    | Loop
-    | CProj of int
-    | Start
-    | Stop
-    | Region
-    | Phi
-    | External of string
-[@@deriving show { with_path = false }, sexp_of]
-
 module Z = struct
   include Z
 
@@ -39,60 +20,146 @@ module Z = struct
   let pp fmt z = Format.pp_print_string fmt (Z.to_string z)
 end
 
-type machine_node_kind =
-    | Int of Z.t
-    | Ptr
-    | AddrOf
-    | Deref
-    | ZeroExtend
-    | SignExtend
-    | Add
-    | AddImm of Z.t
-    | Sub
-    | SubImm of Z.t
-    | Mul
-    | MulImm of Z.t
-    | Div
-    | Lsh
-    | Rsh
-    | And
-    | Or
-    | LshImm of Z.t
-    | RshImm of Z.t
-    | AndImm of Z.t
-    | OrImm of Z.t
-    | Cmp
-    | CmpImm of Z.t
-    | Set of cmp
-    | JmpAlways
-    | Jmp of cmp
-    | Mov
-    | DProj of int
-    | FunctionProlog of int
-    | Return
-    | FunctionCall of int option
-    | FunctionCallEnd
-    | Param of int
-    | CalleeSave of Registers.reg
-    | New
-    | Store
-    | Load
-    | Noop
-    | RepMov of int
-    (* nodes that have no machine equivalent *)
-    | Ideal of ideal
-[@@deriving show { with_path = false }, sexp_of]
+module N = struct
+  type cmp =
+      | Eq
+      | NEq
+      | Lt
+      | LEq
+      | Gt
+      | GEq
+  [@@deriving show { with_path = false }, sexp_of]
 
-type t = {
-    id : int;
-    mutable kind : machine_node_kind;
-    ir_node : Node.t; [@opaque]
-  }
-[@@deriving show { with_path = false }, sexp_of]
+  type any = AnyNode : 'a t -> any
 
-let equal n n' = n.id = n'.id
-let compare n n' = Int.compare n.id n'.id
-let hash n = Int.hash n.id
+  and _ ideal =
+      | Loop : loop ideal
+      | CProj : int -> unary ideal
+      | Start : unit ideal
+      | Stop : stop ideal
+      | Region : merge_point ideal
+      | Phi : phi ideal
+      | External : string -> unit ideal
+
+  and _ kind =
+      | Int : Z.t -> unit kind
+      | Ptr : unit kind
+      | AddrOf : unary kind
+      | Deref : deref kind
+      | ZeroExtend : unary kind
+      | SignExtend : unary kind
+      | Add : binop kind
+      | AddImm : Z.t -> unary kind
+      | Sub : binop kind
+      | SubImm : Z.t -> unary kind
+      | Mul : binop kind
+      | MulImm : Z.t -> unary kind
+      | Div : binop kind
+      | Lsh : binop kind
+      | Rsh : binop kind
+      | And : binop kind
+      | Or : binop kind
+      | LshImm : Z.t -> unary kind
+      | RshImm : Z.t -> unary kind
+      | AndImm : Z.t -> unary kind
+      | OrImm : Z.t -> unary kind
+      | Cmp : binop kind
+      | CmpImm : Z.t -> unary kind
+      | Set : cmp -> unary kind
+      | JmpAlways : unit kind
+      | Jmp : cmp -> unary kind
+      | Mov : unary kind
+      | DProj : int -> unary kind
+      | FunctionProlog : int -> unit kind
+      | Return : return kind
+      | FunctionCall : int option -> fun_call kind
+      | FunctionCallEnd : fun_call_end kind
+      | Param : int -> phi kind
+      | CalleeSave : Registers.reg -> unit kind
+      | New : alloc kind
+      | Store : store kind
+      | Load : load kind
+      | Noop : unit kind
+      | RepMov : int -> repmov kind
+      | Ideal : 'a ideal -> 'a kind
+
+  and stop = { mem : any }
+  and merge_point = { ctrl_inputs : any option list }
+
+  and loop = {
+      entry : any;
+      backedge : any;
+    }
+
+  and phi = { phi_inputs : any option list }
+  and unary = { input : any }
+
+  and binop = {
+      lhs : any;
+      rhs : any;
+    }
+
+  and deref = {
+      mem : any;
+      ptr : any;
+    }
+
+  and alloc = {
+      mem : any;
+      size : any;
+    }
+
+  and store = {
+      mem : any;
+      ptr : any;
+      value : any;
+    }
+
+  and load = {
+      mem : any;
+      ptr : any;
+    }
+
+  and repmov = {
+      mem : any;
+      src : any;
+      dst : any;
+    }
+
+  and fun_call = {
+      fun_ptr : any option;
+      mem : any;
+      args : any list;
+    }
+
+  and fun_call_end = { ret_nodes : any list }
+
+  and return = {
+      mem : any;
+      value : any;
+      callee_saves : any list;
+    }
+
+  and 'a t = {
+      id : int;
+      mutable kind : 'a kind;
+      ir_node : Node2.any;
+      list_of_inputs : 'a -> any option list;
+      inputs_of_list : any option list -> 'a;
+    }
+  [@@deriving sexp_of]
+
+  let id n = n.id
+  let equal a b = a.id = b.id
+  let list_of_inputs n inps = n.list_of_inputs inps
+  let inputs_of_list n l = n.inputs_of_list l
+
+  let[@inline] type_eq : type a b. a t -> b t -> ((a, b) Type.eq * (unit, unit) Type.eq) option =
+     fun a b -> _
+end
+
+include N
+module G = Graph.Make (N)
 
 let invert_cond cond =
     match cond with
@@ -103,21 +170,17 @@ let invert_cond cond =
     | Gt -> LEq
     | GEq -> Lt
 
-let invert_jmp kind =
-    match kind with
-    | Jmp cond -> Jmp (invert_cond cond)
-    | _ -> assert false
-
-let is_cheap_to_clone n =
+let is_cheap_to_clone : type a. a t -> bool =
+   fun n ->
     match n.kind with
-    | Int _
-    | Ptr
-    | Cmp
-    | CmpImm _ ->
-        true
+    | Int _ -> true
+    | Ptr -> true
+    | Cmp -> true
+    | CmpImm _ -> true
     | _ -> false
 
-let is_control_node n =
+let is_control_node : type a. a t -> bool =
+   fun n ->
     match n.kind with
     | Jmp _
     | JmpAlways
@@ -168,7 +231,8 @@ let is_control_node n =
     | RepMov _ ->
         false
 
-let is_blockhead n =
+let is_blockhead : type a. a t -> bool =
+   fun n ->
     match n.kind with
     | Ideal Start
     | Ideal (CProj _)
@@ -180,7 +244,8 @@ let is_blockhead n =
         true
     | _ -> false
 
-let is_two_address n =
+let is_two_address : type a. a t -> bool =
+   fun n ->
     match n.kind with
     | Add
     | AddImm _
@@ -226,11 +291,13 @@ let is_two_address n =
         false
 
 let is_multi_output n =
-    match n.ir_node.typ with
+    let (AnyNode ir_node) = n.ir_node in
+    match ir_node.typ with
     | Tuple _ -> true
     | _ -> false
 
-let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
+let get_in_reg_mask : type a. G.readonly G.t -> a t -> int -> Registers.Mask.t option =
+   fun _ n i ->
     match n.kind with
     | Add
     | Sub
@@ -281,8 +348,9 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
     | FunctionProlog _ -> None
     | Return ->
         (* inputs: 0: memory; 1: value; 2+: callee saved regs *)
+        let (AnyNode ir_node) = n.ir_node in
         let is_void =
-            match n.ir_node.typ with
+            match ir_node.typ with
             | Tuple (Value [ _; _; t ]) -> Types.equal t Void
             | _ -> false
         in
@@ -351,7 +419,8 @@ let get_in_reg_mask (_ : (t, 'a) Graph.t) (n : t) (i : int) =
           None
     | Ideal _ -> None
 
-let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
+let rec get_out_reg_mask : type a. G.readonly G.t -> a t -> int -> Registers.Mask.t option =
+   fun g n i ->
     match n.kind with
     | Add
     | Sub
@@ -381,8 +450,8 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
         assert (i = 0);
         Some Registers.Mask.general_w
     | DProj proj_i ->
-        let in_node = Graph.get_dependencies g n |> List.hd_exn in
-        Option.bind in_node ~f:(fun dep -> get_out_reg_mask g dep proj_i)
+        let { input = AnyNode in_node } = G.get_dependencies_exn g n in
+        get_out_reg_mask g in_node proj_i
     | Cmp
     | CmpImm _ ->
         assert (i = 0);
@@ -398,8 +467,9 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     | FunctionProlog _ -> None
     | FunctionCall _ -> None
     | FunctionCallEnd ->
+        let (AnyNode ir_node) = n.ir_node in
         let is_void =
-            match n.ir_node.typ with
+            match ir_node.typ with
             | Tuple (Value [ _; _; t ]) -> Types.equal t Void
             | _ -> false
         in
@@ -417,8 +487,9 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     | CalleeSave reg -> Some (Registers.Mask.of_list [ Reg reg ])
     | Return ->
         assert (i = 0);
+        let (AnyNode ir_node) = n.ir_node in
         let is_void =
-            match n.ir_node.typ with
+            match ir_node.typ with
             | Tuple (Value [ _; _; t ]) -> Types.equal t Void
             | _ -> false
         in
@@ -442,7 +513,8 @@ let rec get_out_reg_mask (g : (t, 'a) Graph.t) (n : t) (i : int) =
     | RepMov _ -> None
     | Ideal _ -> None
 
-let get_register_kills (n : t) =
+let get_register_kills : type a. a t -> Registers.Mask.t option =
+   fun n ->
     match n.kind with
     | FunctionCall _ -> Some Registers.Mask.caller_save
     | Div -> Some (Registers.Mask.of_list [ Reg RDX ])
@@ -454,71 +526,114 @@ let get_register_kills (n : t) =
         Some (Registers.Mask.of_list [ Reg RCX ])
     | _ -> None
 
-let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
-    let binop_commutative kind kind_imm =
-        let deps = Graph.get_dependencies g n in
-        match
-          List.find_mapi deps ~f:(fun i n ->
-              Option.bind n ~f:(fun n ->
-                  match n.typ with
-                  | Integer _
-                    when Types.is_constant n.typ && Z.fits_int32 (Types.get_integer_const_exn n.typ)
-                    ->
-                      Some (i, n)
-                  | _ -> None))
-        with
-        | None ->
-            let node = { id = next_id (); kind; ir_node = n } in
-            Graph.add_dependencies machine_g node [];
-            Hashtbl.add_exn memo ~key:n ~data:node;
-            Graph.add_dependencies machine_g node
-              (List.map deps ~f:(Option.map ~f:(convert_node memo g machine_g)));
-            node
-        | Some (idx, cn) ->
-            let value =
-                match cn.typ with
-                | Integer _ when Types.is_constant cn.typ -> Types.get_integer_const_exn cn.typ
-                | _ -> assert false (* already checked in the List.find call above *)
-            in
-            let kind = kind_imm value in
-            let node = { id = next_id (); kind; ir_node = n } in
-            Graph.add_dependencies machine_g node [];
-            Hashtbl.add_exn memo ~key:n ~data:node;
-            let deps = List.filteri deps ~f:(fun i _ -> i <> idx) in
-            Graph.add_dependencies machine_g node
-              (List.map deps ~f:(Option.map ~f:(convert_node memo g machine_g)));
-            node
+let create_node : type a. a kind -> Node2.any -> a t =
+   fun kind ir_node ->
+    {
+      id = next_id ();
+      kind;
+      ir_node;
+      list_of_inputs = get_list_of_inputs kind;
+      inputs_of_list = get_inputs_of_list kind;
+    }
+
+let rec of_data_node : type a.
+    (Node2.any, any) Hashtbl.t ->
+    Node2.G.readonly Node2.G.t ->
+    G.readwrite G.t ->
+    (a, Node2.data) Node2.t ->
+    any =
+   fun memo g machine_g n ->
+    let set_ctrl : type a. a t -> unit =
+       fun node ->
+        let ctrl =
+            Node2.G.get_ctrl g n
+            |> Option.map ~f:(fun (AnyNode ctrl) -> convert_node memo g machine_g ctrl)
+        in
+        G.set_ctrl machine_g node ctrl
     in
-    let binop_non_commutative kind kind_imm =
-        let deps = Graph.get_dependencies g n in
-        match List.nth_exn deps 2 with
-        | None -> assert false
-        | Some dep -> (
-            match dep.typ with
-            | Integer _
-              when Types.is_constant dep.typ && Z.fits_int32 (Types.get_integer_const_exn dep.typ)
-              ->
-                let v = Types.get_integer_const_exn dep.typ in
-                let kind = kind_imm v in
-                let node = { id = next_id (); kind; ir_node = n } in
-                Graph.add_dependencies machine_g node [];
-                Hashtbl.add_exn memo ~key:n ~data:node;
-                let deps = List.filteri deps ~f:(fun i _ -> i <> 2) in
-                Graph.add_dependencies machine_g node
-                  (List.map deps ~f:(Option.map ~f:(convert_node memo g machine_g)));
-                node
-            | _ ->
-                let node = { id = next_id (); kind; ir_node = n } in
-                Graph.add_dependencies machine_g node [];
-                Hashtbl.add_exn memo ~key:n ~data:node;
-                Graph.add_dependencies machine_g node
-                  (List.map deps ~f:(Option.map ~f:(convert_node memo g machine_g)));
-                node)
+    let get_const (Node2.AnyData n) =
+        if Types.is_constant n.typ && Z.fits_int32 (Types.get_integer_const_exn n.typ) then
+          Some (Types.get_integer_const_exn n.typ)
+        else
+          None
     in
-    match kind with
-    | Add -> binop_commutative Add (fun i -> AddImm i)
-    | Sub -> binop_non_commutative Sub (fun i -> SubImm i)
-    | Constant ->
+    let binop_commutative kind kind_imm (n : (Node2.binop, Node2.data) Node2.t) =
+        let deps = Node2.G.get_dependencies_exn g n in
+        let lhs = Option.value_exn deps.lhs in
+        let rhs = Option.value_exn deps.rhs in
+        match (get_const lhs, get_const rhs) with
+        | None, None ->
+            let node = create_node kind (Node2.AnyNode n) in
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+            let (AnyData lhs) = lhs in
+            let lhs = convert_node memo g machine_g lhs in
+            let (AnyData rhs) = rhs in
+            let rhs = convert_node memo g machine_g rhs in
+            G.add_node machine_g node { lhs; rhs };
+            set_ctrl node;
+            AnyNode node
+        | _, Some c ->
+            let kind = kind_imm c in
+            let node = create_node kind (AnyNode n) in
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+            let (AnyData normal) = lhs in
+            let lhs = convert_node memo g machine_g normal in
+            G.add_node machine_g node { input = lhs };
+            set_ctrl node;
+            AnyNode node
+        | Some c, _ ->
+            let kind = kind_imm c in
+            let node = create_node kind (AnyNode n) in
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+            let (AnyData normal) = rhs in
+            let lhs = convert_node memo g machine_g normal in
+            G.add_node machine_g node { input = lhs };
+            set_ctrl node;
+            AnyNode node
+    in
+    let binop_non_commutative kind kind_imm (n : (Node2.binop, Node2.data) Node2.t) =
+        let deps = Node2.G.get_dependencies_exn g n in
+        let (AnyData rhs) = Option.value_exn deps.rhs in
+        match rhs.typ with
+        | Integer _
+          when Types.is_constant rhs.typ && Z.fits_int32 (Types.get_integer_const_exn rhs.typ) ->
+            let v = Types.get_integer_const_exn rhs.typ in
+            let kind = kind_imm v in
+            let node = create_node kind (AnyNode n) in
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+            let (AnyData lhs) = Option.value_exn deps.lhs in
+            let lhs = convert_node memo g machine_g lhs in
+            G.add_node machine_g node { input = lhs };
+            set_ctrl node;
+            AnyNode node
+        | _ ->
+            let node = create_node kind (Node2.AnyNode n) in
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+            let (AnyData lhs) = Option.value_exn deps.lhs in
+            let lhs = convert_node memo g machine_g lhs in
+            let rhs = convert_node memo g machine_g rhs in
+            G.add_node machine_g node { lhs; rhs };
+            set_ctrl node;
+            AnyNode node
+    in
+    match n.kind with
+    | ForwardRef _ -> failwith "ForwardRef nodes shouldn't exist by this point"
+    | Data Add -> binop_commutative Add (fun i -> AddImm i) n
+    | Data Sub -> binop_non_commutative Sub (fun i -> SubImm i) n
+    | Data Mul -> binop_commutative Mul (fun i -> MulImm i) n
+    | Data Div ->
+        let kind = Div in
+        let node = create_node kind (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let { Node2.lhs; rhs } = Node2.G.get_dependencies_exn g n in
+        let (AnyData lhs) = Option.value_exn lhs in
+        let (AnyData rhs) = Option.value_exn rhs in
+        let lhs = convert_node memo g machine_g lhs in
+        let rhs = convert_node memo g machine_g rhs in
+        G.add_node machine_g node { lhs; rhs };
+        set_ctrl node;
+        AnyNode node
+    | Data Constant ->
         let kind =
             match n.typ with
             | Integer _ when Types.is_constant n.typ -> Int (Types.get_integer_const_exn n.typ)
@@ -529,134 +644,146 @@ let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
             | Bool (Value b) -> Int (Bool.to_int b |> Z.of_int)
             | _ -> assert false
         in
-        let node = { id = next_id (); kind; ir_node = n } in
-        Graph.add_dependencies machine_g node [ Some (Graph.get_start machine_g) ];
-        Hashtbl.add_exn memo ~key:n ~data:node;
-        node
-    | Proj i ->
+        let node = create_node kind (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        G.add_node machine_g node ();
+        set_ctrl node;
+        AnyNode node
+    | Data (Proj i) ->
         let kind = DProj i in
-        let node = { id = next_id (); kind; ir_node = n } in
-        Graph.add_dependencies machine_g node [];
-        Hashtbl.add_exn memo ~key:n ~data:node;
-        let deps =
-            Graph.get_dependencies g n
-            |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
+        let node = create_node kind (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let { Node2.input } = Node2.G.get_dependencies_exn g n in
+        let (AnyData input) = Option.value_exn input in
+        let input = convert_node memo g machine_g input in
+        G.add_node machine_g node { input };
+        set_ctrl node;
+        AnyNode node
+    | Data Eq
+    | Data NEq
+    | Data Lt
+    | Data LEq
+    | Data Gt
+    | Data GEq -> (
+        let as_binop : type a b. (a, b) Node2.t -> (Node2.binop, Node2.data) Node2.t =
+           fun n ->
+            match n.kind with
+            | Data Add -> n
+            | Data Sub -> n
+            | Data Div -> n
+            | Data Mul -> n
+            | Data Eq -> n
+            | Data NEq -> n
+            | Data Lt -> n
+            | Data LEq -> n
+            | Data Gt -> n
+            | Data GEq -> n
+            | Data BAnd -> n
+            | Data BOr -> n
+            | _ -> assert false
         in
-        Graph.add_dependencies machine_g node deps;
-        node
-    | Eq
-    | NEq
-    | Lt
-    | LEq
-    | Gt
-    | GEq ->
-        let cmp_deps = Graph.get_dependencies g n in
+        let n = as_binop n in
+        let { Node2.lhs; rhs } = Node2.G.get_dependencies_exn g n in
         let m_cmp =
-            match kind with
-            | Eq -> Eq
-            | NEq -> NEq
-            | Lt -> Lt
-            | LEq -> LEq
-            | Gt -> Gt
-            | GEq -> GEq
+            match n.kind with
+            | Data Eq -> Eq
+            | Data NEq -> NEq
+            | Data Lt -> Lt
+            | Data LEq -> LEq
+            | Data Gt -> Gt
+            | Data GEq -> GEq
             | _ -> assert false
         in
 
-        let set_node =
-            match
-              List.find_mapi cmp_deps ~f:(fun i n ->
-                  Option.bind n ~f:(fun n ->
-                      match n.typ with
-                      | Integer _ when Types.is_constant n.typ -> Some (i, n)
-                      | _ -> None))
-            with
-            | None ->
-                let set_node = { id = next_id (); kind = Set m_cmp; ir_node = n } in
-                let cmp_node = { id = next_id (); kind = Cmp; ir_node = n } in
+        let lhs = Option.value_exn lhs in
+        let rhs = Option.value_exn rhs in
+        match (get_const lhs, get_const rhs) with
+        | None, None ->
+            let set_node = create_node (Set m_cmp) (AnyNode n) in
+            let cmp_node = create_node Cmp (AnyNode n) in
 
-                Hashtbl.add_exn memo ~key:n ~data:set_node;
-                let deps = List.map cmp_deps ~f:(Option.map ~f:(convert_node memo g machine_g)) in
-                Graph.add_dependencies machine_g cmp_node deps;
-                Graph.add_dependencies machine_g set_node [ List.hd_exn deps; Some cmp_node ];
-                set_node
-            | Some (idx, cn) ->
-                let value =
-                    (* already checked in the List.find call above *)
-                    Types.get_integer_const_exn cn.typ
-                in
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode set_node);
+            let (AnyData lhs) = lhs in
+            let lhs = convert_node memo g machine_g lhs in
+            let (AnyData rhs) = rhs in
+            let rhs = convert_node memo g machine_g rhs in
+            G.add_node machine_g cmp_node { lhs; rhs };
+            set_ctrl cmp_node;
+            G.add_node machine_g set_node { input = AnyNode cmp_node };
+            set_ctrl set_node;
+            AnyNode set_node
+        | _, Some c ->
+            let set_node = create_node (Set m_cmp) (AnyNode n) in
+            let cmp_node = create_node (CmpImm c) (AnyNode n) in
 
-                let m_cmp =
-                    if idx = 2 then
-                      m_cmp
-                    else
-                      match
-                        m_cmp
-                      with
-                      | Eq
-                      | NEq ->
-                          m_cmp
-                      | Lt -> Gt
-                      | LEq -> GEq
-                      | Gt -> Lt
-                      | GEq -> LEq
-                in
-                let cmp_node = { id = next_id (); kind = CmpImm value; ir_node = n } in
-                let set_node = { id = next_id (); kind = Set m_cmp; ir_node = n } in
-                let deps = List.filteri cmp_deps ~f:(fun i _ -> i <> idx) in
-                Hashtbl.add_exn memo ~key:n ~data:set_node;
-                let deps = List.map deps ~f:(Option.map ~f:(convert_node memo g machine_g)) in
-                Graph.add_dependencies machine_g cmp_node deps;
-                Graph.add_dependencies machine_g set_node [ List.hd_exn deps; Some cmp_node ];
-                set_node
-        in
-        set_node
-    | Phi ->
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode set_node);
+            let (AnyData lhs) = lhs in
+            let lhs = convert_node memo g machine_g lhs in
+            G.add_node machine_g cmp_node { input = lhs };
+            set_ctrl cmp_node;
+            G.add_node machine_g set_node { input = AnyNode cmp_node };
+            set_ctrl set_node;
+            AnyNode set_node
+        | Some c, _ ->
+            (* lhs is immediate so we have to invert the comparisn to put the immediate on right side *)
+            let m_cmp =
+                match m_cmp with
+                | Eq
+                | NEq ->
+                    m_cmp
+                | Lt -> Gt
+                | LEq -> GEq
+                | Gt -> Lt
+                | GEq -> LEq
+            in
+            let set_node = create_node (Set m_cmp) (AnyNode n) in
+            let cmp_node = create_node (CmpImm c) (AnyNode n) in
+
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode set_node);
+            let (AnyData rhs) = rhs in
+            let rhs = convert_node memo g machine_g rhs in
+            G.add_node machine_g cmp_node { input = rhs };
+            set_ctrl cmp_node;
+            G.add_node machine_g set_node { input = AnyNode cmp_node };
+            set_ctrl set_node;
+            AnyNode set_node)
+    | Data Phi ->
         let kind = Ideal Phi in
-        let node = { id = next_id (); kind; ir_node = n } in
-        Graph.add_dependencies machine_g node [];
-        Hashtbl.add_exn memo ~key:n ~data:node;
-        let deps =
-            Graph.get_dependencies g n
-            |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
+        let node = create_node kind (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+        let phi_inputs =
+            List.map phi_inputs
+              ~f:(Option.map ~f:(fun (Node2.AnyData n) -> convert_node memo g machine_g n))
         in
-        Graph.add_dependencies machine_g node deps;
-        node
-    | Mul -> binop_commutative Mul (fun i -> MulImm i)
-    | Div ->
-        let kind = Div in
-        let node = { id = next_id (); kind; ir_node = n } in
-        Graph.add_dependencies machine_g node [];
-        Hashtbl.add_exn memo ~key:n ~data:node;
-        Graph.add_dependencies machine_g node
-          (Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g)));
-        node
-    | Lsh -> binop_non_commutative Lsh (fun i -> LshImm i)
-    | Rsh -> binop_non_commutative Rsh (fun i -> RshImm i)
-    | BAnd -> binop_commutative And (fun i -> AndImm i)
-    | BOr -> binop_commutative Or (fun i -> OrImm i)
-    | Param i ->
+        G.add_node machine_g node { phi_inputs };
+        set_ctrl node;
+        AnyNode node
+    | Data Lsh -> binop_non_commutative Lsh (fun i -> LshImm i) n
+    | Data Rsh -> binop_non_commutative Rsh (fun i -> RshImm i) n
+    | Data BAnd -> binop_commutative And (fun i -> AndImm i) n
+    | Data BOr -> binop_commutative Or (fun i -> OrImm i) n
+    | Data (Param i) ->
         let kind = Param i in
-        let node = { id = next_id (); kind; ir_node = n } in
-        Graph.add_dependencies machine_g node [];
-        Hashtbl.add_exn memo ~key:n ~data:node;
-        let deps =
-            Graph.get_dependencies g n
-            |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
+        let node = create_node kind (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+        let phi_inputs =
+            List.map phi_inputs
+              ~f:(Option.map ~f:(fun (Node2.AnyData n) -> convert_node memo g machine_g n))
         in
-        Graph.add_dependencies machine_g node deps;
-        node
-    | External name ->
-        let node = { id = next_id (); kind = Ideal (External name); ir_node = n } in
-        Graph.add_dependencies machine_g node [];
-        Hashtbl.add_exn memo ~key:n ~data:node;
-        let deps =
-            Graph.get_dependencies g n
-            |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
-        in
-        Graph.add_dependencies machine_g node deps;
-        node
-    | Cast ->
-        let input = Graph.get_dependency g n 1 |> Option.value_exn in
+        G.add_node machine_g node { phi_inputs };
+        set_ctrl node;
+        AnyNode node
+    | Data (External name) ->
+        let node = create_node (Ideal (External name)) (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        G.add_node machine_g node ();
+        set_ctrl node;
+        AnyNode node
+    | Data Cast ->
+        let { Node2.input } = Node2.G.get_dependencies_exn g n in
+        let (AnyData input) = Option.value_exn input in
         let kind =
             match input.typ with
             | Integer (Value { min; max; num_widens; fixed_width }) ->
@@ -667,28 +794,41 @@ let rec of_data_node memo g machine_g (kind : Node.data_kind) (n : Node.t) =
                   SignExtend
             | _ -> failwithf "TODO: not handled yet %s" (Types.show input.typ) ()
         in
-        let node = { id = next_id (); kind; ir_node = n } in
-        Graph.add_dependencies machine_g node [];
-        Hashtbl.add_exn memo ~key:n ~data:node;
-        Graph.add_dependencies machine_g node
-          (Graph.get_dependencies g n |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g)));
-        node
+        let node = create_node kind (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let input = convert_node memo g machine_g input in
+        G.add_node machine_g node { input };
+        set_ctrl node;
+        AnyNode node
 
-and of_ctrl_node memo g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
-    let simple kind =
-        let node = { id = next_id (); kind; ir_node = n } in
-        Graph.add_dependencies machine_g node [];
-        Hashtbl.add_exn memo ~key:n ~data:node;
-        let deps =
-            Graph.get_dependencies g n
-            |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
+and of_ctrl_node : type a.
+    (Node2.any, any) Hashtbl.t ->
+    Node2.G.readonly Node2.G.t ->
+    G.readwrite G.t ->
+    (a, Node2.ctrl) Node2.t ->
+    any =
+   fun memo g machine_g n ->
+    let set_ctrl : type a. a t -> unit =
+       fun node ->
+        let ctrl =
+            Node2.G.get_ctrl g n
+            |> Option.map ~f:(fun (AnyNode ctrl) -> convert_node memo g machine_g ctrl)
         in
-        Graph.add_dependencies machine_g node deps;
-        node
+        G.set_ctrl machine_g node ctrl
     in
-    match kind with
-    | If -> (
-        let cond = Graph.get_dependency g n 1 |> Option.value_exn in
+    let simple : type a b t. a kind -> (b, t) Node2.t -> (b -> a) -> any =
+       fun kind n f ->
+        let node = create_node kind (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let inputs = Node2.G.get_dependencies_exn g n in
+        G.add_node machine_g node (f inputs);
+        set_ctrl node;
+        AnyNode node
+    in
+    match n.kind with
+    | Ctrl If -> (
+        let { Node2.input = cond } = Node2.G.get_dependencies_exn g n in
+        let (AnyData cond) = Option.value_exn cond in
         let op =
             match cond.kind with
             | Data Eq -> Some Eq
@@ -702,182 +842,306 @@ and of_ctrl_node memo g machine_g (kind : Node.ctrl_kind) (n : Node.t) =
         match op with
         | Some op ->
             let kind = Jmp op in
-            let node = { id = next_id (); kind; ir_node = n } in
-            Graph.add_dependencies machine_g node [];
-            Hashtbl.add_exn memo ~key:n ~data:node;
-            let deps =
-                Graph.get_dependencies g n
-                |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
-            in
-            Graph.add_dependencies machine_g node deps;
-            node
+            let node = create_node kind (AnyNode n) in
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+            let cond = convert_node memo g machine_g cond in
+            G.add_node machine_g node { input = cond };
+            set_ctrl node;
+            AnyNode node
         | None ->
             (* Predicate is not a compare. Add a compare node to compare the
                predicate value to 0 and set that as the depedency of the Jmp
                node *)
-            let comp_node = { id = next_id (); kind = CmpImm Z.zero; ir_node = cond } in
+            let cmp_node = create_node (CmpImm Z.zero) (AnyNode n) in
             let kind = Jmp NEq in
-            let node = { id = next_id (); kind; ir_node = n } in
-            Graph.add_dependencies machine_g node [];
-            Hashtbl.add_exn memo ~key:n ~data:node;
-            let deps =
-                Graph.get_dependencies g n
-                |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
+            let node = create_node kind (AnyNode n) in
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+            let cond = convert_node memo g machine_g cond in
+            G.add_node machine_g cmp_node { input = cond };
+            set_ctrl cmp_node;
+            G.add_node machine_g node { input = AnyNode cmp_node };
+            set_ctrl node;
+            AnyNode node)
+    | Ctrl Stop ->
+        let (AnyNode node) = G.get_stop machine_g in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let { Node2.mem } : Node2.stop = Node2.G.get_dependencies_exn g n in
+        let (AnyMem mem) = Option.value_exn mem in
+        let mem = convert_node memo g machine_g mem in
+        G.set_node_inputs machine_g node { mem };
+        set_ctrl node;
+        AnyNode node
+    | Ctrl Start ->
+        let node = G.get_start machine_g in
+        node
+    | Ctrl (Proj i) ->
+        simple (Ideal (CProj i)) n (fun { input } ->
+            let (AnyCtrl input) = Option.value_exn input in
+            { input = convert_node memo g machine_g input })
+    | Ctrl Loop ->
+        simple (Ideal Loop) n (fun { entry; backedge } ->
+            let (AnyCtrl entry) = Option.value_exn entry in
+            let (AnyCtrl backedge) = Option.value_exn backedge in
+            {
+              entry = convert_node memo g machine_g entry;
+              backedge = convert_node memo g machine_g backedge;
+            })
+    | Ctrl Region ->
+        simple (Ideal Region) n (fun { ctrl_inputs } ->
+            let ctrl_inputs =
+                List.map ctrl_inputs
+                  ~f:(Option.map ~f:(fun (Node2.AnyCtrl n) -> convert_node memo g machine_g n))
             in
-            Graph.add_dependencies machine_g comp_node [ List.hd_exn deps; List.nth_exn deps 1 ];
-            Graph.add_dependencies machine_g node [ List.hd_exn deps; Some comp_node ];
-            node)
-    | Stop ->
-        let node = Graph.get_stop machine_g in
-        Hashtbl.add_exn memo ~key:n ~data:node;
-        let deps =
-            Graph.get_dependencies g n
-            |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
+            { ctrl_inputs })
+    | Ctrl (Function { ret = _; signature = _; idx }) ->
+        let node = create_node (FunctionProlog idx) (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let { Node2.call_sites } = Node2.G.get_dependencies_exn g n in
+        let call_sites =
+            List.map call_sites
+              ~f:(Option.map ~f:(fun (Node2.AnyCtrl call) -> convert_node memo g machine_g call))
         in
-        Graph.add_dependencies machine_g node deps;
-        node
-    | Start ->
-        let node = Graph.get_start machine_g in
-        node
-    | Proj i -> simple (Ideal (CProj i))
-    | Loop -> simple (Ideal Loop)
-    | Region -> simple (Ideal Region)
-    | Function { ret = _; signature = _; idx } ->
-        let node = { id = next_id (); kind = FunctionProlog idx; ir_node = n } in
-        Graph.add_dependencies machine_g node [];
-        Hashtbl.add_exn memo ~key:n ~data:node;
-        let deps =
-            Graph.get_dependencies g n
-            |> List.filter ~f:(function
-              | None -> true
-              | Some n -> (
-                  match n.kind with
-                  | Ctrl FunctionCall -> false
-                  | _ -> true))
-            |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
-        in
-        Graph.add_dependencies machine_g node deps;
-        node
-    | Return -> simple Return
-    | FunctionCall ->
-        let deps = Graph.get_dependencies g n in
-        let fun_ptr = Fun_node.get_call_fun_ptr g n in
+        G.add_node machine_g node { ctrl_inputs = call_sites };
+        set_ctrl node;
+        AnyNode node
+    | Ctrl Return ->
+        simple Return n (fun { mem; data } ->
+            let (AnyMem mem) = Option.value_exn mem in
+            let (AnyData data) = Option.value_exn data in
+            {
+              mem = convert_node memo g machine_g mem;
+              value = convert_node memo g machine_g data;
+              callee_saves = [];
+            })
+    | Ctrl FunctionCall ->
+        let { Node2.fun_ptr; mem; args } = Node2.G.get_dependencies_exn g n in
+        let (AnyData fun_ptr) = Option.value_exn fun_ptr in
+        let (AnyMem mem) = Option.value_exn mem in
         let fun_idx = Types.get_fun_idx fun_ptr.typ in
         let kind = FunctionCall fun_idx in
-        let node = { id = next_id (); kind; ir_node = n } in
-        Graph.add_dependencies machine_g node [];
-        Hashtbl.add_exn memo ~key:n ~data:node;
-        let deps =
-            deps
-            |> List.filter_map ~f:(function
-              | None -> Some None
-              | Some n ->
-                  if Option.is_some fun_idx && Node.equal n fun_ptr then
-                    None
-                  else
-                    Some (Some (convert_node memo g machine_g n)))
+        let node = create_node kind (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let fun_ptr =
+            if Option.is_some fun_idx then None else Some (convert_node memo g machine_g fun_ptr)
         in
-        Graph.add_dependencies machine_g node deps;
-        node
-    | FunctionCallEnd -> simple FunctionCallEnd
+        let mem = convert_node memo g machine_g mem in
+        let args =
+            List.map args ~f:(fun o -> Option.value_exn o)
+            |> List.map ~f:(fun (Node2.AnyData arg) -> convert_node memo g machine_g arg)
+        in
+        G.add_node machine_g node { fun_ptr; mem; args };
+        set_ctrl node;
+        AnyNode node
+    | Ctrl FunctionCallEnd ->
+        simple FunctionCallEnd n (fun { ret_nodes } ->
+            let ret_nodes =
+                List.map ret_nodes ~f:(fun o -> Option.value_exn o)
+                |> List.map ~f:(fun (Node2.AnyCtrl ret) -> convert_node memo g machine_g ret)
+            in
+            { ret_nodes })
 
-and of_mem_node memo g machine_g kind (n : Node.t) =
-    let simple kind =
-        let node = { id = next_id (); kind; ir_node = n } in
-        Graph.add_dependencies machine_g node [];
-        Hashtbl.add_exn memo ~key:n ~data:node;
-        let deps =
-            Graph.get_dependencies g n
-            |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
+and of_mem_node : type a.
+    (Node2.any, any) Hashtbl.t ->
+    Node2.G.readonly Node2.G.t ->
+    G.readwrite G.t ->
+    (a, Node2.mem) Node2.t ->
+    any =
+   fun memo g machine_g n ->
+    let set_ctrl : type a. a t -> unit =
+       fun node ->
+        let ctrl =
+            Node2.G.get_ctrl g n
+            |> Option.map ~f:(fun (AnyNode ctrl) -> convert_node memo g machine_g ctrl)
         in
-        Graph.add_dependencies machine_g node deps;
-        node
+        G.set_ctrl machine_g node ctrl
     in
-    match kind with
-    | Node.New -> simple New
-    | Store _ ->
+    let simple : type a b t. a kind -> (b, t) Node2.t -> (b -> a) -> any =
+       fun kind n f ->
+        let node = create_node kind (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let inputs = Node2.G.get_dependencies_exn g n in
+        G.add_node machine_g node (f inputs);
+        set_ctrl node;
+        AnyNode node
+    in
+    match n.kind with
+    | Mem New ->
+        simple New n (fun { mem; size } ->
+            let (AnyMem mem) = Option.value_exn mem in
+            let (AnyData size) = Option.value_exn size in
+            { mem = convert_node memo g machine_g mem; size = convert_node memo g machine_g size })
+    | Mem (Store _) ->
         (* TODO check for ops like add that can address memory directly *)
-        let value = Graph.get_dependency g n 3 |> Option.value_exn in
+        let { Node2.mem = _; ptr = _; value } = Node2.G.get_dependencies_exn g n in
+        let (AnyData value) = Option.value_exn value in
         let size = Types.get_size value.typ in
         assert (size <= 8);
-        simple Store
-    | Load _ -> (
+        simple Store n (fun { mem; ptr; value } ->
+            let (AnyMem mem) = Option.value_exn mem in
+            let (AnyMem ptr) = Option.value_exn ptr in
+            let (AnyData value) = Option.value_exn value in
+            {
+              mem = convert_node memo g machine_g mem;
+              ptr = convert_node memo g machine_g ptr;
+              value = convert_node memo g machine_g value;
+            })
+    | Mem (Load _) -> (
         (* TODO check for ops like add that can address memory directly *)
         match n.typ with
         | Struct _ ->
-            let node = { id = next_id (); kind = AddrOf; ir_node = n } in
-            Hashtbl.add_exn memo ~key:n ~data:node;
-            let deps =
-                [ None; Graph.get_dependency g n 2 ]
-                |> List.map ~f:(Option.map ~f:(convert_node memo g machine_g))
-            in
-            Graph.add_dependencies machine_g node deps;
-            node
-        | _ -> simple Load)
-    | AddrOf -> simple AddrOf
-    | AddrOfField f ->
-        let input = Graph.get_dependency g n 1 |> Option.value_exn in
-        let offs = Types.get_offset input.typ f |> Option.value_exn in
+            let node = create_node AddrOf (AnyNode n) in
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+            let { Node2.mem = _; ptr } : Node2.load = Node2.G.get_dependencies_exn g n in
+            let (AnyMem ptr) = Option.value_exn ptr in
+            let ptr = convert_node memo g machine_g ptr in
+            G.add_node machine_g node { input = ptr };
+            set_ctrl node;
+            AnyNode node
+        | _ ->
+            simple Load n (fun { Node2.mem; ptr } ->
+                let (AnyMem mem) = Option.value_exn mem in
+                let (AnyMem ptr) = Option.value_exn ptr in
+                { mem = convert_node memo g machine_g mem; ptr = convert_node memo g machine_g ptr })
+        )
+    | Mem AddrOf -> (
+        let node = create_node AddrOf (AnyNode n) in
+        let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
+        match offset with
+        | None ->
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+            let (AnyData place) = Option.value_exn place in
+            let place = convert_node memo g machine_g place in
+            G.add_node machine_g node { input = place };
+            set_ctrl node;
+            AnyNode node
+        | Some (AnyData offset) ->
+            let add_node = create_node Add (AnyNode n) in
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode add_node);
+            let (AnyData place) = Option.value_exn place in
+            let place = convert_node memo g machine_g place in
+            let offset = convert_node memo g machine_g offset in
+            G.add_node machine_g node { input = place };
+            set_ctrl node;
+            G.add_node machine_g add_node { lhs = AnyNode node; rhs = offset };
+            set_ctrl add_node;
+            AnyNode add_node)
+    | Mem (AddrOfField f) ->
+        let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
+        let (AnyData place) = Option.value_exn place in
+        let field_offset = Types.get_offset place.typ f |> Option.value_exn in
 
-        let base_addr = { id = next_id (); kind = AddrOf; ir_node = n } in
-        Graph.add_dependencies machine_g base_addr [];
-        Hashtbl.add_exn memo ~key:n ~data:base_addr;
-        let dep = convert_node memo g machine_g input in
-        let ctrl = Graph.get_dependency g n 0 |> Option.map ~f:(convert_node memo g machine_g) in
-        Graph.add_dependencies machine_g base_addr [ ctrl; Some dep ];
+        let base_addr = create_node AddrOf (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode base_addr);
+        let place = convert_node memo g machine_g place in
+        G.add_node machine_g base_addr { input = place };
+        set_ctrl base_addr;
 
-        let field_addr = { id = next_id (); kind = AddImm (Z.of_int offs); ir_node = n } in
-        Graph.add_dependencies machine_g field_addr [ None; Some base_addr ];
+        let field_addr = create_node (AddImm (Z.of_int field_offset)) (AnyNode n) in
+        G.add_node machine_g field_addr { input = AnyNode base_addr };
+        set_ctrl field_addr;
         let addr =
-            match Graph.get_dependency g n 2 with
-            | Some idx ->
+            match offset with
+            | Some (AnyData idx) ->
                 let idx = convert_node memo g machine_g idx in
                 let s =
                     match n.typ with
                     | Ptr p -> Types.get_size p
                     | _ -> assert false
                 in
-                let m = { id = next_id (); kind = MulImm (Z.of_int s); ir_node = n } in
-                Graph.add_dependencies machine_g m [ None; Some idx ];
-                let a = { id = next_id (); kind = Add; ir_node = n } in
-                Graph.add_dependencies machine_g a [ None; Some field_addr; Some m ];
-                a
-            | None -> field_addr
+                let m = create_node (MulImm (Z.of_int s)) (AnyNode n) in
+                G.add_node machine_g m { input = idx };
+                set_ctrl m;
+                let a = create_node Add (AnyNode n) in
+                G.add_node machine_g a { lhs = AnyNode field_addr; rhs = AnyNode m };
+                set_ctrl a;
+                AnyNode a
+            | None -> AnyNode field_addr
         in
         (* use set because the call to simple AddrOf already adds this key so we need to overwrite it *)
-        Hashtbl.set memo ~key:n ~data:addr;
+        Hashtbl.set memo ~key:(AnyNode n) ~data:addr;
         addr
-    | Deref -> (
+    | Mem Deref -> (
         match n.typ with
         | Struct _ ->
-            let mn =
-                Graph.get_dependency g n 2 |> Option.value_exn |> convert_node memo g machine_g
-            in
-            Hashtbl.set memo ~key:n ~data:mn;
-            mn
-        | _ -> simple Deref)
-    | Copy ->
-        let src = Graph.get_dependency g n 2 |> Option.value_exn in
+            (* struct dereference isn't a real thing because structs need to be accessed by ptr anyway *)
+            let { Node2.mem; ptr } = Node2.G.get_dependencies_exn g n in
+            let (AnyMem ptr) = Option.value_exn ptr in
+            let ptr = convert_node memo g machine_g ptr in
+            Hashtbl.set memo ~key:(AnyNode n) ~data:ptr;
+            ptr
+        | _ ->
+            simple Deref n (fun { mem; ptr } ->
+                let (AnyMem mem) = Option.value_exn mem in
+                let mem = convert_node memo g machine_g mem in
+                let (AnyMem ptr) = Option.value_exn ptr in
+                let ptr = convert_node memo g machine_g ptr in
+                { mem; ptr }))
+    | Mem Copy ->
+        let inputs = Node2.G.get_dependencies_exn g n in
+        let (AnyMem src) = Option.value_exn inputs.src in
         let size =
             match src.typ with
             | Ptr p -> Types.get_size p
             | _ -> assert false
         in
-        simple (RepMov size)
+        simple (RepMov size) n (fun { mem; src; dst } ->
+            let (AnyMem mem) = Option.value_exn mem in
+            let mem = convert_node memo g machine_g mem in
+            let (AnyMem src) = Option.value_exn src in
+            let src = convert_node memo g machine_g src in
+            let (AnyMem dst) = Option.value_exn dst in
+            let dst = convert_node memo g machine_g dst in
+            { mem; src; dst })
+    | Mem Phi ->
+        let kind = Ideal Phi in
+        let node = create_node kind (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+        let phi_inputs =
+            List.map phi_inputs
+              ~f:(Option.map ~f:(fun (Node2.AnyMem n) -> convert_node memo g machine_g n))
+        in
+        G.add_node machine_g node { phi_inputs };
+        set_ctrl node;
+        AnyNode node
+    | Mem Param ->
+        let kind = Param 0 in
+        let node = create_node kind (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+        let phi_inputs =
+            List.map phi_inputs
+              ~f:(Option.map ~f:(fun (Node2.AnyMem n) -> convert_node memo g machine_g n))
+        in
+        G.add_node machine_g node { phi_inputs };
+        set_ctrl node;
+        AnyNode node
 
-and convert_node memo g machine_g (n : Node.t) =
-    match Hashtbl.find memo n with
+and convert_node : type a t.
+    (Node2.any, any) Hashtbl.t ->
+    Node2.G.readonly Node2.G.t ->
+    G.readwrite G.t ->
+    (a, t) Node2.t ->
+    any =
+   fun memo g machine_g n ->
+    match Hashtbl.find memo (AnyNode n) with
     | Some mn -> mn
     | None ->
         let res =
             match n.kind with
-            | Data k -> of_data_node memo g machine_g k n
-            | Ctrl k -> of_ctrl_node memo g machine_g k n
-            | Mem k -> of_mem_node memo g machine_g k n
+            | Data k ->
+                let n = Node2.as_data_exn n in
+                of_data_node memo g machine_g n
+            | Ctrl k ->
+                let n = Node2.as_ctrl_exn n in
+                of_ctrl_node memo g machine_g n
+            | Mem k ->
+                let n = Node2.as_mem_exn n in
+                of_mem_node memo g machine_g n
             | Scope _ -> assert false
             | ForwardRef _ -> assert false
         in
-        assert (Hashtbl.mem memo n);
+        assert (Hashtbl.mem memo (AnyNode n));
         res
 
 let find_dep machine_g n ~f =
@@ -888,74 +1152,75 @@ let find_dep machine_g n ~f =
         | Some dep -> f dep)
     |> Option.map ~f:(fun (i, n) -> (i, Option.value_exn n))
 
-let post_process (machine_g : (t, Graph.readwrite) Graph.t) =
+type change =
+    | InputChange : 'a t * 'a -> change
+    | CtrlChange : 'a t * 'a t -> change
+
+let post_process machine_g =
     (* when changing a node's dependency we need to add a temp node that depends on the new_dep to make sure it doesn't get removed for not having any dependants. E.g. A jmp removes it's depedendancy on a set and set's it to the cmp directly. But the set might get removed if it has no dependants which in turn might remove the cmp for not having dependants *)
     let temp_node =
-        {
-          id = next_id ();
-          kind = Int Z.zero;
-          ir_node = Node.create_data { filename = ""; line = 0; col = 0 } Types.ANY Constant;
-        }
+        create_node (Int Z.zero)
+          (AnyNode (Node2.create_data { filename = ""; line = 0; col = 0 } Types.ANY Constant))
     in
-    Graph.fold machine_g ~init:[] ~f:(fun acc n ->
+    G.fold machine_g ~init:[] ~f:(fun acc (AnyNode n) ->
         match n.kind with
-        | Jmp _ -> (
-            let set_dep =
-                find_dep machine_g n ~f:(fun dep ->
-                    match dep.kind with
-                    | Set _ -> true
-                    | _ -> false)
-            in
-            let cmp_dep =
-                Option.bind set_dep ~f:(fun (_, set) ->
-                    find_dep machine_g set ~f:(fun dep ->
-                        match dep.kind with
-                        | Cmp
-                        | CmpImm _ ->
-                            true
-                        | _ -> false))
-            in
-            match cmp_dep with
-            | None -> acc
-            | Some (_, cmp_n) ->
-                let set_idx, set_n = Option.value_exn set_dep in
-                let op =
-                    match set_n.kind with
-                    | Set op -> op
-                    | _ -> assert false
-                in
-                n.kind <- Jmp op;
-                (n, set_n, set_idx, cmp_n) :: acc)
+        | Jmp op -> (
+            let { input = AnyNode input } = G.get_dependencies_exn machine_g n in
+            match input.kind with
+            | Set op' -> (
+                let { input = AnyNode set_input } = G.get_dependencies_exn machine_g input in
+                match set_input.kind with
+                | Cmp
+                | CmpImm _ ->
+                    assert (Poly.equal op op');
+                    let new_input = { input = AnyNode set_input } in
+                    InputChange (n, new_input) :: acc
+                | _ -> acc)
+            | Cmp
+            | CmpImm _ ->
+                acc
+            | _ -> assert false
+            (* match cmp_dep with *)
+            (* | None -> acc *)
+            (* | Some (_, cmp_n) -> *)
+            (*     let set_idx, set_n = Option.value_exn set_dep in *)
+            (*     let op = *)
+            (*         match set_n.kind with *)
+            (*         | Set op -> op *)
+            (*         | _ -> assert false *)
+            (*     in *)
+            (*     n.kind <- Jmp op; *)
+            (*     (n, set_n, set_idx, cmp_n) :: acc) *))
         | _ -> acc)
-    |> List.iter ~f:(fun (node, old_dep, idx, new_dep) ->
-        Graph.add_dependencies machine_g temp_node [ Some new_dep ];
-        Graph.remove_dependency machine_g ~node ~dep:old_dep;
-        Graph.set_dependency machine_g node (Some new_dep) idx);
+    |> List.iter ~f:(function
+      | InputChange (n, new_input) -> G.set_node_inputs machine_g n new_input
+      | CtrlChange (n, new_ctrl) -> G.set_ctrl machine_g n new_ctrl);
+    (* |> List.iter ~f:(fun (node, old_dep, idx, new_dep) -> *)
+    (*     Graph.add_dependencies machine_g temp_node [ Some new_dep ]; *)
+    (*     Graph.remove_dependency machine_g ~node ~dep:old_dep; *)
+    (*     Graph.set_dependency machine_g node (Some new_dep) idx); *)
     (* it might be the case that there were no nodes to post process, in that
        case temp_node isn't added to the graph. This is fine *)
     try Graph.remove_node machine_g temp_node with
     | _ -> ()
 
-module MachineGraphNode : Graph.GraphNode with type t = t = struct
-  type nonrec t = t
-
-  let show = show
-  let pp = pp
-  let equal = equal
-  let semantic_equal n _ n' _ = equal n n'
-  let hash = hash
-  let compare = compare
-  let sexp_of_t = sexp_of_t
-  let is_persistent = Fun.const false
-end
-
 let convert_graph g =
-    let start = { id = next_id (); kind = Ideal Start; ir_node = Graph.get_start g } in
-    let stop = { id = next_id (); kind = Ideal Stop; ir_node = Graph.get_stop g } in
+    let start = create_node (Ideal Start) (Node2.G.get_start g) in
+    let stop = create_node (Ideal Stop) (Node2.G.get_stop g) in
 
-    let machine_g = Graph.create (module MachineGraphNode) start stop in
-    let memo = Hashtbl.create ~size:(Graph.get_num_nodes g) (module Node) in
-    Hashtbl.add_exn memo ~key:(Graph.get_start g) ~data:start;
-    convert_node memo g machine_g stop.ir_node |> ignore;
+    let machine_g = G.create ~start:(AnyNode start) ~stop:(AnyNode stop) in
+    let memo = Hashtbl.create ~size:(Node2.G.get_num_nodes g) (module Node2.Any) in
+    Hashtbl.add_exn memo ~key:(Node2.G.get_start g) ~data:(AnyNode start);
+    let (AnyNode stop_ir) = stop.ir_node in
+    convert_node memo g machine_g stop_ir |> ignore;
     post_process machine_g;
     machine_g
+
+module Any = struct
+  type t = any
+
+  let compare (AnyNode a) (AnyNode b) = Int.compare a.id b.id
+  let equal (AnyNode a) (AnyNode b) = Int.equal a.id b.id
+  let hash (AnyNode a) = Int.hash a.id
+  let sexp_of_t = sexp_of_any
+end

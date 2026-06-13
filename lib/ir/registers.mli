@@ -21,7 +21,7 @@ type reg =
 type loc =
     | Reg of reg
     | Stack of int
-[@@deriving show { with_path = false }, compare, sexp]
+[@@deriving show { with_path = false }, compare, sexp, equal]
 
 module Mask : sig
   type t [@@deriving show, sexp_of]

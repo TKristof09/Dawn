@@ -1,7 +1,7 @@
 open Core
+module Graph = Machine_node.G
 
-let asm_of_op (kind : Machine_node.machine_node_kind) =
-    match kind with
+let asm_of_op : type a. a Machine_node.kind -> string = function
     | ZeroExtend -> failwith "Handle zero extend outside this function"
     | SignExtend -> failwith "Handle sign extend outside this function"
     | AddrOf -> "lea"
@@ -105,40 +105,53 @@ let asm_of_loc (loc : Registers.loc) size =
         | RBP -> pick ~size ~r8:"rbp" ~r4:"ebp" ~r2:"bp" ~r1:"bpl"
         | Flags -> "")
 
-let get_label (n : Machine_node.t) =
+let get_label (Machine_node.AnyNode n) =
     match n.kind with
     | Ideal Loop -> Printf.sprintf "Loop_%d" n.id
     | Ideal Stop -> "Exit"
     | _ when Machine_node.is_blockhead n -> Printf.sprintf "L_%d" n.id
     | _ -> failwithf "get_label invalid node: %s" (Machine_node.show n) ()
 
-let rec is_jmp_target g (n : Machine_node.t) =
-    Poly.equal n.kind (Ideal Region)
-    || List.exists (Graph.get_dependencies g n) ~f:(fun (n' : Machine_node.t option) ->
-        match n' with
-        | Some { kind = Jmp _; _ }
-        | Some { kind = JmpAlways; _ } ->
-            true
-        | Some ({ kind = Ideal (CProj _); _ } as n') ->
-            (* TODO: these useless CProj nodes should just get removed, that would be way cleaner *)
-            is_jmp_target g n'
-            && List.length (Graph.get_dependants g n') = 1
-            && Graph.get_dependants g n' |> List.hd_exn |> Machine_node.is_blockhead
-        | _ -> false)
+let rec is_jmp_target g (Machine_node.AnyNode n) =
+    match n.kind with
+    | Ideal Region -> true
+    | _ ->
+        List.exists (Graph.get_dependencies_list g n) ~f:(fun n' ->
+            match n' with
+            | Some (AnyNode { kind = Jmp _; _ })
+            | Some (AnyNode { kind = JmpAlways; _ }) ->
+                true
+            | Some (AnyNode ({ kind = Ideal (CProj _); _ } as n')) ->
+                (* TODO: these useless CProj nodes should just get removed, that would be way cleaner *)
+                is_jmp_target g (AnyNode n')
+                && List.length (Graph.get_dependants g n') = 1
+                && Graph.get_dependants g n' |> List.hd_exn |> fun (Machine_node.AnyNode n) ->
+                   Machine_node.is_blockhead n
+            | _ -> false)
 
-let get_first_blockhead g n =
-    let n' = ref (Graph.get_dependants g n |> List.find_exn ~f:Machine_node.is_control_node) in
-    while not (Machine_node.is_blockhead !n') do
-      n' := Graph.get_dependants g !n' |> List.find_exn ~f:Machine_node.is_control_node
+let get_first_blockhead g (Machine_node.AnyNode n) =
+    let n' =
+        ref
+          (Graph.get_dependants g n
+          |> List.find_exn ~f:(fun (AnyNode n) -> Machine_node.is_control_node n))
+    in
+    let is_blockhead (Machine_node.AnyNode n) = Machine_node.is_blockhead n in
+    while not (is_blockhead !n') do
+      let (AnyNode n'_uwrapped) = !n' in
+      n' :=
+        Graph.get_dependants g n'_uwrapped
+        |> List.find_exn ~f:(fun (AnyNode n) -> Machine_node.is_control_node n)
     done;
     !n'
 
-let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
+let asm_of_node g reg_assoc linker n prev_node next_node =
+    let (Machine_node.AnyNode n_unwrapped) = n in
+    let (AnyNode ir_node) = n_unwrapped.ir_node in
     let node_asm =
-        match n.kind with
+        match n_unwrapped.kind with
         | Int i ->
             let reg = Hashtbl.find_exn reg_assoc n in
-            let op_str = asm_of_op n.kind in
+            let op_str = asm_of_op n_unwrapped.kind in
             (* NOTE: Use at least 32bit reg as the smaller ones don't zero extend the upper bits. 
 
                Also, based on my research: smaller width movs such as mov al, N
@@ -150,51 +163,56 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
                downside is slightly larger instruction size.
                https://stackoverflow.com/questions/53562739/if-i-have-an-8-bit-value-is-there-any-advantage-to-using-an-8-bit-register-inst
                *)
-            let reg_size = max 4 (Types.get_size n.ir_node.typ) in
+            let reg_size = max 4 (Types.get_size ir_node.typ) in
             Printf.sprintf "\t%s %s, %s" op_str (asm_of_loc reg reg_size) (Z.to_string i)
         | Ptr ->
             let reg = Hashtbl.find_exn reg_assoc n in
-            let op_str = asm_of_op n.kind in
+            let op_str = asm_of_op n_unwrapped.kind in
             let ptr_addr =
-                match n.ir_node.typ with
-                | Ptr p when Types.is_const_array p -> Printf.sprintf "C_%d" n.ir_node.id
-                | Struct _ when Types.is_const_array n.ir_node.typ ->
-                    Printf.sprintf "C_%d" n.ir_node.id
+                match ir_node.typ with
+                | Ptr p when Types.is_const_array p -> Printf.sprintf "C_%d" ir_node.id
+                | Struct _ when Types.is_const_array ir_node.typ -> Printf.sprintf "C_%d" ir_node.id
                 | FunPtr (Value _) ->
-                    Linker.get_name linker (Types.get_fun_idx n.ir_node.typ |> Option.value_exn)
-                | _ -> failwithf "idk %s" (Types.show n.ir_node.typ) ()
+                    Linker.get_name linker (Types.get_fun_idx ir_node.typ |> Option.value_exn)
+                | _ -> failwithf "idk %s" (Types.show ir_node.typ) ()
             in
             let size =
-                match n.ir_node.typ with
-                | Struct _ -> Types.get_size (Ptr n.ir_node.typ)
-                | _ -> Types.get_size n.ir_node.typ
+                match ir_node.typ with
+                | Struct _ -> Types.get_size (Ptr ir_node.typ)
+                | _ -> Types.get_size ir_node.typ
             in
             Printf.sprintf "\t%s %s, [%s]" op_str (asm_of_loc reg size) ptr_addr
         | AddrOf ->
-            let input = Graph.get_dependency g n 1 |> Option.value_exn in
+            let { Machine_node.input } = Graph.get_dependencies_exn g n_unwrapped in
             let in_reg = Hashtbl.find_exn reg_assoc input in
             let out_reg = Hashtbl.find_exn reg_assoc n in
             let out_size =
-                match n.ir_node.typ with
+                match ir_node.typ with
                 | Struct _ -> 8
-                | _ -> Types.get_size n.ir_node.typ
+                | _ -> Types.get_size ir_node.typ
             in
             assert (out_size = 4 || out_size = 8);
-            Printf.sprintf "\t%s %s, [%s]" (asm_of_op n.kind) (asm_of_loc out_reg out_size)
-              (asm_of_loc in_reg out_size)
+            Printf.sprintf "\t%s %s, [%s]" (asm_of_op n_unwrapped.kind)
+              (asm_of_loc out_reg out_size) (asm_of_loc in_reg out_size)
         | Deref ->
-            let input = Graph.get_dependency g n 2 |> Option.value_exn in
-            let in_reg = Hashtbl.find_exn reg_assoc input in
+            let { Machine_node.mem; ptr } : Machine_node.deref =
+                Graph.get_dependencies_exn g n_unwrapped
+            in
+            let in_reg = Hashtbl.find_exn reg_assoc ptr in
             let out_reg = Hashtbl.find_exn reg_assoc n in
-            let out_size = Types.get_size n.ir_node.typ in
-            Printf.sprintf "\t%s %s, [%s]" (asm_of_op n.kind) (asm_of_loc out_reg out_size)
-              (asm_of_loc in_reg out_size)
+            let out_size = Types.get_size ir_node.typ in
+            Printf.sprintf "\t%s %s, [%s]" (asm_of_op n_unwrapped.kind)
+              (asm_of_loc out_reg out_size) (asm_of_loc in_reg out_size)
         | ZeroExtend ->
             let reg = Hashtbl.find_exn reg_assoc n in
-            let input = Graph.get_dependency g n 1 |> Option.value_exn in
+            let { Machine_node.input } = Graph.get_dependencies_exn g n_unwrapped in
             let input_reg = Hashtbl.find_exn reg_assoc input in
-            let input_size = Types.get_size input.ir_node.typ in
-            let output_size = Types.get_size n.ir_node.typ in
+            let (AnyNode input_ir_node) =
+                let (AnyNode tmp) = input in
+                tmp.ir_node
+            in
+            let input_size = Types.get_size input_ir_node.typ in
+            let output_size = Types.get_size ir_node.typ in
             if input_size = 4 && output_size = 8 then
               Printf.sprintf "\tmov %s, %s" (asm_of_loc reg 4) (asm_of_loc input_reg input_size)
             else
@@ -202,10 +220,14 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
                 (asm_of_loc input_reg input_size)
         | SignExtend ->
             let reg = Hashtbl.find_exn reg_assoc n in
-            let input = Graph.get_dependency g n 1 |> Option.value_exn in
+            let { Machine_node.input } = Graph.get_dependencies_exn g n_unwrapped in
             let input_reg = Hashtbl.find_exn reg_assoc input in
-            let input_size = Types.get_size input.ir_node.typ in
-            let output_size = Types.get_size n.ir_node.typ in
+            let (AnyNode input_ir_node) =
+                let (AnyNode tmp) = input in
+                tmp.ir_node
+            in
+            let input_size = Types.get_size input_ir_node.typ in
+            let output_size = Types.get_size ir_node.typ in
             if input_size = 4 && output_size = 8 then
               Printf.sprintf "\tmovsxd %s, %s" (asm_of_loc reg output_size)
                 (asm_of_loc input_reg input_size)
@@ -221,17 +243,39 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
         | AndImm i
         | OrImm i ->
             assert (Z.fits_int32 i);
-            let dep = Graph.get_dependency g n 1 |> Option.value_exn in
-            let reg = Hashtbl.find_exn reg_assoc dep in
-            let op_str = asm_of_op n.kind in
-            let reg_str = asm_of_loc reg (Types.get_size dep.ir_node.typ) in
+            let as_unary : type a. a Machine_node.t -> Machine_node.unary Machine_node.t =
+               fun n ->
+                match n.kind with
+                | AddImm _ -> n
+                | SubImm _ -> n
+                | MulImm _ -> n
+                | CmpImm _ -> n
+                | LshImm _ -> n
+                | RshImm _ -> n
+                | AndImm _ -> n
+                | OrImm _ -> n
+                | _ -> assert false
+            in
+            let n_unwrapped = as_unary n_unwrapped in
+            let { Machine_node.input } = Graph.get_dependencies_exn g n_unwrapped in
+            let (AnyNode input_ir_node) =
+                let (AnyNode tmp) = input in
+                tmp.ir_node
+            in
+            let reg = Hashtbl.find_exn reg_assoc input in
+            let op_str = asm_of_op n_unwrapped.kind in
+            let reg_str = asm_of_loc reg (Types.get_size input_ir_node.typ) in
             Printf.sprintf "\t%s %s, %s" op_str reg_str (Z.to_string i)
         | Div ->
-            let deps = Graph.get_dependencies g n |> List.tl_exn in
-            let divisor = List.nth_exn deps 1 |> Option.value_exn in
+            let { Machine_node.lhs; rhs } = Graph.get_dependencies_exn g n_unwrapped in
+            let divisor = rhs in
+            let (AnyNode divisor_ir_node) =
+                let (AnyNode tmp) = divisor in
+                tmp.ir_node
+            in
             let reg_divisor = Hashtbl.find_exn reg_assoc divisor in
-            let reg_str = asm_of_loc reg_divisor (Types.get_size divisor.ir_node.typ) in
-            let op_str = asm_of_op n.kind in
+            let reg_str = asm_of_loc reg_divisor (Types.get_size divisor_ir_node.typ) in
+            let op_str = asm_of_op n_unwrapped.kind in
             (* have to sign extend RAX into RDX for signed division *)
             (* TODO: use xor rdx, rdx  for unsigned division once we have that distinction *)
             Printf.sprintf "\tcqo\n\t%s %s \t\t; rax = rax / %s" op_str reg_str reg_str
@@ -239,177 +283,208 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
             let epilogue = "\t;Exit program\n\tmov rax, 60\n\txor rdi, rdi\n\tsyscall" in
             epilogue
         | Ideal _ -> ""
-        | Jmp _ ->
-            let true_branch =
-                Graph.get_dependants g n
-                |> List.find_exn ~f:(fun n ->
+        | Jmp cond ->
+            let (AnyNode true_branch) =
+                Graph.get_dependants g n_unwrapped
+                |> List.find_exn ~f:(fun (AnyNode n) ->
                     match n.kind with
                     | Ideal (CProj 0) -> true
                     | _ -> false)
             in
-            let false_branch =
-                Graph.get_dependants g n
-                |> List.find_exn ~f:(fun n ->
+            let (AnyNode false_branch) =
+                Graph.get_dependants g n_unwrapped
+                |> List.find_exn ~f:(fun (AnyNode n) ->
                     match n.kind with
                     | Ideal (CProj 1) -> true
                     | _ -> false)
             in
-            let next_node = Option.value_exn next_node in
-            let target_branch =
-                if Machine_node.equal next_node true_branch then false_branch else true_branch
-            in
-            let op =
+            let (Machine_node.AnyNode next_node) = Option.value_exn next_node in
+            let (AnyNode target_branch) =
                 if Machine_node.equal next_node true_branch then
-                  Machine_node.invert_jmp n.kind
+                  Machine_node.AnyNode false_branch
                 else
-                  n.kind
+                  Machine_node.AnyNode true_branch
             in
-            let op_str, label_str =
+            let op_str =
+                if Machine_node.equal next_node true_branch then
+                  asm_of_op (Jmp (Machine_node.invert_cond cond))
+                else
+                  asm_of_op n_unwrapped.kind
+            in
+            let label_str =
                 (* FIXME: this is not correct when we have cproj ->
                     functioncall(ptr/const) because the ptr/const might not be
                     part of the cproj bb. Probably need to check List.filter
                     ~f:is_blockhead |> is_empty or something like that *)
                 if List.length (Graph.get_dependants g target_branch) = 1 && false then
-                  let next_target_bb = get_first_blockhead g target_branch in
-                  (asm_of_op op, get_label next_target_bb)
+                  let next_target_bb = get_first_blockhead g (AnyNode target_branch) in
+                  get_label next_target_bb
                 else
-                  (asm_of_op op, get_label target_branch)
+                  get_label (AnyNode target_branch)
             in
             Printf.sprintf "\t%s %s\n" op_str label_str
         | JmpAlways ->
-            let op_str = asm_of_op n.kind in
-            let target = Graph.get_dependants g n |> List.hd_exn in
+            let op_str = asm_of_op n_unwrapped.kind in
+            let target = Graph.get_dependants g n_unwrapped |> List.hd_exn in
             let label_str = get_label target in
             Printf.sprintf "\t%s %s\n" op_str label_str
         | Lsh
         | Rsh ->
-            let deps = Graph.get_dependencies g n |> List.tl_exn in
-            let dep = deps |> List.hd_exn |> Option.value_exn in
-            let reg = Hashtbl.find_exn reg_assoc dep in
-            let op_str = asm_of_op n.kind in
-            assert (
-              0
-              = Registers.compare_loc
-                  (List.nth_exn deps 1 |> Option.value_exn |> Hashtbl.find_exn reg_assoc)
-                  (Reg Registers.RCX));
-            Printf.sprintf "\t%s %s, cl" op_str (asm_of_loc reg (Types.get_size dep.ir_node.typ))
+            let as_binop : type a. a Machine_node.t -> Machine_node.binop Machine_node.t =
+               fun n ->
+                match n.kind with
+                | Lsh -> n
+                | Rsh -> n
+                | _ -> assert false
+            in
+            let n_unwrapped = as_binop n_unwrapped in
+            let { Machine_node.lhs; rhs } = Graph.get_dependencies_exn g n_unwrapped in
+            let (AnyNode lhs_ir_node) =
+                let (AnyNode tmp) = lhs in
+                tmp.ir_node
+            in
+            let reg = Hashtbl.find_exn reg_assoc lhs in
+            let op_str = asm_of_op n_unwrapped.kind in
+            assert (0 = Registers.compare_loc (Hashtbl.find_exn reg_assoc rhs) (Reg Registers.RCX));
+            Printf.sprintf "\t%s %s, cl" op_str (asm_of_loc reg (Types.get_size lhs_ir_node.typ))
         | Add
         | Sub
         | Mul
         | And
         | Or
-        | Cmp
-        | Mov ->
-            let deps = Graph.get_dependencies g n |> List.tl_exn in
-            (* if not two address node, add the node itself to the start of the list to get the output reg too *)
-            let nodes =
-                if
-                  (not (Machine_node.is_two_address n))
-                  &&
-                  (* TODO this is ugly just to get cmp node assembly to not be weird *)
-                  match Machine_node.get_out_reg_mask g n 0 with
-                  | None -> false
-                  | Some m when Registers.Mask.equal m Registers.Mask.flags -> false
-                  | Some _ -> true
-                then
-                  Some n :: deps
-                else
-                  deps
+        | Cmp ->
+            let as_binop : type a. a Machine_node.t -> Machine_node.binop Machine_node.t =
+               fun n ->
+                match n.kind with
+                | Add -> n
+                | Sub -> n
+                | Mul -> n
+                | And -> n
+                | Or -> n
+                | Cmp -> n
+                | _ -> assert false
             in
-            let regs =
-                nodes
-                |> List.filter_opt
-                |> List.map ~f:(fun d ->
-                    match d.kind with
-                    | CalleeSave _ ->
-                        (* CalleSaves always need to save the full 64bit register *)
-                        (Hashtbl.find_exn reg_assoc d, 8)
-                    | Mov -> (
-                        (* Movs that spill CalleeSaved nodes have their ir_node
+            let n_unwrapped = as_binop n_unwrapped in
+            let { Machine_node.lhs; rhs } = Graph.get_dependencies_exn g n_unwrapped in
+            let (AnyNode lhs_ir_node) =
+                let (AnyNode tmp) = lhs in
+                tmp.ir_node
+            in
+            let (AnyNode rhs_ir_node) =
+                let (AnyNode tmp) = rhs in
+                tmp.ir_node
+            in
+            let lhs_reg = Hashtbl.find_exn reg_assoc lhs in
+            let rhs_reg = Hashtbl.find_exn reg_assoc rhs in
+            let op_str = asm_of_op n_unwrapped.kind in
+            Printf.sprintf "\t%s %s, %s" op_str
+              (asm_of_loc lhs_reg (Types.get_size lhs_ir_node.typ))
+              (asm_of_loc rhs_reg (Types.get_size lhs_ir_node.typ))
+        | Mov ->
+            let { Machine_node.input } = Graph.get_dependencies_exn g n_unwrapped in
+            let (AnyNode input_unwrapped) = input in
+            (* if not two address node, add the node itself to the start of the list to get the output reg too *)
+            let in_reg, in_size =
+                match input_unwrapped.kind with
+                | CalleeSave _ ->
+                    (* CalleSaves always need to save the full 64bit register *)
+                    (Hashtbl.find_exn reg_assoc input, 8)
+                | Mov -> (
+                    (* Movs that spill CalleeSaved nodes have their ir_node
                            as the Funciton, these need to be treated specifically as 64bit
                            to save the full 64bit reg *)
-                        match d.ir_node.kind with
-                        | Ctrl (Function _) -> (Hashtbl.find_exn reg_assoc d, 8)
-                        | _ ->
-                            let size =
-                                match d.ir_node.typ with
-                                | Struct _ -> 8
-                                | _ -> Types.get_size d.ir_node.typ
-                            in
-
-                            (Hashtbl.find_exn reg_assoc d, size))
+                    let (AnyNode input_ir_node) = input_unwrapped.ir_node in
+                    match input_ir_node.kind with
+                    | Ctrl (Function _) -> (Hashtbl.find_exn reg_assoc input, 8)
                     | _ ->
                         let size =
-                            match d.ir_node.typ with
+                            match input_ir_node.typ with
                             | Struct _ -> 8
-                            | _ -> Types.get_size d.ir_node.typ
+                            | _ -> Types.get_size input_ir_node.typ
                         in
-                        (Hashtbl.find_exn reg_assoc d, size))
+
+                        (Hashtbl.find_exn reg_assoc input, size))
+                | _ ->
+                    let (AnyNode input_ir_node) = input_unwrapped.ir_node in
+                    let size =
+                        match input_ir_node.typ with
+                        | Struct _ -> 8
+                        | _ -> Types.get_size input_ir_node.typ
+                    in
+                    (Hashtbl.find_exn reg_assoc input, size)
             in
-            let op_str = asm_of_op n.kind in
-            let reg_str =
-                regs
-                |> List.map ~f:(fun (reg, size) -> asm_of_loc reg size)
-                |> String.concat ~sep:", "
-            in
-            Printf.sprintf "\t%s %s" op_str reg_str
-        | Set _ ->
-            let op_str = asm_of_op n.kind in
             let reg = Hashtbl.find_exn reg_assoc n in
-            Printf.sprintf "\t%s %s" op_str (asm_of_loc reg (Types.get_size n.ir_node.typ))
+            let size = Types.get_size ir_node.typ in
+            let op_str = asm_of_op n_unwrapped.kind in
+            Printf.sprintf "\t%s %s, %s" op_str (asm_of_loc reg size) (asm_of_loc in_reg in_size)
+        | Set _ ->
+            let op_str = asm_of_op n_unwrapped.kind in
+            let reg = Hashtbl.find_exn reg_assoc n in
+            Printf.sprintf "\t%s %s" op_str (asm_of_loc reg (Types.get_size ir_node.typ))
         | DProj _ -> ""
         | FunctionProlog i ->
             let target = Linker.get_name linker i in
             Printf.sprintf "%s:\n\tpush rbp\n\tmov rbp, rsp" target
-        | Return -> Printf.sprintf "\tleave\n\t%s" (asm_of_op n.kind)
+        | Return -> Printf.sprintf "\tleave\n\t%s" (asm_of_op n_unwrapped.kind)
         | Param _ -> ""
         | FunctionCall (Some i) ->
-            let op = asm_of_op n.kind in
+            let op = asm_of_op n_unwrapped.kind in
             let target = Linker.get_name linker i in
             Printf.sprintf "\t%s %s" op target
         | FunctionCall None ->
-            let op = asm_of_op n.kind in
-            let target = Graph.get_dependency g n 1 |> Option.value_exn in
+            let op = asm_of_op n_unwrapped.kind in
+            let { Machine_node.fun_ptr; mem; args } = Graph.get_dependencies_exn g n_unwrapped in
+            let target = Option.value_exn fun_ptr in
+            let (AnyNode target_ir_node) =
+                let (AnyNode tmp) = target in
+                tmp.ir_node
+            in
             let target_reg = Hashtbl.find_exn reg_assoc target in
-            Printf.sprintf "\t%s %s" op (asm_of_loc target_reg (Types.get_size target.ir_node.typ))
+            Printf.sprintf "\t%s %s" op (asm_of_loc target_reg (Types.get_size target_ir_node.typ))
         | FunctionCallEnd -> ""
         | CalleeSave _ -> ""
         | New ->
             let ptr =
-                Graph.get_dependants g n
-                |> List.find_exn ~f:(fun n ->
+                Graph.get_dependants g n_unwrapped
+                |> List.find_exn ~f:(fun (AnyNode n) ->
                     match n.kind with
                     | DProj 1 -> true
                     | _ -> false)
             in
+            let { Machine_node.mem = _; size } = Graph.get_dependencies_exn g n_unwrapped in
+            let (AnyNode size_ir_node) =
+                let (AnyNode tmp) = size in
+                tmp.ir_node
+            in
             let ptr_reg = Hashtbl.find_exn reg_assoc ptr in
-            let size = Graph.get_dependency g n 2 |> Option.value_exn in
             let size_reg = Hashtbl.find_exn reg_assoc size in
             (* HACK: this is only until i get heap memory alloc. *)
             Printf.sprintf "\tsub rsp, %s   ; alloc\n\tmov %s, rsp"
-              (asm_of_loc size_reg (Types.get_size size.ir_node.typ))
+              (asm_of_loc size_reg (Types.get_size size_ir_node.typ))
               (asm_of_loc ptr_reg 8)
         | Store ->
-            let value = Graph.get_dependency g n 3 |> Option.value_exn in
+            let { Machine_node.mem; ptr; value } = Graph.get_dependencies_exn g n_unwrapped in
             let reg = Hashtbl.find_exn reg_assoc value in
-            let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
             let ptr_reg = Hashtbl.find_exn reg_assoc ptr in
-            let op_str = asm_of_op n.kind in
+            let (AnyNode value_ir_node) =
+                let (AnyNode tmp) = value in
+                tmp.ir_node
+            in
+            let op_str = asm_of_op n_unwrapped.kind in
             Printf.sprintf "\t%s [%s], %s" op_str (asm_of_loc ptr_reg 8)
-              (asm_of_loc reg (Types.get_size value.ir_node.typ))
+              (asm_of_loc reg (Types.get_size value_ir_node.typ))
         | Load ->
+            let { Machine_node.mem; ptr } = Graph.get_dependencies_exn g n_unwrapped in
             let reg = Hashtbl.find_exn reg_assoc n in
-            let ptr = Graph.get_dependency g n 2 |> Option.value_exn in
             let ptr_reg = Hashtbl.find_exn reg_assoc ptr in
-            let output_size = Types.get_size n.ir_node.typ in
+            let output_size = Types.get_size ir_node.typ in
             let s =
-                Printf.sprintf "\t%s %s, [%s]" (asm_of_op n.kind) (asm_of_loc reg output_size)
-                  (asm_of_loc ptr_reg 8)
+                Printf.sprintf "\t%s %s, [%s]" (asm_of_op n_unwrapped.kind)
+                  (asm_of_loc reg output_size) (asm_of_loc ptr_reg 8)
             in
             s
         | RepMov num ->
-            let src = Graph.get_dependency g n 2 |> Option.value_exn in
-            let dst = Graph.get_dependency g n 3 |> Option.value_exn in
+            let { Machine_node.mem; src; dst } = Graph.get_dependencies_exn g n_unwrapped in
             let src_reg = Hashtbl.find_exn reg_assoc src in
             let dst_reg = Hashtbl.find_exn reg_assoc dst in
             assert (Poly.equal src_reg (Reg RSI));
@@ -428,24 +503,19 @@ let asm_of_node g reg_assoc linker (n : Machine_node.t) prev_node next_node =
     let jmp_target =
         match prev_node with
         | None -> None
-        | Some prev_node ->
-            let cfg_prev =
+        | Some (Machine_node.AnyNode prev_node) ->
+            let (AnyNode cfg_prev) =
                 if Machine_node.is_control_node prev_node then
-                  prev_node
+                  Machine_node.AnyNode prev_node
                 else
-                  Graph.get_dependency g prev_node 0 |> Option.value_exn
+                  Graph.get_ctrl_exn g prev_node
             in
-            let precedent =
-                match Graph.get_dependency g n 0 with
-                | Some n -> n
-                | None ->
-                    Graph.get_dependencies g n
-                    |> List.filter_opt
-                    |> List.find_exn ~f:Machine_node.is_control_node
-            in
-            if Machine_node.is_blockhead n && not (Machine_node.equal precedent cfg_prev) then
+            let (AnyNode precedent) = Graph.get_ctrl_exn g n_unwrapped in
+            if Machine_node.is_blockhead n_unwrapped && not (Machine_node.equal precedent cfg_prev)
+            then
               let target =
-                  Graph.get_dependants g cfg_prev |> List.find_exn ~f:Machine_node.is_blockhead
+                  Graph.get_dependants g cfg_prev
+                  |> List.find_exn ~f:(fun (AnyNode n) -> Machine_node.is_blockhead n)
               in
               Some target
             else
@@ -468,19 +538,19 @@ let emit_function g reg_assoc program linker =
     let rec aux l prev =
         match l with
         | [] -> []
-        | [ n ] -> (
-            let node_asm = asm_of_node g reg_assoc linker n prev None in
+        | [ Machine_node.AnyNode n ] -> (
+            let node_asm = asm_of_node g reg_assoc linker (AnyNode n) prev None in
             (* Check if the last emitted control node has a CFG successor
                that won't be fallen into (since there's nothing after us). *)
-            let last_ctrl =
+            let (AnyNode last_ctrl) =
                 if Machine_node.is_control_node n then
-                  n
+                  Machine_node.AnyNode n
                 else
-                  Graph.get_dependency g n 0 |> Option.value_exn
+                  Graph.get_ctrl_exn g n
             in
             let trailing_jmp =
                 Graph.get_dependants g last_ctrl
-                |> List.find ~f:Machine_node.is_blockhead
+                |> List.find ~f:(fun (AnyNode n) -> Machine_node.is_blockhead n)
                 |> Option.map ~f:(fun target ->
                     Printf.sprintf "\t%s %s" (asm_of_op JmpAlways) (get_label target))
             in
@@ -553,10 +623,11 @@ let gather_const_arrays functions =
     a case by case basis *)
     let arr_map = Hashtbl.create (module Int) in
     List.iter functions ~f:(fun (g, _, _) ->
-        Graph.iter g ~f:(fun (n : Machine_node.t) ->
+        Graph.iter g ~f:(fun (AnyNode n) ->
             match n.kind with
             | Ptr -> (
-                match Types.get_string n.ir_node.typ with
+                let (AnyNode ir_node) = n.ir_node in
+                match Types.get_string ir_node.typ with
                 | None -> ()
                 | Some s ->
                     let with_len =
@@ -566,7 +637,7 @@ let gather_const_arrays functions =
                           |> List.map ~f:(fun c -> c |> Char.to_int |> Int.to_string)
                           |> String.concat ~sep:", ")
                     in
-                    Hashtbl.add arr_map ~key:n.ir_node.id ~data:with_len |> ignore)
+                    Hashtbl.add arr_map ~key:ir_node.id ~data:with_len |> ignore)
             | _ -> ()));
     Hashtbl.to_alist arr_map
     |> List.map ~f:(fun (id, arr) -> Printf.sprintf "C_%d: %s" id arr)

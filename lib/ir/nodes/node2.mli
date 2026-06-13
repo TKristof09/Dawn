@@ -34,7 +34,7 @@ and _ ctrl_kind =
     | Start : unit ctrl_kind
     | Stop : stop ctrl_kind
     | Proj : int -> any_ctrl unary ctrl_kind
-    | If : branch ctrl_kind
+    | If : any_data unary ctrl_kind
     | Region : merge_point ctrl_kind
     | Loop : loop ctrl_kind
     | Function : {
@@ -70,16 +70,9 @@ and binop = {
     rhs : any_data option;
   }
 
-and 'a unary = { inp : 'a option }
+and 'a unary = { input : 'a option }
 and 'a phi = { phi_inputs : 'a option list }
 and stop = { mem : any_mem option }
-
-and branch = {
-    cond : any_data option;
-    true_branch : any_ctrl option;
-    false_branch : any_ctrl option;
-  }
-
 and merge_point = { ctrl_inputs : any_ctrl option list }
 
 and loop = {

@@ -39,7 +39,7 @@ let do_node : type a b. Node2.G.readwrite Node2.G.t -> (a, b) Node2.t -> unit =
             | None ->
                 let cast_node = Node2.create_data ?parent_fun:def.parent_fun loc cast_typ Cast in
                 (* TODO: should we use the def's control input or the use's or just put none and let the scheduler figure it out? *)
-                Node2.G.add_node g cast_node { Node2.inp = Some (AnyData def) };
+                Node2.G.add_node g cast_node { Node2.input = Some (AnyData def) };
                 (match Node2.G.get_ctrl g def with
                 | None -> ()
                 | Some (AnyNode ctrl) -> Node2.G.set_ctrl g cast_node ctrl);

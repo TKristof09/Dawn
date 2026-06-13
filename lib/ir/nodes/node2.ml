@@ -37,7 +37,7 @@ module N = struct
       | Start : unit ctrl_kind
       | Stop : stop ctrl_kind
       | Proj : int -> any_ctrl unary ctrl_kind
-      | If : branch ctrl_kind
+      | If : any_data unary ctrl_kind
       | Region : merge_point ctrl_kind
       | Loop : loop ctrl_kind
       | Function : {
@@ -73,16 +73,9 @@ module N = struct
       rhs : any_data option;
     }
 
-  and 'a unary = { inp : 'a option }
+  and 'a unary = { input : 'a option }
   and 'a phi = { phi_inputs : 'a option list }
   and stop = { mem : any_mem option }
-
-  and branch = {
-      cond : any_data option;
-      true_branch : any_ctrl option;
-      false_branch : any_ctrl option;
-    }
-
   and merge_point = { ctrl_inputs : any_ctrl option list }
 
   and loop = {
@@ -216,17 +209,15 @@ module N = struct
       | Data LEq -> binop_inputs
       | Data Gt -> binop_inputs
       | Data GEq -> binop_inputs
-      | Data (Proj _) -> fun { inp } -> [ any_of_data inp ]
+      | Data (Proj _) -> fun { input } -> [ any_of_data input ]
       | Data Phi -> fun { phi_inputs } -> List.map phi_inputs ~f:any_of_data
       | Data (Param _) -> fun { phi_inputs } -> List.map phi_inputs ~f:any_of_data
       | Data (External _) -> Fun.const []
-      | Data Cast -> fun { inp } -> [ any_of_data inp ]
+      | Data Cast -> fun { input } -> [ any_of_data input ]
       | Ctrl Start -> fun () -> []
       | Ctrl Stop -> fun { mem } -> [ any_of_mem mem ]
-      | Ctrl (Proj _) -> fun { inp } -> [ any_of_ctrl inp ]
-      | Ctrl If ->
-          fun { cond; true_branch; false_branch } ->
-            [ any_of_data cond; any_of_ctrl true_branch; any_of_ctrl false_branch ]
+      | Ctrl (Proj _) -> fun { input } -> [ any_of_ctrl input ]
+      | Ctrl If -> fun { input } -> [ any_of_data input ]
       | Ctrl Region -> fun { ctrl_inputs } -> List.map ctrl_inputs ~f:any_of_ctrl
       | Ctrl Loop -> fun { entry; backedge } -> [ any_of_ctrl entry; any_of_ctrl backedge ]
       | Ctrl (Function _) -> fun { call_sites } -> List.map call_sites ~f:any_of_ctrl
@@ -272,14 +263,14 @@ module N = struct
       | Data GEq -> binop_inputs
       | Data (Proj _) -> (
           function
-          | [ x ] -> { inp = data_of_any x }
+          | [ x ] -> { input = data_of_any x }
           | _ -> assert false)
       | Data Phi -> fun lst -> { phi_inputs = List.map lst ~f:data_of_any }
       | Data (Param _) -> fun lst -> { phi_inputs = List.map lst ~f:data_of_any }
       | Data (External _) -> Fun.const ()
       | Data Cast -> (
           function
-          | [ x ] -> { inp = data_of_any x }
+          | [ x ] -> { input = data_of_any x }
           | _ -> assert false)
       | Ctrl Start -> Fun.const ()
       | Ctrl Stop -> (
@@ -288,12 +279,11 @@ module N = struct
           | _ -> assert false)
       | Ctrl (Proj _) -> (
           function
-          | [ x ] -> { inp = ctrl_of_any x }
+          | [ x ] -> { input = ctrl_of_any x }
           | _ -> assert false)
       | Ctrl If -> (
           function
-          | [ x; y; z ] ->
-              { cond = data_of_any x; true_branch = ctrl_of_any y; false_branch = ctrl_of_any z }
+          | [ x ] -> { input = data_of_any x }
           | _ -> assert false)
       | Ctrl Region -> fun lst -> { ctrl_inputs = List.map lst ~f:ctrl_of_any }
       | Ctrl Loop -> (
