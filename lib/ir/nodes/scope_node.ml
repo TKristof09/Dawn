@@ -340,7 +340,7 @@ let merge_loop ?parent_fun g ~this ~body ~exit =
                     phis := Node2.AnyNode phi :: !phis;
                     let (AnyNode value) = v_body.node in
                     let value = Node2.as_data_exn value in
-                    Phi_node.add_backedge_input_data g phi value)
+                    Phi_node.add_backedge_input g phi value)
               | Mem Phi ->
                   let phi = Node2.unpack_exn this_node (Mem Phi) in
                   if Node2.equal this_node body_node then (
@@ -354,7 +354,7 @@ let merge_loop ?parent_fun g ~this ~body ~exit =
                     phis := AnyNode phi :: !phis;
                     let (AnyNode value) = v_body.node in
                     let value = Node2.as_mem_exn value in
-                    Phi_node.add_backedge_input_mem g phi value)
+                    Phi_node.add_backedge_input g phi value)
               | _ -> assert false));
 
     (* TODO: we put phis to bottom type for now. we'll have constant propagation that calculates better type later in SCCP *)

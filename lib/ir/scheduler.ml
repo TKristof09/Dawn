@@ -99,7 +99,7 @@ and common_dom g lhs rhs =
       else
         common_dom g lhs (dom g rhs)
 
-let get_function : type a. a Machine_node.t -> int =
+let get_function : type a b. (a, b) Machine_node.t -> int =
    fun n ->
     let (AnyNode ir_node) = n.ir_node in
     match ir_node.parent_fun with
@@ -180,7 +180,7 @@ let schedule_early g =
 
 let schedule_late g =
     let m = Hashtbl.create ~size:(Machine_node.G.get_num_nodes g) (module Machine_node.Any) in
-    let is_forward_edge : type a b. a Machine_node.t -> b Machine_node.t -> bool =
+    let is_forward_edge : type a b c d. (a, b) Machine_node.t -> (c, d) Machine_node.t -> bool =
        fun node dependant ->
         match dependant.kind with
         | Ideal Loop ->
@@ -191,7 +191,12 @@ let schedule_late g =
         | Ideal Phi -> (
             let (AnyNode ctrl) = Machine_node.G.get_ctrl_exn g dependant in
             match ctrl.kind with
-            | Ideal Loop -> not (Loop_node.get_back_edge g dependant |> Machine_node.equal node)
+            | Ideal Loop ->
+                let (AnyNode backedge) =
+                    Machine_node.get_phi_backedge (Machine_node.G.readonly g) dependant
+                    |> Option.value_exn
+                in
+                not (Machine_node.equal node backedge)
             | _ -> true)
         | _ -> true
     in
@@ -284,7 +289,7 @@ let schedule_late g =
         | DProj _ -> ()
         | _ -> Machine_node.G.set_ctrl g key data)
 
-let score g n =
+let score g (Machine_node.AnyNode n) =
     match n.kind with
     | DProj _
     | Ideal (CProj 0) ->
@@ -306,7 +311,10 @@ let score g n =
     | Ideal _ -> 500
     | _ ->
         (* this makes things like cmp nodes get low prio so they get put at the end of the block right before the jump so the flags don't get overwritten inbetween*)
-        if Graph.get_dependants g n |> List.exists ~f:Machine_node.is_control_node then
+        if
+          Machine_node.G.get_dependants g n
+          |> List.exists ~f:(fun (AnyNode n) -> Machine_node.is_control_node n)
+        then
           10
         else
           500
@@ -364,20 +372,20 @@ let duplicate_constants g function_graphs =
     let (AnyNode start) = Machine_node.G.get_start g in
     let consts =
         Machine_node.G.get_dependants g start
-        |> List.filter_map ~f:(fun (AnyNode n) : unit Machine_node.t option ->
+        |> List.filter_map ~f:(fun (AnyNode n) : (unit, unit) Machine_node.t option ->
             match n.kind with
-            | Int _ -> Some n
-            | Ptr -> Some n
-            | Noop -> Some n
+            | Int _ -> Some (Machine_node.fix_tag n)
+            | Ptr -> Some (Machine_node.fix_tag n)
+            | Noop -> Some (Machine_node.fix_tag n)
             | _ -> None)
     in
     let module ConstNode = struct
-      type t = unit Machine_node.t
+      type t = (unit, unit) Machine_node.t
 
       let equal = Machine_node.equal
       let compare = Machine_node.compare
       let hash = Machine_node.hash
-      let sexp_of_t = Machine_node.sexp_of_t (fun () -> Sexp.Atom "")
+      let sexp_of_t = Machine_node.sexp_of_t (fun () -> Sexp.Atom "") (fun () -> Sexp.Atom "")
     end in
     let new_copies = Hashtbl.create (module Int) in
     List.iter consts ~f:(fun n ->
@@ -456,10 +464,11 @@ let schedule g =
            FunctionProlog<--FunctionCall depedency and also the Param <-- arg
            depedencies *)
         let fun_prolog =
-            Machine_node.G.find g ~f:(fun (AnyNode n) ->
+            Machine_node.G.find_map g
+              ~f:(fun (AnyNode n) : (Machine_node.merge_point, unit) Machine_node.t option ->
                 match n.kind with
-                | FunctionProlog _ -> true
-                | _ -> false)
+                | FunctionProlog _ -> Some (Machine_node.fix_tag n)
+                | _ -> None)
         in
         (match fun_prolog with
         | None -> ()
@@ -477,9 +486,13 @@ let schedule g =
                           let param =
                               Machine_node.G.get_dependants g arg
                               |> List.find_map_exn
-                                   ~f:(fun (AnyNode n) : Machine_node.phi Machine_node.t option ->
+                                   ~f:(fun
+                                       (AnyNode n)
+                                       :
+                                       (Machine_node.phi, unit) Machine_node.t option
+                                     ->
                                      match n.kind with
-                                     | Param _ -> Some n
+                                     | Param _ -> Some (Machine_node.fix_tag n)
                                      | _ -> None)
                           in
                           Graph.remove_dependency g ~node:param ~dep:arg);
@@ -488,9 +501,9 @@ let schedule g =
 
         let ret_node =
             Machine_node.G.find_map g
-              ~f:(fun (AnyNode n) : Machine_node.return Machine_node.t option ->
+              ~f:(fun (AnyNode n) : (Machine_node.return, unit) Machine_node.t option ->
                 match n.kind with
-                | Return -> Some n
+                | Return -> Some (Machine_node.fix_tag n)
                 | _ -> None)
         in
         match ret_node with
@@ -500,9 +513,10 @@ let schedule g =
             let call_ends =
                 Machine_node.G.get_dependants g ret_node
                 |> List.filter_map
-                     ~f:(fun (AnyNode n) : Machine_node.fun_call_end Machine_node.t option ->
+                     ~f:(fun
+                         (AnyNode n) : (Machine_node.fun_call_end, unit) Machine_node.t option ->
                        match n.kind with
-                       | FunctionCallEnd -> Some n
+                       | FunctionCallEnd -> Some (Machine_node.fix_tag n)
                        | _ -> None)
             in
             (* We completely unlink all call end nodes. Doing it this way is
@@ -517,7 +531,7 @@ let schedule g =
             (* if there is a return there must be a fun prolog (only top level
                has no function prolog but it also has stop node and not return
                node *)
-            let (AnyNode fun_prolog) = fun_prolog |> Option.value_exn in
+            let fun_prolog = fun_prolog |> Option.value_exn in
             let callee_saves =
                 List.map (Registers.Mask.callee_save |> Registers.Mask.to_list) ~f:(fun r ->
                     match r with

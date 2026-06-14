@@ -160,6 +160,10 @@ val create_scope : unit -> (scope_kind, misc) t
 val create_forward_ref : string -> (unit, data) t
 val pp : Format.formatter -> ('a, 'b) t -> unit
 val show : ('a, 'b) t -> string
+val show_kind : ('a, 't) kind -> string
+val is_ctrl : ('a, 'b) t -> bool
+val is_data : ('a, 'b) t -> bool
+val is_blockhead : ('a, 'b) t -> bool
 
 module N : Graph.NODE with type ('a, 'tag) t = ('a, 'tag) t and type any = any
 module G : Graph.S with module N := N

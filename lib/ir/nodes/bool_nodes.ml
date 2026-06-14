@@ -12,9 +12,9 @@ let create_leq g loc ?parent_fun lhs rhs = create_common g loc ?parent_fun lhs r
 let create_gt g loc ?parent_fun lhs rhs = create_common g loc ?parent_fun lhs rhs Gt
 let create_geq g loc ?parent_fun lhs rhs = create_common g loc ?parent_fun lhs rhs GEq
 
-let compute_type g (n : Node.t) =
+let compute_type g n =
     let op =
-        match n.kind with
+        match n.Node2.kind with
         | Data Eq -> Z.equal
         | Data NEq -> fun a b -> not (Z.equal a b)
         | Data Lt -> Z.lt
@@ -23,8 +23,9 @@ let compute_type g (n : Node.t) =
         | Data GEq -> Z.geq
         | _ -> assert false
     in
-    let lhs = Graph.get_dependency g n 1 |> Option.value_exn in
-    let rhs = Graph.get_dependency g n 2 |> Option.value_exn in
+    let { Node2.lhs; rhs } = Node2.G.get_dependencies_exn g n in
+    let (AnyData lhs) = Option.value_exn lhs in
+    let (AnyData rhs) = Option.value_exn rhs in
     let new_type : Types.t =
         match (lhs.typ, rhs.typ) with
         | Integer _, Integer _ when Types.is_constant lhs.typ && Types.is_constant rhs.typ ->

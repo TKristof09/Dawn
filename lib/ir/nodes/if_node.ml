@@ -6,13 +6,14 @@ let create ?parent_fun g loc ~ctrl ~pred =
     Node2.G.set_ctrl g n ctrl;
     n
 
-let compute_type g (n : Node.t) =
-    let in_control = Graph.get_dependency g n 0 |> Option.value_exn in
+let compute_type g n =
+    let (AnyNode in_control) = Node2.G.get_ctrl_exn g n in
     let new_type =
         match in_control.typ with
         | Control -> (
-            let cond = Graph.get_dependency g n 1 |> Option.value_exn in
-            match cond.typ with
+            let { Node2.input } = Node2.G.get_dependencies_exn g n in
+            let (Node2.AnyData input) = Option.value_exn input in
+            match input.typ with
             | Bool (Value false) -> Types.Tuple (Value [ DeadControl; Control ])
             | Bool (Value true) -> Types.Tuple (Value [ Control; DeadControl ])
             | ANY

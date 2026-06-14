@@ -18,12 +18,12 @@ type reg =
     | RSP
     | RBP
     | Flags
-[@@deriving show { with_path = false }, compare, sexp]
+[@@deriving show { with_path = false }, compare, sexp, equal]
 
 type loc =
     | Reg of reg
     | Stack of int [@compare.custom compare_stack_slots]
-[@@deriving show { with_path = false }, compare, sexp]
+[@@deriving show { with_path = false }, compare, sexp, equal]
 
 let compare_loc l l' =
     match (l, l') with

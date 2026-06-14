@@ -401,6 +401,7 @@ module N = struct
   let inputs_of_list n l = n.inputs_of_list l
   let pp _ _ = failwithf "todo %s" __LOC__ ()
   let show _ = failwithf "todo %s" __LOC__ ()
+  let show_kind _ = failwithf "todo %s" __LOC__ ()
 
   let[@inline] kind_eq : type a b taga tagb.
       (a, taga) kind -> (b, tagb) kind -> ((a, b) Type.eq * (taga, tagb) Type.eq) option =
@@ -481,6 +482,29 @@ module N = struct
       match n.kind with
       | Mem _ -> n
       | _ -> failwith "Not a memory node"
+
+  let is_ctrl : type a b. (a, b) t -> bool =
+     fun n ->
+      match n.kind with
+      | Ctrl _ -> true
+      | _ -> false
+
+  let is_data : type a b. (a, b) t -> bool =
+     fun n ->
+      match n.kind with
+      | Data _ -> true
+      | _ -> false
+
+  let is_blockhead : type a b. (a, b) t -> bool =
+     fun n ->
+      match n.kind with
+      | Ctrl Start
+      | Ctrl (Proj _)
+      | Ctrl Region
+      | Ctrl Loop
+      | Ctrl Stop ->
+          true
+      | _ -> false
 end
 
 include N

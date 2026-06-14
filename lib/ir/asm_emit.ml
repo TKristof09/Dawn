@@ -243,7 +243,8 @@ let asm_of_node g reg_assoc linker n prev_node next_node =
         | AndImm i
         | OrImm i ->
             assert (Z.fits_int32 i);
-            let as_unary : type a. a Machine_node.t -> Machine_node.unary Machine_node.t =
+            let as_unary : type a b. (a, b) Machine_node.t -> (Machine_node.unary, b) Machine_node.t
+                =
                fun n ->
                 match n.kind with
                 | AddImm _ -> n
@@ -330,7 +331,8 @@ let asm_of_node g reg_assoc linker n prev_node next_node =
             Printf.sprintf "\t%s %s\n" op_str label_str
         | Lsh
         | Rsh ->
-            let as_binop : type a. a Machine_node.t -> Machine_node.binop Machine_node.t =
+            let as_binop : type a b. (a, b) Machine_node.t -> (Machine_node.binop, b) Machine_node.t
+                =
                fun n ->
                 match n.kind with
                 | Lsh -> n
@@ -353,7 +355,8 @@ let asm_of_node g reg_assoc linker n prev_node next_node =
         | And
         | Or
         | Cmp ->
-            let as_binop : type a. a Machine_node.t -> Machine_node.binop Machine_node.t =
+            let as_binop : type a b. (a, b) Machine_node.t -> (Machine_node.binop, b) Machine_node.t
+                =
                fun n ->
                 match n.kind with
                 | Add -> n

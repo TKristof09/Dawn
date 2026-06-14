@@ -315,10 +315,10 @@ end = struct
               (match check_self_conflict actives range node with
               | Some other ->
                   Hashtbl.update self_conflicts range ~f:(function
-                    | None -> NodeSet.of_list [ node; AnyNode other ]
+                    | None -> NodeSet.of_list [ node; other ]
                     | Some s ->
                         let s = Set.add s node in
-                        Set.add s (AnyNode other))
+                        Set.add s other)
               | None -> ());
               (* remove the def *)
               Hashtbl.remove actives range;
@@ -579,7 +579,8 @@ end
 let spill_node g (lrg : Range.t) (Machine_node.AnyNode n) =
     assert (not @@ Machine_node.is_control_node n);
 
-    let clone_node : type a. Graph.readwrite Graph.t -> a Machine_node.t -> a Machine_node.t =
+    let clone_node : type a b.
+        Graph.readwrite Graph.t -> (a, b) Machine_node.t -> (a, b) Machine_node.t =
        fun g n ->
         let n' = Machine_node.create_node n.kind n.ir_node in
         let (AnyNode cfg) = Graph.get_ctrl_exn g n in
@@ -588,8 +589,8 @@ let spill_node g (lrg : Range.t) (Machine_node.AnyNode n) =
         n'
     in
 
-    let copy_node : type a.
-        Graph.readwrite Graph.t -> a Machine_node.t -> Machine_node.unary Machine_node.t =
+    let copy_node : type a b.
+        Graph.readwrite Graph.t -> (a, b) Machine_node.t -> (Machine_node.unary, b) Machine_node.t =
        fun g n ->
         let n' = Machine_node.create_node Mov n.ir_node in
         let (AnyNode cfg) =
@@ -809,7 +810,12 @@ let split_self_conflict g program lrg (self_conflicting_nodes : NodeSet.t) =
                 | Ideal Phi ->
                     let (AnyNode cfg) = Graph.get_ctrl_exn g use in
                     let def_cfg = Graph.get_ctrl_exn g n in
-                    let is_backedge = Machine_node.equal (Loop_node.get_back_edge g use) n in
+
+                    let (AnyNode backedge) =
+                        Machine_node.get_phi_backedge (Machine_node.G.readonly g) use
+                        |> Option.value_exn
+                    in
+                    let is_backedge = Machine_node.equal backedge n in
                     let is_loop =
                         match cfg.kind with
                         | Ideal Loop -> true
@@ -834,7 +840,9 @@ let split_self_conflict g program lrg (self_conflicting_nodes : NodeSet.t) =
         in
         match n.kind with
         | Ideal Phi ->
-            let backedge = Loop_node.get_entry_edge g n in
+            let (AnyNode backedge) =
+                Machine_node.get_phi_backedge (Machine_node.G.readonly g) n |> Option.value_exn
+            in
             let program = duplicate_after g program lrg n in
             insert_before g program lrg ~node_to_spill:(AnyNode backedge) ~before_this:(AnyNode n)
         | _ when Machine_node.is_two_address n ->
@@ -854,12 +862,12 @@ let split g program (lrg : Range.t) =
         (* create spill, this makes every reload that we just created use the spill rather than the original n *)
         duplicate_after g prog lrg n)
 
-let cleanup_mov g (n : Machine_node.unary Machine_node.t) reg_assign =
+let cleanup_mov g (n : (Machine_node.unary, 'a) Machine_node.t) reg_assign =
     let { Machine_node.input = AnyNode input } = Graph.get_dependencies_exn g n in
     let dst_loc = Hashtbl.find_exn reg_assign (Machine_node.AnyNode n) in
     let src_loc = Hashtbl.find_exn reg_assign (Machine_node.AnyNode input) in
     if Registers.equal_loc src_loc dst_loc then (
-      Graph.replace_node_with g n dep;
+      Graph.replace_node_with g n input;
       true)
     else
       false
@@ -882,7 +890,7 @@ let allocate g program =
     let rec loop program round =
         [%log.debug "\n\n ================= ROUND %d ======================\n\n" round];
         let attempt g program =
-            [%log.debug "\n%a" Ir_printer.pp_machine_linear (g, program)];
+            [%log.debug "\n%a" Ir_printer.pp_machine_linear (Graph.readonly g, program)];
             let* node_to_lrg = build_live_ranges (Graph.readonly g) program in
             [%log.debug "Build live ranges:\n%a" pp_lrgs node_to_lrg];
             let* ifg = InterferenceGraph.build (Graph.readonly g) program node_to_lrg in

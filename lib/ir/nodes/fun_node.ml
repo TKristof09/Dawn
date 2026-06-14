@@ -120,40 +120,44 @@ let add_return ?parent_fun g ret_node ~ctrl ~mem ~val_n =
     Phi_node.add_input g phi_mem (Node2.AnyMem mem);
     Node2.G.set_node_inputs g region { Node2.ctrl_inputs = ctrl_inputs @ [ Some (AnyCtrl ctrl) ] };
     (* TODO do i care about this? we will set the types to ANY during SCCP anyway *)
-    let ~new_type:typ, ~extra_deps:_ = Phi_node.compute_type g phi_mem in
+    let ~new_type:typ, ~extra_deps:_ = Phi_node.compute_type (Node2.G.readonly g) phi_mem in
     phi_mem.typ <- typ;
-    let ~new_type:typ, ~extra_deps:_ = Phi_node.compute_type g phi_data in
+    let ~new_type:typ, ~extra_deps:_ = Phi_node.compute_type (Node2.G.readonly g) phi_data in
     phi_data.typ <- typ
 
 let get_signature n =
     match n.Node2.kind with
     | Ctrl (Function { ret = _; signature; idx = _ }) -> signature
 
-let get_call_fun_ptr g n =
+let get_call_fun_ptr g (n : (Node2.fun_call, Node2.ctrl) Node2.t) =
     let { Node2.fun_ptr; mem = _; args = _ } = Node2.G.get_dependencies_exn g n in
+    let (AnyData fun_ptr) = Option.value_exn fun_ptr in
+    let fun_ptr = Node2.unpack_exn fun_ptr (Data Constant) in
     fun_ptr
 
 let compute_fun_node_type g n =
+    let { Node2.call_sites } = Node2.G.get_dependencies_exn g n in
     let new_type =
-        Graph.get_dependencies g n
-        |> List.filter_map ~f:(function
+        List.filter_map call_sites ~f:(function
           | None -> None
-          | Some dep -> (
-              match dep.Node.kind with
-              | Ctrl Start -> None
-              | _ -> Some dep.typ))
+          | Some (AnyCtrl dep) ->
+              (* only calls should be here *)
+              let _ = Node2.unpack_exn dep (Ctrl FunctionCall) in
+              Some dep.typ)
         |> List.fold ~init:Types.DeadControl ~f:Types.meet
     in
     (~new_type, ~extra_deps:[])
 
-let compute_call_end_type g (n : Node.t) =
-    let call = Graph.get_dependency g n 0 |> Option.value_exn in
+let compute_call_end_type g n =
+    let (AnyNode call) = Node2.G.get_ctrl_exn g n in
+    let call = Node2.unpack_exn call (Ctrl FunctionCall) in
     let new_type =
         if not (Poly.equal call.typ Types.Control) then
           (* if call is not yet sure to be reachable we stay as ANY *)
           Types.Tuple (Value [ DeadControl; Memory; ANY ])
         else
-          let fun_ptr = Graph.get_dependency g call 1 |> Option.value_exn in
+          let { Node2.fun_ptr; mem; args } = Node2.G.get_dependencies_exn g call in
+          let (AnyData fun_ptr) = Option.value_exn fun_ptr in
           let fun_typ = fun_ptr.typ in
           match fun_typ with
           | FunPtr (Value { params = _; ret; fun_indices = _ }) ->
@@ -165,9 +169,11 @@ let compute_call_end_type g (n : Node.t) =
               possible functions. In this case we'll only want to do the
               Types.meet for precise return type calculation once all possible
               functions are already linked *)
-              let ret_nodes = Graph.get_dependencies g n |> List.tl_exn |> List.filter_opt in
+              let { Node2.ret_nodes } = Node2.G.get_dependencies_exn g n in
               let ret_type =
-                  List.fold ret_nodes ~init:Types.ANY ~f:(fun acc ret_node ->
+                  ret_nodes
+                  |> List.filter_opt
+                  |> List.fold ~init:Types.ANY ~f:(fun acc (AnyCtrl ret_node) ->
                       let ret_node_ret_type =
                           match ret_node.typ with
                           | Tuple (Value [ _; _; ret_typ ]) -> ret_typ

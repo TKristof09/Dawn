@@ -44,7 +44,11 @@ val get_call_fun_ptr :
   'a Node2.G.t -> (Node2.fun_call, Node2.ctrl) Node2.t -> (unit, Node2.data) Node2.t
 
 val compute_fun_node_type :
-  (Node.t, 'a) Graph.t -> Node.t -> (new_type:Types.t * extra_deps:Node.t list)
+  Node2.G.readonly Node2.G.t ->
+  (Node2.fun_def, Node2.ctrl) Node2.t ->
+  (new_type:Types.t * extra_deps:Node2.any list)
 
 val compute_call_end_type :
-  (Node.t, 'a) Graph.t -> Node.t -> (new_type:Types.t * extra_deps:Node.t list)
+  Node2.G.readonly Node2.G.t ->
+  (Node2.fun_call_end, Node2.ctrl) Node2.t ->
+  (new_type:Types.t * extra_deps:Node2.any list)

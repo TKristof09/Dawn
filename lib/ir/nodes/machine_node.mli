@@ -7,7 +7,7 @@ type cmp =
     | GEq
 [@@deriving show { with_path = false }, sexp_of]
 
-type any = AnyNode : 'a t -> any
+type any = AnyNode : ('a, 'tag) t -> any
 
 and _ ideal =
     | Loop : loop ideal
@@ -114,44 +114,48 @@ and fun_call_end = { ret_nodes : any list }
 and return = {
     mem : any;
     value : any;
-    callee_saves : unit t list;
+    callee_saves : (unit, unit) t list;
   }
 [@@deriving show { with_path = false }, sexp_of]
 
-and 'a t = {
+and ('a, 'b) t = {
     id : int;
     mutable kind : 'a kind;
     ir_node : Node2.any;
     list_of_inputs : 'a -> any option list;
     inputs_of_list : any option list -> 'a;
+    _tag_witness : ('b, unit) Type.eq;
   }
 [@@deriving show { with_path = false }, sexp_of]
 
-module N : Graph.NODE with type ('a, 'tag) t = 'a t and type any = any
+module N : Graph.NODE with type ('a, 'tag) t = ('a, 'tag) t and type any = any
 module G : Graph.S with module N := N
 
-val create_node : 'a kind -> Node2.any -> 'a t
+val create_node : 'a kind -> Node2.any -> ('a, 't) t
 val invert_cond : cmp -> cmp
-val is_cheap_to_clone : 'a t -> bool
-val is_control_node : 'a t -> bool
-val is_blockhead : 'a t -> bool
-val is_two_address : 'a t -> bool
-val is_multi_output : 'a t -> bool
-val get_in_reg_mask : 'q G.t -> 'a t -> int -> Registers.Mask.t option
-val get_out_reg_mask : 'q G.t -> 'a t -> int -> Registers.Mask.t option
-val get_register_kills : 'a t -> Registers.Mask.t option
+val is_cheap_to_clone : ('a, 't) t -> bool
+val is_control_node : ('a, 't) t -> bool
+val is_blockhead : ('a, 't) t -> bool
+val is_two_address : ('a, 't) t -> bool
+val is_multi_output : ('a, 't) t -> bool
+val get_in_reg_mask : 'q G.t -> ('a, 't) t -> int -> Registers.Mask.t option
+val get_out_reg_mask : 'q G.t -> ('a, 't) t -> int -> Registers.Mask.t option
+val get_register_kills : ('a, 't) t -> Registers.Mask.t option
 val convert_graph : Node2.G.readonly Node2.G.t -> G.readwrite G.t
 val next_id : unit -> int
 val reset_id : unit -> unit
-val id : 'a t -> int
-val equal : 'a t -> 'b t -> bool
+val id : ('a, 't) t -> int
+val equal : ('a, 'ta) t -> ('b, 'tb) t -> bool
 val equal_kind : 'a kind -> 'b kind -> bool
-val type_eq : 'a t -> 'b t -> (('a, 'b) Type.eq * ('taga, 'tagb) Type.eq) option
-val unpack : 'a t -> 'b kind -> 'b t option
-val unpack_exn : 'a t -> 'b kind -> 'b t
-val compare : 'a t -> 'a t -> int
-val hash : 'a t -> int
-val show : 'a t -> string
+val type_eq : ('a, 'ta) t -> ('b, 'tb) t -> (('a, 'b) Type.eq * ('ta, 'tb) Type.eq) option
+val unpack : ('a, 't) t -> 'b kind -> ('b, unit) t option
+val unpack_exn : ('a, 't) t -> 'b kind -> ('b, unit) t
+val fix_tag : ('a, 't) t -> ('a, unit) t
+val get_phi_backedge : G.readonly G.t -> (phi, 'a) t -> any option
+val compare : ('a, 'ta) t -> ('b, 'tb) t -> int
+val hash : ('a, 't) t -> int
+val pp : Format.formatter -> ('a, 'b) t -> unit
+val show : ('a, 't) t -> string
 
 module Any : sig
   type t = any

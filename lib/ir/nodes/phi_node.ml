@@ -28,40 +28,80 @@ let create_mem_no_backedge g loc ?parent_fun ctrl dep =
     Node2.G.set_ctrl g n ctrl;
     n
 
-let add_backedge_input_data g n dep =
+let add_backedge_input : type a b c.
+    Node2.G.readwrite Node2.G.t -> (a Node2.phi, b) Node2.t -> (c, b) Node2.t -> unit =
+   fun g n dep ->
     (* keep the phi's original type as the type, it will get recomputed by the
        scope_node.merge_loop function after all phis have both their inputs *)
     let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
-    Node2.G.set_node_inputs g n { Node2.phi_inputs = phi_inputs @ [ Some (Node2.AnyData dep) ] }
-
-let add_backedge_input_mem g n dep =
-    (* keep the phi's original type as the type, it will get recomputed by the
-       scope_node.merge_loop function after all phis have both their inputs *)
-    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
-    Node2.G.set_node_inputs g n { Node2.phi_inputs = phi_inputs @ [ Some (Node2.AnyMem dep) ] }
+    match n.kind with
+    | Data Phi ->
+        Node2.G.set_node_inputs g n { Node2.phi_inputs = phi_inputs @ [ Some (Node2.AnyData dep) ] }
+    | Data (Param _) -> failwith "Can't add backedge to param node"
+    | Mem Phi ->
+        Node2.G.set_node_inputs g n { Node2.phi_inputs = phi_inputs @ [ Some (Node2.AnyMem dep) ] }
+    | Mem Param -> failwith "Can't add backedge to param node"
+    | _ -> .
 
 let add_input g phi inp =
     let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g phi in
     Node2.G.set_node_inputs g phi { phi_inputs = phi_inputs @ [ Some inp ] }
 
-let compute_type g n =
-    let region = Graph.get_dependency g n 0 |> Option.value_exn in
-    let in_control = Graph.get_dependencies g region |> List.tl_exn in
-    let in_data = Graph.get_dependencies g n |> List.tl_exn in
+
+let compute_type : type a b.
+    Node2.G.readonly Node2.G.t ->
+    (a Node2.phi, b) Node2.t ->
+    (new_type:Types.t * extra_deps:Node2.any list) =
+   fun g n ->
+    let (AnyNode region) = Node2.G.get_ctrl_exn g n in
+    let ctrl_inputs =
+        match region.kind with
+        | Ctrl Region ->
+            let { Node2.ctrl_inputs } = Node2.G.get_dependencies_exn g region in
+            ctrl_inputs
+        | Ctrl Loop ->
+            let { Node2.entry; backedge } = Node2.G.get_dependencies_exn g region in
+            [ entry; backedge ]
+        | Ctrl (Function _) ->
+            let { Node2.call_sites } = Node2.G.get_dependencies_exn g region in
+            call_sites
+        | _ -> assert false
+    in
+    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
     let new_type =
-        List.zip_exn in_control in_data
+        List.zip_exn ctrl_inputs phi_inputs
         |> List.filter_map ~f:(fun (c, d) ->
             match (c, d) with
-            | Some c, Some d -> (
-                match c.Node.typ with
+            | Some (AnyCtrl c), Some d -> (
+                match c.typ with
                 | DeadControl -> None
-                | Control -> Some d.typ
+                | Control -> (
+                    match n.kind with
+                    | Data Phi ->
+                        let (AnyData d) = d in
+                        Some d.typ
+                    | Data (Param _) ->
+                        let (AnyData d) = d in
+                        Some d.typ
+                    | Mem Phi ->
+                        let (AnyMem d) = d in
+                        Some d.typ
+                    | Mem Param ->
+                        let (AnyMem d) = d in
+                        Some d.typ
+                    | _ -> .)
                 | ANY -> None
                 | _ -> None)
             | _ -> None)
         |> List.fold ~init:Types.ANY ~f:(fun t t' -> Types.meet t t')
     in
     (* TODO: join with the initial type so that the type stays in the original "domain" e.g. it stays int bottom instead of global bottom. this would probably help produce better errors *)
+
+    let any_of_ctrl n =
+        match n with
+        | None -> None
+        | Some (Node2.AnyCtrl n) -> Some (Node2.AnyNode n)
+    in
     let old_type = n.typ in
     match (region.kind, new_type, old_type) with
     | ( Ctrl Loop,
@@ -80,5 +120,5 @@ let compute_type g n =
             else
               new_type
         in
-        (~new_type, ~extra_deps:(in_control |> List.filter_opt))
-    | _ -> (~new_type, ~extra_deps:(in_control |> List.filter_opt))
+        (~new_type, ~extra_deps:(ctrl_inputs |> List.filter_map ~f:any_of_ctrl))
+    | _ -> (~new_type, ~extra_deps:(ctrl_inputs |> List.filter_map ~f:any_of_ctrl))

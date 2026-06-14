@@ -30,7 +30,7 @@ module N = struct
       | GEq
   [@@deriving show { with_path = false }, sexp_of]
 
-  type any = AnyNode : 'a t -> any
+  type any = AnyNode : ('a, 'tag) t -> any
 
   and _ ideal =
       | Loop : loop ideal
@@ -70,7 +70,7 @@ module N = struct
       | Jmp : cmp -> unary kind
       | Mov : unary kind
       | DProj : int -> unary kind
-      | FunctionProlog : int -> unit kind
+      | FunctionProlog : int -> merge_point kind
       | Return : return kind
       | FunctionCall : int option -> fun_call kind
       | FunctionCallEnd : fun_call_end kind
@@ -140,22 +140,254 @@ module N = struct
       callee_saves : any list;
     }
 
-  and 'a t = {
+  and ('a, 'b) t = {
       id : int;
       mutable kind : 'a kind;
       ir_node : Node2.any;
       list_of_inputs : 'a -> any option list;
       inputs_of_list : any option list -> 'a;
+      (* We only need this because the Graph.NODE interface needs two
+         polymorphic parameters for the type t but the tag is otherwise unused.
+         _tag_witness allows proving the tag is unit in the type_eq and unpack
+         functions *)
+      _tag_witness : (('b, unit) Type.eq[@sexp.opaque]);
     }
   [@@deriving sexp_of]
 
   let id n = n.id
-  let equal a b = a.id = b.id
   let list_of_inputs n inps = n.list_of_inputs inps
   let inputs_of_list n l = n.inputs_of_list l
+  let equal a b = a.id = b.id
+  let pp _ _ = failwithf "todo %s" __LOC__ ()
+  let show _ = failwithf "todo %s" __LOC__ ()
 
-  let[@inline] type_eq : type a b. a t -> b t -> ((a, b) Type.eq * (unit, unit) Type.eq) option =
-     fun a b -> _
+  let get_list_of_inputs : type a. a kind -> a -> any option list =
+     fun k ->
+      let binop_inputs = fun { lhs; rhs } -> [ Some lhs; Some rhs ] in
+      let unary_inputs = fun { input } -> [ Some input ] in
+      match k with
+      | Int _ -> Fun.const []
+      | Ptr -> Fun.const []
+      | AddrOf -> unary_inputs
+      | Deref -> fun { mem; ptr } -> [ Some mem; Some ptr ]
+      | ZeroExtend -> unary_inputs
+      | SignExtend -> unary_inputs
+      | Add -> binop_inputs
+      | AddImm _ -> unary_inputs
+      | Sub -> binop_inputs
+      | SubImm _ -> unary_inputs
+      | Mul -> binop_inputs
+      | MulImm _ -> unary_inputs
+      | Div -> binop_inputs
+      | Lsh -> binop_inputs
+      | Rsh -> binop_inputs
+      | And -> binop_inputs
+      | Or -> binop_inputs
+      | LshImm _ -> unary_inputs
+      | RshImm _ -> unary_inputs
+      | AndImm _ -> unary_inputs
+      | OrImm _ -> unary_inputs
+      | Cmp -> binop_inputs
+      | CmpImm _ -> unary_inputs
+      | Set _ -> unary_inputs
+      | JmpAlways -> Fun.const []
+      | Jmp _ -> unary_inputs
+      | Mov -> unary_inputs
+      | DProj _ -> unary_inputs
+      | FunctionProlog _ -> fun { ctrl_inputs } -> ctrl_inputs
+      | Return ->
+          fun { mem; value; callee_saves } ->
+            [ Some mem; Some value ] @ List.map callee_saves ~f:Option.some
+      | FunctionCall _ ->
+          fun { fun_ptr; mem; args } -> [ fun_ptr; Some mem ] @ List.map args ~f:Option.some
+      | FunctionCallEnd -> fun { ret_nodes } -> List.map ret_nodes ~f:Option.some
+      | Param _ -> fun { phi_inputs } -> phi_inputs
+      | CalleeSave _ -> Fun.const []
+      | New -> fun { mem; size } -> [ Some mem; Some size ]
+      | Store -> fun { mem; ptr; value } -> [ Some mem; Some ptr; Some value ]
+      | Load -> fun { mem; ptr } -> [ Some mem; Some ptr ]
+      | Noop -> Fun.const []
+      | RepMov _ -> fun { mem; src; dst } -> [ Some mem; Some src; Some dst ]
+      | Ideal Loop -> fun { entry; backedge } -> [ Some entry; Some backedge ]
+      | Ideal (CProj _) -> fun { input } -> [ Some input ]
+      | Ideal Start -> Fun.const []
+      | Ideal Stop -> fun { mem } -> [ Some mem ]
+      | Ideal Region -> fun { ctrl_inputs } -> ctrl_inputs
+      | Ideal Phi -> fun { phi_inputs } -> phi_inputs
+      | Ideal (External _) -> Fun.const []
+
+  let get_inputs_of_list : type a. a kind -> any option list -> a =
+     fun k ->
+      let unary_inputs = function
+          | [ x ] -> { input = Option.value_exn x }
+          | _ -> assert false
+      in
+      let binop_inputs = function
+          | [ x; y ] -> { lhs = Option.value_exn x; rhs = Option.value_exn y }
+          | _ -> assert false
+      in
+      match k with
+      | Int _ -> Fun.const ()
+      | Ptr -> Fun.const ()
+      | AddrOf -> unary_inputs
+      | Deref -> (
+          function
+          | [ x; y ] -> { mem = Option.value_exn x; ptr = Option.value_exn y }
+          | _ -> assert false)
+      | ZeroExtend -> unary_inputs
+      | SignExtend -> unary_inputs
+      | Add -> binop_inputs
+      | AddImm _ -> unary_inputs
+      | Sub -> binop_inputs
+      | SubImm _ -> unary_inputs
+      | Mul -> binop_inputs
+      | MulImm _ -> unary_inputs
+      | Div -> binop_inputs
+      | Lsh -> binop_inputs
+      | Rsh -> binop_inputs
+      | And -> binop_inputs
+      | Or -> binop_inputs
+      | LshImm _ -> unary_inputs
+      | RshImm _ -> unary_inputs
+      | AndImm _ -> unary_inputs
+      | OrImm _ -> unary_inputs
+      | Cmp -> binop_inputs
+      | CmpImm _ -> unary_inputs
+      | Set _ -> unary_inputs
+      | JmpAlways -> Fun.const ()
+      | Jmp _ -> unary_inputs
+      | Mov -> unary_inputs
+      | DProj _ -> unary_inputs
+      | FunctionProlog _ -> fun lst -> { ctrl_inputs = lst }
+      | Return -> (
+          function
+          | x :: y :: rest ->
+              {
+                mem = Option.value_exn x;
+                value = Option.value_exn y;
+                callee_saves = List.map rest ~f:(fun o -> Option.value_exn o);
+              }
+          | _ -> assert false)
+      | FunctionCall _ -> (
+          function
+          | fun_ptr :: mem :: rest ->
+              {
+                fun_ptr;
+                mem = Option.value_exn mem;
+                args = List.map rest ~f:(fun o -> Option.value_exn o);
+              }
+          | _ -> assert false)
+      | FunctionCallEnd -> fun lst -> { ret_nodes = List.map lst ~f:(fun o -> Option.value_exn o) }
+      | Param _ -> fun lst -> { phi_inputs = lst }
+      | CalleeSave _ -> Fun.const ()
+      | New -> (
+          function
+          | [ x; y ] -> { mem = Option.value_exn x; size = Option.value_exn y }
+          | _ -> assert false)
+      | Store -> (
+          function
+          | [ x; y; z ] ->
+              { mem = Option.value_exn x; ptr = Option.value_exn y; value = Option.value_exn z }
+          | _ -> assert false)
+      | Load -> (
+          function
+          | [ x; y ] -> { mem = Option.value_exn x; ptr = Option.value_exn y }
+          | _ -> assert false)
+      | Noop -> Fun.const ()
+      | RepMov _ -> (
+          function
+          | [ x; y; z ] ->
+              { mem = Option.value_exn x; src = Option.value_exn y; dst = Option.value_exn z }
+          | _ -> assert false)
+      | Ideal Loop -> (
+          function
+          | [ x; y ] -> { entry = Option.value_exn x; backedge = Option.value_exn y }
+          | _ -> assert false)
+      | Ideal (CProj _) -> unary_inputs
+      | Ideal Start -> Fun.const ()
+      | Ideal Stop -> (
+          function
+          | [ x ] -> { mem = Option.value_exn x }
+          | _ -> assert false)
+      | Ideal Region -> fun lst -> { ctrl_inputs = lst }
+      | Ideal Phi -> fun lst -> { phi_inputs = lst }
+      | Ideal (External _) -> Fun.const ()
+
+  let[@inline] kind_eq : type a b. a kind -> b kind -> (a, b) Type.eq option =
+     fun a b ->
+      match (a, b) with
+      | Int _, Int _ -> Some Type.Equal
+      | Ptr, Ptr -> Some Type.Equal
+      | AddrOf, AddrOf -> Some Type.Equal
+      | Deref, Deref -> Some Type.Equal
+      | ZeroExtend, ZeroExtend -> Some Type.Equal
+      | SignExtend, SignExtend -> Some Type.Equal
+      | Add, Add -> Some Type.Equal
+      | AddImm _, AddImm _ -> Some Type.Equal
+      | Sub, Sub -> Some Type.Equal
+      | SubImm _, SubImm _ -> Some Type.Equal
+      | Mul, Mul -> Some Type.Equal
+      | MulImm _, MulImm _ -> Some Type.Equal
+      | Div, Div -> Some Type.Equal
+      | Lsh, Lsh -> Some Type.Equal
+      | Rsh, Rsh -> Some Type.Equal
+      | And, And -> Some Type.Equal
+      | Or, Or -> Some Type.Equal
+      | LshImm _, LshImm _ -> Some Type.Equal
+      | RshImm _, RshImm _ -> Some Type.Equal
+      | AndImm _, AndImm _ -> Some Type.Equal
+      | OrImm _, OrImm _ -> Some Type.Equal
+      | Cmp, Cmp -> Some Type.Equal
+      | CmpImm _, CmpImm _ -> Some Type.Equal
+      | Set _, Set _ -> Some Type.Equal
+      | JmpAlways, JmpAlways -> Some Type.Equal
+      | Jmp _, Jmp _ -> Some Type.Equal
+      | Mov, Mov -> Some Type.Equal
+      | DProj _, DProj _ -> Some Type.Equal
+      | FunctionProlog _, FunctionProlog _ -> Some Type.Equal
+      | Return, Return -> Some Type.Equal
+      | FunctionCall _, FunctionCall _ -> Some Type.Equal
+      | FunctionCallEnd, FunctionCallEnd -> Some Type.Equal
+      | Param _, Param _ -> Some Type.Equal
+      | CalleeSave _, CalleeSave _ -> Some Type.Equal
+      | New, New -> Some Type.Equal
+      | Store, Store -> Some Type.Equal
+      | Load, Load -> Some Type.Equal
+      | Noop, Noop -> Some Type.Equal
+      | RepMov _, RepMov _ -> Some Type.Equal
+      | Ideal Loop, Ideal Loop -> Some Type.Equal
+      | Ideal (CProj _), Ideal (CProj _) -> Some Type.Equal
+      | Ideal Start, Ideal Start -> Some Type.Equal
+      | Ideal Stop, Ideal Stop -> Some Type.Equal
+      | Ideal Region, Ideal Region -> Some Type.Equal
+      | Ideal Phi, Ideal Phi -> Some Type.Equal
+      | Ideal (External _), Ideal (External _) -> Some Type.Equal
+      | _, _ -> None
+
+  let[@inline] type_eq : type a b taga tagb.
+      (a, taga) t -> (b, tagb) t -> ((a, b) Type.eq * (taga, tagb) Type.eq) option =
+     fun a b ->
+      match kind_eq a.kind b.kind with
+      | None -> None
+      | Some eq -> (
+          match (a._tag_witness, b._tag_witness) with
+          | Type.Equal, Type.Equal -> Some (eq, Type.Equal))
+
+  let[@inline] unpack : type a b c. (a, c) t -> b kind -> (b, unit) t option =
+     fun n k ->
+      match kind_eq n.kind k with
+      | Some Type.Equal -> (
+          match n._tag_witness with
+          | Type.Equal -> Some n)
+      | None -> None
+
+  let[@inline] unpack_exn : type a b c. (a, c) t -> b kind -> (b, unit) t =
+     fun n k -> unpack n k |> Option.value_exn
+
+  let[@inline] fix_tag : type a b. (a, b) t -> (a, unit) t =
+     fun a ->
+      match a._tag_witness with
+      | Type.Equal -> a
 end
 
 include N
@@ -170,7 +402,7 @@ let invert_cond cond =
     | Gt -> LEq
     | GEq -> Lt
 
-let is_cheap_to_clone : type a. a t -> bool =
+let is_cheap_to_clone : type a b. (a, b) t -> bool =
    fun n ->
     match n.kind with
     | Int _ -> true
@@ -179,7 +411,7 @@ let is_cheap_to_clone : type a. a t -> bool =
     | CmpImm _ -> true
     | _ -> false
 
-let is_control_node : type a. a t -> bool =
+let is_control_node : type a b. (a, b) t -> bool =
    fun n ->
     match n.kind with
     | Jmp _
@@ -231,7 +463,7 @@ let is_control_node : type a. a t -> bool =
     | RepMov _ ->
         false
 
-let is_blockhead : type a. a t -> bool =
+let is_blockhead : type a b. (a, b) t -> bool =
    fun n ->
     match n.kind with
     | Ideal Start
@@ -244,7 +476,7 @@ let is_blockhead : type a. a t -> bool =
         true
     | _ -> false
 
-let is_two_address : type a. a t -> bool =
+let is_two_address : type a b. (a, b) t -> bool =
    fun n ->
     match n.kind with
     | Add
@@ -296,7 +528,7 @@ let is_multi_output n =
     | Tuple _ -> true
     | _ -> false
 
-let get_in_reg_mask : type a. G.readonly G.t -> a t -> int -> Registers.Mask.t option =
+let get_in_reg_mask : type a. G.readonly G.t -> (a, unit) t -> int -> Registers.Mask.t option =
    fun _ n i ->
     match n.kind with
     | Add
@@ -419,7 +651,7 @@ let get_in_reg_mask : type a. G.readonly G.t -> a t -> int -> Registers.Mask.t o
           None
     | Ideal _ -> None
 
-let rec get_out_reg_mask : type a. G.readonly G.t -> a t -> int -> Registers.Mask.t option =
+let rec get_out_reg_mask : type a b. G.readonly G.t -> (a, b) t -> int -> Registers.Mask.t option =
    fun g n i ->
     match n.kind with
     | Add
@@ -513,7 +745,7 @@ let rec get_out_reg_mask : type a. G.readonly G.t -> a t -> int -> Registers.Mas
     | RepMov _ -> None
     | Ideal _ -> None
 
-let get_register_kills : type a. a t -> Registers.Mask.t option =
+let get_register_kills : type a b. (a, b) t -> Registers.Mask.t option =
    fun n ->
     match n.kind with
     | FunctionCall _ -> Some Registers.Mask.caller_save
@@ -526,7 +758,7 @@ let get_register_kills : type a. a t -> Registers.Mask.t option =
         Some (Registers.Mask.of_list [ Reg RCX ])
     | _ -> None
 
-let create_node : type a. a kind -> Node2.any -> a t =
+let create_node : type a. a kind -> Node2.any -> (a, unit) t =
    fun kind ir_node ->
     {
       id = next_id ();
@@ -534,7 +766,13 @@ let create_node : type a. a kind -> Node2.any -> a t =
       ir_node;
       list_of_inputs = get_list_of_inputs kind;
       inputs_of_list = get_inputs_of_list kind;
+      _tag_witness = Type.Equal;
     }
+
+let get_phi_backedge g phi =
+    let { phi_inputs } = G.get_dependencies_exn g phi in
+    assert (List.length phi_inputs = 2);
+    List.nth_exn phi_inputs 1
 
 let rec of_data_node : type a.
     (Node2.any, any) Hashtbl.t ->
@@ -543,13 +781,15 @@ let rec of_data_node : type a.
     (a, Node2.data) Node2.t ->
     any =
    fun memo g machine_g n ->
-    let set_ctrl : type a. a t -> unit =
+    let set_ctrl : type a b. (a, b) t -> unit =
        fun node ->
         let ctrl =
             Node2.G.get_ctrl g n
             |> Option.map ~f:(fun (AnyNode ctrl) -> convert_node memo g machine_g ctrl)
         in
-        G.set_ctrl machine_g node ctrl
+        match ctrl with
+        | None -> ()
+        | Some (AnyNode ctrl) -> G.set_ctrl machine_g node ctrl
     in
     let get_const (Node2.AnyData n) =
         if Types.is_constant n.typ && Z.fits_int32 (Types.get_integer_const_exn n.typ) then
@@ -808,13 +1048,15 @@ and of_ctrl_node : type a.
     (a, Node2.ctrl) Node2.t ->
     any =
    fun memo g machine_g n ->
-    let set_ctrl : type a. a t -> unit =
+    let set_ctrl : type a b. (a, b) t -> unit =
        fun node ->
         let ctrl =
             Node2.G.get_ctrl g n
             |> Option.map ~f:(fun (AnyNode ctrl) -> convert_node memo g machine_g ctrl)
         in
-        G.set_ctrl machine_g node ctrl
+        match ctrl with
+        | None -> ()
+        | Some (AnyNode ctrl) -> G.set_ctrl machine_g node ctrl
     in
     let simple : type a b t. a kind -> (b, t) Node2.t -> (b -> a) -> any =
        fun kind n f ->
@@ -864,6 +1106,7 @@ and of_ctrl_node : type a.
             AnyNode node)
     | Ctrl Stop ->
         let (AnyNode node) = G.get_stop machine_g in
+        let node = unpack_exn node (Ideal Stop) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
         let { Node2.mem } : Node2.stop = Node2.G.get_dependencies_exn g n in
         let (AnyMem mem) = Option.value_exn mem in
@@ -947,13 +1190,15 @@ and of_mem_node : type a.
     (a, Node2.mem) Node2.t ->
     any =
    fun memo g machine_g n ->
-    let set_ctrl : type a. a t -> unit =
+    let set_ctrl : type a b. (a, b) t -> unit =
        fun node ->
         let ctrl =
             Node2.G.get_ctrl g n
             |> Option.map ~f:(fun (AnyNode ctrl) -> convert_node memo g machine_g ctrl)
         in
-        G.set_ctrl machine_g node ctrl
+        match ctrl with
+        | None -> ()
+        | Some (AnyNode ctrl) -> G.set_ctrl machine_g node ctrl
     in
     let simple : type a b t. a kind -> (b, t) Node2.t -> (b -> a) -> any =
        fun kind n f ->
@@ -1144,17 +1389,9 @@ and convert_node : type a t.
         assert (Hashtbl.mem memo (AnyNode n));
         res
 
-let find_dep machine_g n ~f =
-    Graph.get_dependencies machine_g n
-    |> List.findi ~f:(fun _ dep ->
-        match dep with
-        | None -> false
-        | Some dep -> f dep)
-    |> Option.map ~f:(fun (i, n) -> (i, Option.value_exn n))
-
 type change =
-    | InputChange : 'a t * 'a -> change
-    | CtrlChange : 'a t * 'a t -> change
+    | InputChange : ('a, 'b) t * 'a -> change
+    | CtrlChange : ('a, 'b) t * ('a, unit) t -> change
 
 let post_process machine_g =
     (* when changing a node's dependency we need to add a temp node that depends on the new_dep to make sure it doesn't get removed for not having any dependants. E.g. A jmp removes it's depedendancy on a set and set's it to the cmp directly. But the set might get removed if it has no dependants which in turn might remove the cmp for not having dependants *)

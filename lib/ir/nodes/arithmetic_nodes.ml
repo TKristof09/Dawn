@@ -12,17 +12,18 @@ let create_sub g loc ?parent_fun lhs rhs = common g loc ?parent_fun lhs rhs Sub
 let create_mul g loc ?parent_fun lhs rhs = common g loc ?parent_fun lhs rhs Mul
 let create_div g loc ?parent_fun lhs rhs = common g loc ?parent_fun lhs rhs Div
 
-let compute_type g (n : Node.t) =
+let compute_type g n =
     let op =
-        match n.kind with
+        match n.Node2.kind with
         | Data Add -> Z.add
         | Data Sub -> Z.sub
         | Data Mul -> Z.mul
         | Data Div -> Z.div
         | _ -> assert false
     in
-    let lhs = Graph.get_dependency g n 1 |> Option.value_exn in
-    let rhs = Graph.get_dependency g n 2 |> Option.value_exn in
+    let { Node2.lhs; rhs } = Node2.G.get_dependencies_exn g n in
+    let (AnyData lhs) = Option.value_exn lhs in
+    let (AnyData rhs) = Option.value_exn rhs in
     let new_type : Types.t =
         match (lhs.typ, rhs.typ) with
         | Integer _, Integer _ when Types.is_constant lhs.typ && Types.is_constant rhs.typ ->

@@ -30,4 +30,7 @@ val create_div :
   ('b, Node2.data) Node2.t ->
   (Node2.binop, Node2.data) Node2.t
 
-val compute_type : (Node.t, 'a) Graph.t -> Node.t -> (new_type:Types.t * extra_deps:Node.t list)
+val compute_type :
+  Node2.G.readonly Node2.G.t ->
+  (Node2.binop, Node2.data) Node2.t ->
+  (new_type:Types.t * extra_deps:Node2.any list)

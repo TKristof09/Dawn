@@ -16,7 +16,7 @@ type reg =
     | RSP
     | RBP
     | Flags
-[@@deriving show, sexp]
+[@@deriving show, sexp, equal]
 
 type loc =
     | Reg of reg

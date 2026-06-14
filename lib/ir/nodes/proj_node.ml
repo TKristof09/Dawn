@@ -24,22 +24,28 @@ let create_ctrl g loc ?parent_fun n i =
     | Tuple _ -> failwith "idk if this should be possible"
     | _ -> failwith "Proj node needs an input with tuple type"
 
-let compute_type g (n : Node.t) =
+let compute_type : type a b.
+    Node2.G.readonly Node2.G.t ->
+    (a Node2.unary, b) Node2.t ->
+    (new_type:Types.t * extra_deps:Node2.any list) =
+   fun g n ->
     let new_type =
         match n.kind with
         | Ctrl (Proj i) ->
-            let in_control = Graph.get_dependency g n 0 |> Option.value_exn in
+            let { Node2.input } = Node2.G.get_dependencies_exn g n in
+            let (AnyCtrl input) = Option.value_exn input in
             let typ =
-                match in_control.typ with
+                match input.typ with
                 | Tuple (Value l) -> List.nth_exn l i
                 | ANY -> ANY
                 | _ -> Types.ALL
             in
             typ
         | Data (Proj i) ->
-            let in_data = Graph.get_dependency g n 0 |> Option.value_exn in
+            let { Node2.input } = Node2.G.get_dependencies_exn g n in
+            let (AnyData input) = Option.value_exn input in
             let typ =
-                match in_data.typ with
+                match input.typ with
                 | Tuple (Value l) -> List.nth_exn l i
                 | ANY -> ANY
                 | _ -> Types.ALL
