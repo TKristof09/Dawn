@@ -253,6 +253,7 @@ let do_mem_node : type a.
     | Mem Param ->
         (* These arent real things *)
         None
+    | Mem (Proj _) -> None
 
 let type_check_node : type a b.
     Node2.G.readonly Node2.G.t -> (a, b) Node2.t -> (Ast.loc * string) list option =

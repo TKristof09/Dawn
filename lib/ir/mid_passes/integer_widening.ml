@@ -235,6 +235,4 @@ let run g =
             else
               Node2.AnyNode n :: acc)
     in
-    List.iter nodes ~f:(fun (AnyNode n) -> do_node g n);
-    (* TODO: this is because Node2.G.set_dependency doesn't clean up nodes if they no longer have any uses *)
-    Node2.G.cleanup g
+    List.iter nodes ~f:(fun (AnyNode n) -> do_node g n)

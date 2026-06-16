@@ -4,4 +4,5 @@ val create :
   ?parent_fun:int ->
   Types.t ->
   string ->
-  (unit, Node2.data) Node2.t
+  (Node2.any_data Node2.phi, Node2.data) Node2.t list ->
+  (Node2.extern_fun, Node2.data) Node2.t

@@ -365,6 +365,8 @@ let do_mem_node : type a.
     | Mem Param ->
         (* params are just fancy phi nodes so this should work the same *)
         work linker extra_node_deps min_integer_types g n ~type_fn:Phi_node.compute_type
+    | Mem (Proj _) ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:Proj_node.compute_type
 
 let do_node : type a b.
     extra_deps_tbl ->
@@ -411,9 +413,7 @@ let run g linker =
             | _ -> acc)
     in
     (* unlink start from function nodes as we only want to care about functions if someone actually callls them, the start->function node connection was just for convenience *)
-    List.iter fun_nodes ~f:(fun n ->
-        let start = Node2.G.get_start g in
-        Node2.G.remove_dependency g ~node:n ~dep:start);
+    List.iter fun_nodes ~f:(fun n -> Node2.G.unlink_ctrl g n);
 
     let extra_node_deps = Hashtbl.create (module Node2.Any) in
     let min_integer_types = Hashtbl.create (module Node2.Any) in

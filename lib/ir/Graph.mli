@@ -56,12 +56,36 @@ module type S = sig
 
       [n] must already be part of [g] *)
 
+  val unlink_ctrl : readwrite t -> ('a, 'ta) N.t -> unit
+  (** [unlink_ctrl g n] sets n's control input to None.
+
+      [n] must already be part of [g] *)
+
   val remove_node : readwrite t -> ('a, 't) N.t -> unit
   (** [remove_node g n] removes [n] from [g]
 
       [n] must already be part of [g].
 
       If [n] was the last user of any of its inputs, the now unused nodes are also removed. *)
+
+  val replace_node_with : readwrite t -> from:('a, 't) N.t -> to_:('a, 't) N.t -> unit
+  (** [replace_node_with g from to_] replaces [from] with [to_] in the graph. This entails removing
+      all inputs of [from] (which potentially removes some nodes if [from] was their only user) and
+      setting all users of [from] to be users of [to_] instead.
+
+      This is equivalent to calling [replace_input g ~node:user ~from ~to] on every [user] of [from]
+      and then calling [remove_node g from]. *)
+
+  val replace_node_with_unsafe : readwrite t -> from:N.any -> to_:N.any -> unit
+  (** [replace_node_with g from to_] replaces [from] with [to_] in the graph. This entails removing
+      all inputs of [from] (which potentially removes some nodes if [from] was their only user) and
+      setting all users of [from] to be users of [to_] instead.
+
+      This is equivalent to calling [replace_input_unsafe g ~node:user ~from ~to] on every [user] of
+      [from] and then calling [remove_node g from].
+
+      This is the unsafe version. It is up to the user to make sure that the replacement is
+      compatible with what the node expects as inputs. *)
 
   val get_start : 'q t -> N.any
   (** [get_start g] returns the start node that was given during graph creation *)
@@ -85,11 +109,15 @@ module type S = sig
 
   val get_dependencies_list : 'q t -> ('a, 't) N.t -> N.any option list
   (** [get_dependencies_list g n] returns the flat list representation of the inputs of [n]. Returns
-      the empty list if [n] is not part of [g] *)
+      the empty list if [n] is not part of [g].
+
+      The order of nodes in the list corresponds to the order in N.list_of_inputs for the node n. *)
 
   val get_dependants : 'q t -> ('a, 't) N.t -> N.any list
   (** [get_dependants g n] returns the list of users of [n]. Returns the empty list if [n] is not
-      part of [g] *)
+      part of [g]
+
+      The order of nodes in the returned list is not guaranteed. *)
 
   val replace_input :
     readwrite t -> node:('a, 'ta) N.t -> from:('b, 'tb) N.t -> to_:('b, 'tb) N.t -> unit

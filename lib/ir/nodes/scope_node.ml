@@ -3,6 +3,7 @@ open Core
 let create () = Node2.create_scope ()
 let ctrl_identifier = "$ctrl"
 let mem_identifier = "$mem"
+let ret_identifier = "$ret"
 
 let rec define : type a b.
     Node2.G.readwrite Node2.G.t ->
@@ -117,7 +118,7 @@ and assign : type a b.
                   if Node2.equal symbol_node other_node then
                     Symbol_table.reassign_symbol tbl name (AnyNode node)
               | None -> ());
-        Node2.G.replace_node_with g symbol_node node
+        Node2.G.replace_node_with_unsafe g ~from:(AnyNode symbol_node) ~to_:(AnyNode node)
     | _ -> ()
 
 and get g scope name : Node2.any =
@@ -174,6 +175,14 @@ let get_mem g scope : Node2.any_mem =
 let set_mem g n mem =
     try assign g n mem_identifier mem with
     | _ -> define g n mem_identifier mem false
+
+let get_ret_ptr g scope : Node2.any_data =
+    let (AnyNode n) = get g scope ret_identifier in
+    Node2.AnyData (Node2.as_data_exn n)
+
+let set_ret_ptr g n mem =
+    try assign g n ret_identifier mem with
+    | _ -> define g n ret_identifier mem false
 
 let push scope =
     let (Scope tbl) = scope.Node2.kind in
@@ -331,10 +340,9 @@ let merge_loop ?parent_fun g ~this ~body ~exit =
                   let phi = Node2.unpack_exn this_node (Data Phi) in
                   if Node2.equal this_node body_node then (
                     let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g phi in
-                    let value = List.nth_exn phi_inputs 1 |> Option.value_exn in
-                    Node2.G.replace_node_with g v_this.node value;
+                    let (AnyData value) = List.nth_exn phi_inputs 1 |> Option.value_exn in
+                    Node2.G.replace_node_with_unsafe g ~from:v_this.node ~to_:(AnyNode value);
                     (* symbols get assigned from exit table to this table later *)
-                    let (AnyData value) = value in
                     Symbol_table.reassign_symbol exit_tbl name (AnyNode value))
                   else (
                     phis := Node2.AnyNode phi :: !phis;
@@ -345,10 +353,9 @@ let merge_loop ?parent_fun g ~this ~body ~exit =
                   let phi = Node2.unpack_exn this_node (Mem Phi) in
                   if Node2.equal this_node body_node then (
                     let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g phi in
-                    let value = List.nth_exn phi_inputs 1 |> Option.value_exn in
-                    Node2.G.replace_node_with g v_this.node value;
+                    let (AnyMem value) = List.nth_exn phi_inputs 1 |> Option.value_exn in
+                    Node2.G.replace_node_with_unsafe g ~from:v_this.node ~to_:(AnyNode value);
                     (* symbols get assigned from exit table to this table later *)
-                    let (AnyMem value) = value in
                     Symbol_table.reassign_symbol exit_tbl name (AnyNode value))
                   else (
                     phis := AnyNode phi :: !phis;

@@ -65,3 +65,14 @@ val set_mem :
   (Node2.scope_kind, Node2.misc) Node2.t ->
   ('a, Node2.mem) Node2.t ->
   unit
+
+val ret_identifier : string
+
+val get_ret_ptr :
+  Node2.G.readwrite Node2.G.t -> (Node2.scope_kind, Node2.misc) Node2.t -> Node2.any_data
+
+val set_ret_ptr :
+  Node2.G.readwrite Node2.G.t ->
+  (Node2.scope_kind, Node2.misc) Node2.t ->
+  ('a, Node2.data) Node2.t ->
+  unit

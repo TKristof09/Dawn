@@ -473,31 +473,17 @@ let schedule g =
         (match fun_prolog with
         | None -> ()
         | Some fun_prolog ->
-            let { Machine_node.ctrl_inputs } = Machine_node.G.get_dependencies_exn g fun_prolog in
-            List.iter ctrl_inputs ~f:(function
-              | None -> ()
-              | Some (AnyNode n) -> (
-                  match n.kind with
-                  | FunctionCall _ ->
-                      let { Machine_node.fun_ptr = _; mem = _; args } =
-                          Machine_node.G.get_dependencies_exn g n
-                      in
-                      List.iter args ~f:(fun (AnyNode arg) ->
-                          let param =
-                              Machine_node.G.get_dependants g arg
-                              |> List.find_map_exn
-                                   ~f:(fun
-                                       (AnyNode n)
-                                       :
-                                       (Machine_node.phi, unit) Machine_node.t option
-                                     ->
-                                     match n.kind with
-                                     | Param _ -> Some (Machine_node.fix_tag n)
-                                     | _ -> None)
-                          in
-                          Graph.remove_dependency g ~node:param ~dep:arg);
-                      Graph.remove_dependency g ~node:fun_prolog ~dep:n
-                  | _ -> ())));
+            let param_nodes =
+                Machine_node.G.get_dependants g fun_prolog
+                |> List.filter_map
+                     ~f:(fun (AnyNode n) : (Machine_node.phi, unit) Machine_node.t option ->
+                       match n.kind with
+                       | Param _ -> Some (Machine_node.fix_tag n)
+                       | _ -> None)
+            in
+            List.iter param_nodes ~f:(fun param ->
+                Machine_node.G.set_node_inputs g param { phi_inputs = [] });
+            Machine_node.G.set_node_inputs g fun_prolog { ctrl_inputs = [] });
 
         let ret_node =
             Machine_node.G.find_map g
@@ -539,7 +525,7 @@ let schedule g =
                         let n = Machine_node.create_node (CalleeSave reg) fun_prolog.ir_node in
                         Machine_node.G.add_node g n ();
                         Machine_node.G.set_ctrl g n fun_prolog;
-                        n
+                        Machine_node.AnyNode n
                     | _ -> assert false)
             in
             let ret_inputs = Machine_node.G.get_dependencies_exn g ret_node in

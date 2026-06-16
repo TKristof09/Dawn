@@ -580,7 +580,7 @@ let spill_node g (lrg : Range.t) (Machine_node.AnyNode n) =
     assert (not @@ Machine_node.is_control_node n);
 
     let clone_node : type a b.
-        Graph.readwrite Graph.t -> (a, b) Machine_node.t -> (a, b) Machine_node.t =
+        Graph.readwrite Graph.t -> (a, b) Machine_node.t -> (a, unit) Machine_node.t =
        fun g n ->
         let n' = Machine_node.create_node n.kind n.ir_node in
         let (AnyNode cfg) = Graph.get_ctrl_exn g n in
@@ -590,7 +590,9 @@ let spill_node g (lrg : Range.t) (Machine_node.AnyNode n) =
     in
 
     let copy_node : type a b.
-        Graph.readwrite Graph.t -> (a, b) Machine_node.t -> (Machine_node.unary, b) Machine_node.t =
+        Graph.readwrite Graph.t ->
+        (a, b) Machine_node.t ->
+        (Machine_node.unary, unit) Machine_node.t =
        fun g n ->
         let n' = Machine_node.create_node Mov n.ir_node in
         let (AnyNode cfg) =
@@ -867,7 +869,7 @@ let cleanup_mov g (n : (Machine_node.unary, 'a) Machine_node.t) reg_assign =
     let dst_loc = Hashtbl.find_exn reg_assign (Machine_node.AnyNode n) in
     let src_loc = Hashtbl.find_exn reg_assign (Machine_node.AnyNode input) in
     if Registers.equal_loc src_loc dst_loc then (
-      Graph.replace_node_with g n input;
+      Graph.replace_node_with_unsafe g ~from:(AnyNode n) ~to_:(AnyNode input);
       true)
     else
       false
@@ -900,8 +902,7 @@ let allocate g program =
         in
         if round > 10 then
           failwith "This should've finished by now"
-        else (
-          Graph.cleanup g;
+        else
           let program = List.filter program ~f:(Graph.mem g) in
           match attempt g program with
           | Ok reg_assoc ->
@@ -918,7 +919,7 @@ let allocate g program =
                   List.fold failed_ranges ~init:new_program ~f:(fun program lrg ->
                       split g program lrg)
               in
-              loop new_program (round + 1))
+              loop new_program (round + 1)
     in
     let program, lrg_to_reg = loop program 1 in
     let reg_assign = Hashtbl.create (module Machine_node.Any) in

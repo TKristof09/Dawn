@@ -13,14 +13,21 @@ val create_param :
   int ->
   (Node2.any_data Node2.phi, Node2.data) Node2.t
 
+val create_mem_param :
+  Node2.G.readwrite Node2.G.t ->
+  Ast.loc ->
+  ?parent_fun:int ->
+  (Node2.fun_def, Node2.ctrl) Node2.t ->
+  (Node2.any_mem Node2.phi, Node2.mem) Node2.t
+
 val add_call :
   Node2.G.readwrite Node2.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
   ctrl:('a, Node2.ctrl) Node2.t ->
   mem:('b, Node2.mem) Node2.t ->
-  fun_ptr:(unit, Node2.data) Node2.t ->
-  ('c, Node2.data) Node2.t list ->
+  fun_ptr:('c, Node2.data) Node2.t ->
+  Node2.any_data list ->
   (Node2.fun_call, Node2.ctrl) Node2.t * (Node2.fun_call_end, Node2.ctrl) Node2.t
 
 val add_return :

@@ -36,7 +36,22 @@ let create_param g loc ?parent_fun fun_node param_type i =
     Node2.G.set_ctrl g n fun_node;
     n
 
-let add_call g loc ?parent_fun ~ctrl ~mem ~fun_ptr args =
+let create_mem_param g loc ?parent_fun fun_node =
+    let n = Node2.create_mem ?parent_fun loc Memory Param in
+    Node2.G.add_node g n { Node2.phi_inputs = [] };
+    Node2.G.set_ctrl g n fun_node;
+    n
+
+let add_call : type a b c.
+    Node2.G.readwrite Node2.G.t ->
+    Ast.loc ->
+    ?parent_fun:int ->
+    ctrl:(a, Node2.ctrl) Node2.t ->
+    mem:(b, Node2.mem) Node2.t ->
+    fun_ptr:(c, Node2.data) Node2.t ->
+    Node2.any_data list ->
+    (Node2.fun_call, Node2.ctrl) Node2.t * (Node2.fun_call_end, Node2.ctrl) Node2.t =
+   fun g loc ?parent_fun ~ctrl ~mem ~fun_ptr args ->
     let ret_typ =
         match fun_ptr.Node2.typ with
         | FunPtr (Value { params = _; ret; fun_indices = _ }) -> ret
@@ -50,7 +65,7 @@ let add_call g loc ?parent_fun ~ctrl ~mem ~fun_ptr args =
       {
         Node2.fun_ptr = Some (AnyData fun_ptr);
         mem = Some (AnyMem mem);
-        args = List.map args ~f:(fun a -> Some (Node2.AnyData a));
+        args = List.map args ~f:Option.some;
       };
     Node2.G.set_ctrl g call ctrl;
     let call_end =
@@ -80,7 +95,18 @@ let link_call g ~call_node ~fun_node =
             | Data (Param _) -> h :: get_params_nodes t
             | _ -> get_params_nodes t)
     in
-    let param_nodes = Node2.G.get_dependants g fun_node |> get_params_nodes in
+    let compare_params :
+        (Node2.any_data Node2.phi, Node2.data) Node2.t ->
+        (Node2.any_data Node2.phi, Node2.data) Node2.t ->
+        int =
+       fun p p' ->
+        match (p.kind, p'.kind) with
+        | Data (Param i), Data (Param i') -> Int.compare i i'
+        | _, _ -> assert false
+    in
+    let param_nodes =
+        Node2.G.get_dependants g fun_node |> get_params_nodes |> List.sort ~compare:compare_params
+    in
     let { Node2.fun_ptr = _; mem = _; args } = Node2.G.get_dependencies_exn g call_node in
     match List.zip param_nodes args with
     | Unequal_lengths ->

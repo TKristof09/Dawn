@@ -30,7 +30,7 @@ module N = struct
       | Phi : any_data phi data_kind
       | Proj : int -> any unary data_kind
       | Param : int -> any_data phi data_kind
-      | External : string -> unit data_kind
+      | External : string -> extern_fun data_kind
       | Cast : any_data unary data_kind
       | Load : string -> load data_kind
       | AddrOf : addr_of data_kind
@@ -60,6 +60,7 @@ module N = struct
       | Copy : copy mem_kind
       | Phi : any_mem phi mem_kind
       | Param : any_mem phi mem_kind
+      | Proj : int -> any unary mem_kind
 
   and ('a, 'tag) kind =
       | Data : 'a data_kind -> ('a, data) kind
@@ -84,6 +85,7 @@ module N = struct
     }
 
   and fun_def = { call_sites : any_ctrl option list }
+  and extern_fun = { params : any_data list }
 
   and ret = {
       mem : any_mem option;
@@ -212,7 +214,8 @@ module N = struct
       | Data (Proj _) -> fun { input } -> [ input ]
       | Data Phi -> fun { phi_inputs } -> List.map phi_inputs ~f:any_of_data
       | Data (Param _) -> fun { phi_inputs } -> List.map phi_inputs ~f:any_of_data
-      | Data (External _) -> Fun.const []
+      | Data (External _) ->
+          fun { params } -> List.map params ~f:Option.some |> List.map ~f:any_of_data
       | Data Cast -> fun { input } -> [ any_of_data input ]
       | Data (Load _) -> fun { mem; ptr } -> [ any_of_mem mem; any_of_data ptr ]
       | Data AddrOf -> fun { place; offset } -> [ any_of_data place; any_of_data offset ]
@@ -236,6 +239,7 @@ module N = struct
       | Mem Copy -> fun { mem; src; dst } -> [ any_of_mem mem; any_of_data src; any_of_data dst ]
       | Mem Phi -> fun { phi_inputs } -> List.map phi_inputs ~f:any_of_mem
       | Mem Param -> fun { phi_inputs } -> List.map phi_inputs ~f:any_of_mem
+      | Mem (Proj _) -> fun { input } -> [ input ]
       | Scope _ -> fun { vars } -> vars
       | ForwardRef _ -> fun () -> []
 
@@ -267,7 +271,8 @@ module N = struct
           | _ -> assert false)
       | Data Phi -> fun lst -> { phi_inputs = List.map lst ~f:data_of_any }
       | Data (Param _) -> fun lst -> { phi_inputs = List.map lst ~f:data_of_any }
-      | Data (External _) -> Fun.const ()
+      | Data (External _) ->
+          fun lst -> { params = List.map lst ~f:(fun o -> data_of_any o |> Option.value_exn) }
       | Data Cast -> (
           function
           | [ x ] -> { input = data_of_any x }
@@ -331,6 +336,10 @@ module N = struct
           | _ -> assert false)
       | Mem Phi -> fun lst -> { phi_inputs = List.map lst ~f:mem_of_any }
       | Mem Param -> fun lst -> { phi_inputs = List.map lst ~f:mem_of_any }
+      | Mem (Proj _) -> (
+          function
+          | [ x ] -> { input = x }
+          | _ -> assert false)
       | Scope _ -> fun lst -> { vars = lst }
       | ForwardRef _ -> Fun.const ()
 
@@ -447,6 +456,7 @@ module N = struct
       | Mem New, Mem New -> Some (Type.Equal, Type.Equal)
       | Mem Copy, Mem Copy -> Some (Type.Equal, Type.Equal)
       | Mem (Store _), Mem (Store _) -> Some (Type.Equal, Type.Equal)
+      | Mem (Proj _), Mem (Proj _) -> Some (Type.Equal, Type.Equal)
       (* Misc *)
       | Scope _, Scope _ -> Some (Type.Equal, Type.Equal)
       | ForwardRef _, ForwardRef _ -> Some (Type.Equal, Type.Equal)

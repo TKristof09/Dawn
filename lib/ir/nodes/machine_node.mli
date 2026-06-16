@@ -12,11 +12,12 @@ type any = AnyNode : ('a, 'tag) t -> any
 and _ ideal =
     | Loop : loop ideal
     | CProj : int -> unary ideal
+    | MProj : int -> unary ideal
     | Start : unit ideal
     | Stop : stop ideal
     | Region : merge_point ideal
     | Phi : phi ideal
-    | External : string -> unit ideal
+    | External : string -> extern_fun ideal
 
 and _ kind =
     | Int : Z.t -> unit kind
@@ -103,6 +104,8 @@ and repmov = {
     dst : any;
   }
 
+and extern_fun = { params : any list }
+
 and fun_call = {
     fun_ptr : any option;
     mem : any;
@@ -114,9 +117,8 @@ and fun_call_end = { ret_nodes : any list }
 and return = {
     mem : any;
     value : any;
-    callee_saves : (unit, unit) t list;
+    callee_saves : any list;
   }
-[@@deriving show { with_path = false }, sexp_of]
 
 and ('a, 'b) t = {
     id : int;
@@ -126,20 +128,20 @@ and ('a, 'b) t = {
     inputs_of_list : any option list -> 'a;
     _tag_witness : ('b, unit) Type.eq;
   }
-[@@deriving show { with_path = false }, sexp_of]
+[@@deriving sexp_of]
 
 module N : Graph.NODE with type ('a, 'tag) t = ('a, 'tag) t and type any = any
 module G : Graph.S with module N := N
 
-val create_node : 'a kind -> Node2.any -> ('a, 't) t
+val create_node : 'a kind -> Node2.any -> ('a, unit) t
 val invert_cond : cmp -> cmp
 val is_cheap_to_clone : ('a, 't) t -> bool
 val is_control_node : ('a, 't) t -> bool
 val is_blockhead : ('a, 't) t -> bool
 val is_two_address : ('a, 't) t -> bool
 val is_multi_output : ('a, 't) t -> bool
-val get_in_reg_mask : 'q G.t -> ('a, 't) t -> int -> Registers.Mask.t option
-val get_out_reg_mask : 'q G.t -> ('a, 't) t -> int -> Registers.Mask.t option
+val get_in_reg_mask : G.readonly G.t -> ('a, 't) t -> int -> Registers.Mask.t option
+val get_out_reg_mask : G.readonly G.t -> ('a, 't) t -> int -> Registers.Mask.t option
 val get_register_kills : ('a, 't) t -> Registers.Mask.t option
 val convert_graph : Node2.G.readonly Node2.G.t -> G.readwrite G.t
 val next_id : unit -> int
@@ -155,7 +157,11 @@ val get_phi_backedge : G.readonly G.t -> (phi, 'a) t -> any option
 val compare : ('a, 'ta) t -> ('b, 'tb) t -> int
 val hash : ('a, 't) t -> int
 val pp : Format.formatter -> ('a, 'b) t -> unit
+val pp_any : Format.formatter -> any -> unit
+val pp_kind : Format.formatter -> 'a kind -> unit
 val show : ('a, 't) t -> string
+val show_any : any -> string
+val show_kind : 'a kind -> string
 
 module Any : sig
   type t = any

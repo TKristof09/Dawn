@@ -118,9 +118,8 @@ let patch_up g ~in_mem:(Node2.AnyMem in_mem) ~fun_node param decomp =
             param_inputs
             |> List.zip_exn call_sites
             |> List.map ~f:(fun (co, ao) -> (Option.value_exn co, Option.value_exn ao))
-            |> List.mapi ~f:(fun i (AnyCtrl call_node, AnyData arg) ->
+            |> List.map ~f:(fun (AnyCtrl call_node, AnyData arg) ->
                 let call_node = Node2.unpack_exn call_node (Ctrl FunctionCall) in
-                let param_input_idx = i + 1 in
                 let parent_fun = call_node.parent_fun in
                 let { Node2.fun_ptr; mem; args = _ } = Node2.G.get_dependencies_exn g call_node in
                 let (AnyMem mem) = Option.value_exn mem in
@@ -146,7 +145,9 @@ let patch_up g ~in_mem:(Node2.AnyMem in_mem) ~fun_node param decomp =
                                   Bitop_nodes.create_lsh ?parent_fun g arg.loc field_val
                                     shift_amount
                               in
-                              let ~new_type, ~extra_deps:_ = Bitop_nodes.compute_type g shifted in
+                              let ~new_type, ~extra_deps:_ =
+                                  Bitop_nodes.compute_type (Node2.G.readonly g) shifted
+                              in
                               shifted.typ <- new_type;
                               Node2.AnyData shifted)
                             else
@@ -156,7 +157,9 @@ let patch_up g ~in_mem:(Node2.AnyMem in_mem) ~fun_node param decomp =
                 in
                 List.reduce_exn components ~f:(fun (AnyData c1) (AnyData c2) ->
                     let combined = Bitop_nodes.create_bor ?parent_fun g arg.loc c1 c2 in
-                    let ~new_type, ~extra_deps:_ = Bitop_nodes.compute_type g combined in
+                    let ~new_type, ~extra_deps:_ =
+                        Bitop_nodes.compute_type (Node2.G.readonly g) combined
+                    in
                     combined.typ <- new_type;
                     AnyData combined))
         in
@@ -165,8 +168,10 @@ let patch_up g ~in_mem:(Node2.AnyMem in_mem) ~fun_node param decomp =
         Node2.G.set_node_inputs g eightbyte_param_node
           { Node2.phi_inputs = List.map eightbyte_param_inputs ~f:Option.some };
         (* calculate the correct type for the eightbyte *)
-        let ~new_type, ~extra_deps:_ = Phi_node.compute_type g eightbyte_param_node in
-        eightbyte.typ <- new_type);
+        let ~new_type, ~extra_deps:_ =
+            Phi_node.compute_type (Node2.G.readonly g) eightbyte_param_node
+        in
+        eightbyte_param_node.typ <- new_type);
 
     (* insert the new values into the arg list of each call site. Replace
            the original arg by the first eightbyte and insert the additional
@@ -211,10 +216,10 @@ let patch_up g ~in_mem:(Node2.AnyMem in_mem) ~fun_node param decomp =
         Mem_nodes.create_new ?parent_fun:param.parent_fun g param.loc ~ctrl:fun_node ~mem:in_mem
           ~size typ
     in
-    let mem = Proj_node.create ?parent_fun:param.parent_fun g param.loc reconstructed 0 in
-    let ptr = Proj_node.create ?parent_fun:param.parent_fun g param.loc reconstructed 1 in
+    let mem = Proj_node.create_mem ?parent_fun:param.parent_fun g param.loc reconstructed 0 in
+    let ptr = Proj_node.create_data ?parent_fun:param.parent_fun g param.loc reconstructed 1 in
     let mem =
-        List.fold descriptors ~init:mem ~f:(fun mem desc ->
+        List.fold descriptors ~init:(Node2.AnyMem mem) ~f:(fun (AnyMem mem) desc ->
             let _, eightbyte = List.nth_exn eightbytes desc.eightbyte_idx in
             let (AnyData input) =
                 if desc.byte_start_inside_eightbyte <> 0 then (
@@ -226,7 +231,9 @@ let patch_up g ~in_mem:(Node2.AnyMem in_mem) ~fun_node param decomp =
                       Bitop_nodes.create_rsh ?parent_fun:param.parent_fun g param.loc eightbyte
                         shift_amount
                   in
-                  let ~new_type, ~extra_deps:_ = Bitop_nodes.compute_type g shifted in
+                  let ~new_type, ~extra_deps:_ =
+                      Bitop_nodes.compute_type (Node2.G.readonly g) shifted
+                  in
                   shifted.typ <- new_type;
                   Node2.AnyData shifted)
                 else
@@ -241,7 +248,9 @@ let patch_up g ~in_mem:(Node2.AnyMem in_mem) ~fun_node param decomp =
                   let masked =
                       Bitop_nodes.create_band ?parent_fun:param.parent_fun g param.loc input mask
                   in
-                  let ~new_type, ~extra_deps:_ = Bitop_nodes.compute_type g masked in
+                  let ~new_type, ~extra_deps:_ =
+                      Bitop_nodes.compute_type (Node2.G.readonly g) masked
+                  in
                   masked.typ <- new_type;
                   Node2.AnyData masked)
                 else
@@ -251,23 +260,18 @@ let patch_up g ~in_mem:(Node2.AnyMem in_mem) ~fun_node param decomp =
                 Mem_nodes.create_addr_of_field ?parent_fun:param.parent_fun g param.loc ptr
                   desc.field_name
             in
-            Mem_nodes.create_store ?parent_fun:param.parent_fun g param.loc ~mem ~ptr:field_ptr
-              desc.field_name ~value)
+            Node2.AnyMem
+              (Mem_nodes.create_store ?parent_fun:param.parent_fun g param.loc ~mem ~ptr:field_ptr
+                 desc.field_name ~value))
     in
 
     (* make all the users of the param use the newly allocated struct instead *)
     Node2.G.get_dependants g param
-    |> List.iter ~f:(fun use ->
-        let dep_idx, _ =
-            List.findi_exn (Node2.G.get_dependencies g use) ~f:(fun _ dep ->
-                match dep with
-                | None -> false
-                | Some dep -> Node2.equal dep param)
-        in
-        Node2.G.set_dependency g use (Some ptr) dep_idx);
+    |> List.iter ~f:(fun (AnyNode use) ->
+        Node2.G.replace_input_unsafe g ~node:use ~from:(AnyNode param) ~to_:(AnyNode ptr));
 
     Node2.G.remove_node g param;
-    (Node2.AnyMem mem, List.map eightbytes ~f:snd)
+    (mem, List.map eightbytes ~f:snd)
 
 let pass_by_ptr g p =
     (* Memory loads/stores work both on ptr and struct types since structs are
@@ -296,14 +300,19 @@ let do_node g fun_node =
             assert (i <> i');
             Int.compare i i')
     in
-    let _, mem_param = List.hd_exn params in
-    assert (Types.equal mem_param.typ Memory);
-    let params = List.tl_exn params in
+    let mem_param =
+        Node2.G.get_dependants g fun_node
+        |> List.find_map_exn
+             ~f:(fun (AnyNode n) : (Node2.any_mem Node2.phi, Node2.mem) Node2.t option ->
+               match n.kind with
+               | Mem Param -> Some n
+               | _ -> None)
+    in
 
     let mem_param_orig_uses = Node2.G.get_dependants g mem_param in
 
     let _, new_params, mem, _ =
-        List.fold params ~init:(0, [ mem_param ], Node2.AnyMem mem_param, 0)
+        List.fold params ~init:(0, [], Node2.AnyMem mem_param, 0)
           ~f:(fun (used_up_regs, params_acc, mem, extra_param_offset) (i, p) ->
             p.kind <- Data (Param (i + extra_param_offset));
 
@@ -338,31 +347,21 @@ let do_node g fun_node =
     let new_params = List.rev new_params in
     assert (List.map new_params ~f:get_param_idx |> is_zero_ascending_range);
 
-    List.iter mem_param_orig_uses ~f:(fun use ->
-        let dep_idx, _ =
-            List.findi_exn (Node2.G.get_dependencies g use) ~f:(fun _ dep ->
-                match dep with
-                | None -> false
-                | Some dep -> Node2.equal dep mem_param)
-        in
-        Node2.G.set_dependency g use (Some mem) dep_idx);
-
-    (* HACK: This is a very hacky way of putting the dependants of the
-           fun_node in the correct order. This is needed since other places
-           assume that the param nodes are in order when retrieving via
-           Node2.G.get_dependants g fun_node *)
-    (*TODO: This should not be assumed by other places since our graph
-           structure doesn't provide any assurances when it comes to the order
-           of dependants, it only assures the order of dependencies. Or the
-           graph structure should be changed.  *)
-    List.iter new_params ~f:(fun param -> Node2.G.remove_dependency g ~node:param ~dep:fun_node);
-    List.iter new_params ~f:(fun param -> Node2.G.set_dependency g param (Some fun_node) 0)
+    let (AnyMem mem) = mem in
+    List.iter mem_param_orig_uses ~f:(fun (AnyNode use) ->
+        Node2.G.replace_input_unsafe g ~node:use ~from:(AnyNode mem_param) ~to_:(AnyNode mem))
 
 let run g =
     let nodes =
-        Node2.G.fold g ~init:[] ~f:(fun acc n ->
-            match n.Node2.typ with
-            | Control -> n :: acc
+        Node2.G.fold g ~init:[]
+          ~f:(fun
+              (acc : (Node2.fun_def, Node2.ctrl) Node2.t list)
+              (AnyNode n)
+              :
+              (Node2.fun_def, Node2.ctrl) Node2.t list
+            ->
+            match n.kind with
+            | Ctrl (Function _) -> n :: acc
             | _ -> acc)
     in
     List.iter nodes ~f:(do_node g)

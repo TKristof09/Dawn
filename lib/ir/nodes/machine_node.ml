@@ -35,11 +35,12 @@ module N = struct
   and _ ideal =
       | Loop : loop ideal
       | CProj : int -> unary ideal
+      | MProj : int -> unary ideal
       | Start : unit ideal
       | Stop : stop ideal
       | Region : merge_point ideal
       | Phi : phi ideal
-      | External : string -> unit ideal
+      | External : string -> extern_fun ideal
 
   and _ kind =
       | Int : Z.t -> unit kind
@@ -126,6 +127,8 @@ module N = struct
       dst : any;
     }
 
+  and extern_fun = { params : any list }
+
   and fun_call = {
       fun_ptr : any option;
       mem : any;
@@ -158,8 +161,136 @@ module N = struct
   let list_of_inputs n inps = n.list_of_inputs inps
   let inputs_of_list n l = n.inputs_of_list l
   let equal a b = a.id = b.id
-  let pp _ _ = failwithf "todo %s" __LOC__ ()
-  let show _ = failwithf "todo %s" __LOC__ ()
+  let compare a b = Int.compare a.id b.id
+  let hash a = Int.hash a.id
+
+  let equal_kind : type a b. a kind -> b kind -> bool =
+     fun a b ->
+      let op_equal op op' =
+          match (op, op') with
+          | Eq, Eq -> true
+          | NEq, NEq -> true
+          | Lt, Lt -> true
+          | LEq, LEq -> true
+          | Gt, Gt -> true
+          | GEq, GEq -> true
+          | _, _ -> false
+      in
+      match (a, b) with
+      | Int i, Int i' -> Z.equal i i'
+      | Ptr, Ptr -> true
+      | AddrOf, AddrOf -> true
+      | Deref, Deref -> true
+      | ZeroExtend, ZeroExtend -> true
+      | SignExtend, SignExtend -> true
+      | Add, Add -> true
+      | AddImm i, AddImm i' -> Z.equal i i'
+      | Sub, Sub -> true
+      | SubImm i, SubImm i' -> Z.equal i i'
+      | Mul, Mul -> true
+      | MulImm i, MulImm i' -> Z.equal i i'
+      | Div, Div -> true
+      | Lsh, Lsh -> true
+      | Rsh, Rsh -> true
+      | And, And -> true
+      | Or, Or -> true
+      | LshImm i, LshImm i' -> Z.equal i i'
+      | RshImm i, RshImm i' -> Z.equal i i'
+      | AndImm i, AndImm i' -> Z.equal i i'
+      | OrImm i, OrImm i' -> Z.equal i i'
+      | Cmp, Cmp -> true
+      | CmpImm i, CmpImm i' -> Z.equal i i'
+      | Set op, Set op' -> op_equal op op'
+      | JmpAlways, JmpAlways -> true
+      | Jmp op, Jmp op' -> op_equal op op'
+      | Mov, Mov -> true
+      | DProj i, DProj i' -> i = i'
+      | FunctionProlog i, FunctionProlog i' -> i = i'
+      | Return, Return -> true
+      | FunctionCall i, FunctionCall i' -> Option.equal Int.equal i i'
+      | FunctionCallEnd, FunctionCallEnd -> true
+      | Param i, Param i' -> i = i'
+      | CalleeSave r, CalleeSave r' -> Registers.equal_reg r r'
+      | New, New -> true
+      | Store, Store -> true
+      | Load, Load -> true
+      | Noop, Noop -> true
+      | RepMov i, RepMov i' -> i = i'
+      | Ideal Loop, Ideal Loop -> true
+      | Ideal (CProj i), Ideal (CProj i') -> i = i'
+      | Ideal (MProj i), Ideal (MProj i') -> i = i'
+      | Ideal Start, Ideal Start -> true
+      | Ideal Stop, Ideal Stop -> true
+      | Ideal Region, Ideal Region -> true
+      | Ideal Phi, Ideal Phi -> true
+      | Ideal (External s), Ideal (External s') -> String.equal s s'
+      | _, _ -> false
+
+  let rec pp_any fmt (AnyNode n) = pp fmt n
+
+  and pp : type a b. Format.formatter -> (a, b) t -> unit =
+     fun fmt n -> Format.fprintf fmt "(node #%d %a)" n.id pp_kind n.kind
+
+  and pp_kind : type a. Format.formatter -> a kind -> unit =
+     fun fmt k ->
+      match k with
+      | Int z -> Format.fprintf fmt "Int %s" (Z.to_string z)
+      | Ptr -> Format.pp_print_string fmt "Ptr"
+      | Add -> Format.pp_print_string fmt "Add"
+      | Sub -> Format.pp_print_string fmt "Sub"
+      | Mul -> Format.pp_print_string fmt "Mul"
+      | Div -> Format.pp_print_string fmt "Div"
+      | Lsh -> Format.pp_print_string fmt "Lsh"
+      | Rsh -> Format.pp_print_string fmt "Rsh"
+      | And -> Format.pp_print_string fmt "And"
+      | Or -> Format.pp_print_string fmt "Or"
+      | Cmp -> Format.pp_print_string fmt "Cmp"
+      | JmpAlways -> Format.pp_print_string fmt "JmpAlways"
+      | AddrOf -> Format.pp_print_string fmt "AddrOf"
+      | Deref -> Format.pp_print_string fmt "Deref"
+      | ZeroExtend -> Format.pp_print_string fmt "ZeroExtend"
+      | SignExtend -> Format.pp_print_string fmt "SignExtend"
+      | Mov -> Format.pp_print_string fmt "Mov"
+      | Return -> Format.pp_print_string fmt "Return"
+      | Noop -> Format.pp_print_string fmt "Noop"
+      | FunctionCallEnd -> Format.pp_print_string fmt "FunctionCallEnd"
+      | AddImm z -> Format.fprintf fmt "AddImm %s" (Z.to_string z)
+      | SubImm z -> Format.fprintf fmt "SubImm %s" (Z.to_string z)
+      | MulImm z -> Format.fprintf fmt "MulImm %s" (Z.to_string z)
+      | LshImm z -> Format.fprintf fmt "LshImm %s" (Z.to_string z)
+      | RshImm z -> Format.fprintf fmt "RshImm %s" (Z.to_string z)
+      | AndImm z -> Format.fprintf fmt "AndImm %s" (Z.to_string z)
+      | OrImm z -> Format.fprintf fmt "OrImm %s" (Z.to_string z)
+      | CmpImm z -> Format.fprintf fmt "CmpImm %s" (Z.to_string z)
+      | Set cmp -> Format.fprintf fmt "Set %a" pp_cmp cmp
+      | Jmp cmp -> Format.fprintf fmt "Jmp %a" pp_cmp cmp
+      | DProj i -> Format.fprintf fmt "DProj %d" i
+      | FunctionProlog i -> Format.fprintf fmt "FunctionProlog %d" i
+      | FunctionCall None -> Format.pp_print_string fmt "FunctionCall indirect"
+      | FunctionCall (Some i) -> Format.fprintf fmt "FunctionCall %d" i
+      | Param i -> Format.fprintf fmt "Param %d" i
+      | RepMov i -> Format.fprintf fmt "RepMov %d" i
+      | CalleeSave r -> Format.fprintf fmt "CalleeSave %a" Registers.pp_reg r
+      | New -> Format.pp_print_string fmt "New"
+      | Store -> Format.pp_print_string fmt "Store"
+      | Load -> Format.pp_print_string fmt "Load"
+      | Ideal i -> Format.fprintf fmt "Ideal(%a)" pp_ideal i
+
+  and pp_ideal : type a. Format.formatter -> a ideal -> unit =
+     fun fmt i ->
+      match i with
+      | Loop -> Format.pp_print_string fmt "Loop"
+      | CProj n -> Format.fprintf fmt "CProj %d" n
+      | MProj n -> Format.fprintf fmt "MProj %d" n
+      | Start -> Format.pp_print_string fmt "Start"
+      | Stop -> Format.pp_print_string fmt "Stop"
+      | Region -> Format.pp_print_string fmt "Region"
+      | Phi -> Format.pp_print_string fmt "Phi"
+      | External s -> Format.fprintf fmt "External %s" s
+
+  let show : type a b. (a, b) t -> string = fun n -> Format.asprintf "%a" pp n
+  let show_any = Format.asprintf "%a" pp_any
+  let show_kind : type a. a kind -> string = fun k -> Format.asprintf "%a" pp_kind k
 
   let get_list_of_inputs : type a. a kind -> a -> any option list =
      fun k ->
@@ -210,11 +341,12 @@ module N = struct
       | RepMov _ -> fun { mem; src; dst } -> [ Some mem; Some src; Some dst ]
       | Ideal Loop -> fun { entry; backedge } -> [ Some entry; Some backedge ]
       | Ideal (CProj _) -> fun { input } -> [ Some input ]
+      | Ideal (MProj _) -> fun { input } -> [ Some input ]
       | Ideal Start -> Fun.const []
       | Ideal Stop -> fun { mem } -> [ Some mem ]
       | Ideal Region -> fun { ctrl_inputs } -> ctrl_inputs
       | Ideal Phi -> fun { phi_inputs } -> phi_inputs
-      | Ideal (External _) -> Fun.const []
+      | Ideal (External _) -> fun { params } -> List.map params ~f:Option.some
 
   let get_inputs_of_list : type a. a kind -> any option list -> a =
      fun k ->
@@ -304,6 +436,7 @@ module N = struct
           | [ x; y ] -> { entry = Option.value_exn x; backedge = Option.value_exn y }
           | _ -> assert false)
       | Ideal (CProj _) -> unary_inputs
+      | Ideal (MProj _) -> unary_inputs
       | Ideal Start -> Fun.const ()
       | Ideal Stop -> (
           function
@@ -311,7 +444,7 @@ module N = struct
           | _ -> assert false)
       | Ideal Region -> fun lst -> { ctrl_inputs = lst }
       | Ideal Phi -> fun lst -> { phi_inputs = lst }
-      | Ideal (External _) -> Fun.const ()
+      | Ideal (External _) -> fun lst -> { params = List.map lst ~f:(fun o -> Option.value_exn o) }
 
   let[@inline] kind_eq : type a b. a kind -> b kind -> (a, b) Type.eq option =
      fun a b ->
@@ -357,6 +490,7 @@ module N = struct
       | RepMov _, RepMov _ -> Some Type.Equal
       | Ideal Loop, Ideal Loop -> Some Type.Equal
       | Ideal (CProj _), Ideal (CProj _) -> Some Type.Equal
+      | Ideal (MProj _), Ideal (MProj _) -> Some Type.Equal
       | Ideal Start, Ideal Start -> Some Type.Equal
       | Ideal Stop, Ideal Stop -> Some Type.Equal
       | Ideal Region, Ideal Region -> Some Type.Equal
@@ -427,6 +561,7 @@ let is_control_node : type a b. (a, b) t -> bool =
     | Ideal (CProj _) ->
         true
     | Ideal Phi
+    | Ideal (MProj _)
     | Add
     | AddImm _
     | Sub
@@ -528,7 +663,7 @@ let is_multi_output n =
     | Tuple _ -> true
     | _ -> false
 
-let get_in_reg_mask : type a. G.readonly G.t -> (a, unit) t -> int -> Registers.Mask.t option =
+let get_in_reg_mask : type a b. G.readonly G.t -> (a, b) t -> int -> Registers.Mask.t option =
    fun _ n i ->
     match n.kind with
     | Add
@@ -712,10 +847,10 @@ let rec get_out_reg_mask : type a b. G.readonly G.t -> (a, b) t -> int -> Regist
     | Param idx ->
         assert (i = 0);
         (* skip memory param *)
-        if idx = 0 then
+        if idx < 0 then
           None
         else
-          Some (Registers.Mask.x64_systemv (idx - 1))
+          Some (Registers.Mask.x64_systemv idx)
     | CalleeSave reg -> Some (Registers.Mask.of_list [ Reg reg ])
     | Return ->
         assert (i = 0);
@@ -1027,7 +1162,9 @@ let rec of_data_node : type a.
     | Data (External name) ->
         let node = create_node (Ideal (External name)) (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        G.add_node machine_g node ();
+        let { Node2.params } = Node2.G.get_dependencies_exn g n in
+        let params = List.map params ~f:(fun (AnyData n) -> convert_node memo g machine_g n) in
+        G.add_node machine_g node { params };
         set_ctrl node;
         AnyNode node
     | Data Cast ->
@@ -1359,7 +1496,7 @@ and of_mem_node : type a.
         set_ctrl node;
         AnyNode node
     | Mem Param ->
-        let kind = Param 0 in
+        let kind = Param (-1) in
         let node = create_node kind (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
         let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
@@ -1370,6 +1507,10 @@ and of_mem_node : type a.
         G.add_node machine_g node { phi_inputs };
         set_ctrl node;
         AnyNode node
+    | Mem (Proj i) ->
+        simple (Ideal (MProj i)) n (fun { input } ->
+            let (AnyNode input) = Option.value_exn input in
+            { input = convert_node memo g machine_g input })
 
 and convert_node : type a t.
     (Node2.any, any) Hashtbl.t ->
@@ -1441,13 +1582,9 @@ let post_process machine_g =
     |> List.iter ~f:(function
       | InputChange (n, new_input) -> G.set_node_inputs machine_g n new_input
       | CtrlChange (n, new_ctrl) -> G.set_ctrl machine_g n new_ctrl);
-    (* |> List.iter ~f:(fun (node, old_dep, idx, new_dep) -> *)
-    (*     Graph.add_dependencies machine_g temp_node [ Some new_dep ]; *)
-    (*     Graph.remove_dependency machine_g ~node ~dep:old_dep; *)
-    (*     Graph.set_dependency machine_g node (Some new_dep) idx); *)
     (* it might be the case that there were no nodes to post process, in that
        case temp_node isn't added to the graph. This is fine *)
-    try Graph.remove_node machine_g temp_node with
+    try G.remove_node machine_g temp_node with
     | _ -> ()
 
 let convert_graph g =

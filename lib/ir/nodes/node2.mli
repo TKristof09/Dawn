@@ -28,7 +28,7 @@ and _ data_kind =
     (* proj nodes take in any because they need to be able to project off of a node that can be of other type (e.g. create pointer off of a New node *)
     | Proj : int -> any unary data_kind
     | Param : int -> any_data phi data_kind
-    | External : string -> unit data_kind
+    | External : string -> extern_fun data_kind
     | Cast : any_data unary data_kind
     | Load : string -> load data_kind
     | AddrOf : addr_of data_kind
@@ -58,6 +58,7 @@ and _ mem_kind =
     | Copy : copy mem_kind
     | Phi : any_mem phi mem_kind
     | Param : any_mem phi mem_kind
+    | Proj : int -> any unary mem_kind
 
 and ('a, 'tag) kind =
     | Data : 'a data_kind -> ('a, data) kind
@@ -82,6 +83,7 @@ and loop = {
   }
 
 and fun_def = { call_sites : any_ctrl option list }
+and extern_fun = { params : any_data list }
 
 and ret = {
     mem : any_mem option;

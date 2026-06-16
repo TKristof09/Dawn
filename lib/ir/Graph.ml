@@ -22,7 +22,10 @@ module type S = sig
   val add_node : readwrite t -> ('a, 't) N.t -> 'a -> unit
   val set_node_inputs : readwrite t -> ('a, 't) N.t -> 'a -> unit
   val set_ctrl : readwrite t -> ('a, 'ta) N.t -> ('b, 'tb) N.t -> unit
+  val unlink_ctrl : readwrite t -> ('a, 'ta) N.t -> unit
   val remove_node : readwrite t -> ('a, 't) N.t -> unit
+  val replace_node_with : readwrite t -> from:('a, 't) N.t -> to_:('a, 't) N.t -> unit
+  val replace_node_with_unsafe : readwrite t -> from:N.any -> to_:N.any -> unit
   val get_start : 'q t -> N.any
   val get_stop : 'q t -> N.any
   val get_ctrl : 'q t -> ('a, 't) N.t -> N.any option
@@ -99,6 +102,35 @@ module Make (N : NODE) : S with module N := N = struct
       match ok with
       | `Duplicate -> failwith "Node already part of graph"
       | `Ok -> add_aux t n l
+
+  let get_start t = t.start
+  let get_stop t = t.stop
+
+  let get_ctrl t n =
+      match Hashtbl.find t.dependencies (AnyNode n) with
+      | None -> None
+      | Some (ctrl, _) -> ctrl
+
+  let get_ctrl_exn t n = get_ctrl t n |> Option.value_exn
+
+  let get_dependencies : type q a tag. q t -> (a, tag) N.t -> a option =
+     fun t n ->
+      match Hashtbl.find t.dependencies (AnyNode n) with
+      | None -> None
+      | Some (_, Entry (n', e)) -> (
+          match N.type_eq n n' with
+          | Some (Type.Equal, Type.Equal) -> Some (N.inputs_of_list n e)
+          | None -> None)
+
+  let get_dependencies_exn : type q a tag. q t -> (a, tag) N.t -> a =
+     fun t n -> get_dependencies t n |> Option.value_exn
+
+  let get_dependencies_list t n =
+      match Hashtbl.find t.dependencies (AnyNode n) with
+      | None -> []
+      | Some (_, Entry (_, e)) -> e
+
+  let get_dependants g n = Hashtbl.find g.dependants (AnyNode n) |> Option.value ~default:[]
 
   let rec set_node_inputs t n inputs =
       match Hashtbl.find t.dependencies (AnyNode n) with
@@ -184,7 +216,16 @@ module Make (N : NODE) : S with module N := N = struct
       readwrite t -> node:(a, ta) N.t -> from:(b, tb) N.t -> to_:(b, tb) N.t -> unit =
      fun g ~node ~from ~to_ -> replace_input_unsafe g ~node ~from:(AnyNode from) ~to_:(AnyNode to_)
 
-  let set_ctrl t n ctrl =
+  let replace_node_with_unsafe g ~from:(N.AnyNode from) ~to_ =
+      let users = get_dependants g from in
+      List.iter users ~f:(fun (N.AnyNode user) ->
+          replace_input_unsafe g ~node:user ~from:(AnyNode from) ~to_);
+      remove_node g from
+
+  let replace_node_with : type a b. readwrite t -> from:(a, b) N.t -> to_:(a, b) N.t -> unit =
+     fun g ~from ~to_ -> replace_node_with_unsafe g ~from:(N.AnyNode from) ~to_:(N.AnyNode to_)
+
+  let set_ctrl_aux t n ctrl =
       match Hashtbl.find t.dependencies (AnyNode n) with
       | None -> failwith "Node not part of graph"
       | Some (old_ctrl, e) ->
@@ -201,37 +242,11 @@ module Make (N : NODE) : S with module N := N = struct
               else
                 Hashtbl.set t.dependants ~key:(AnyNode old_ctrl) ~data:new_dependants);
           (* add edge ctrl -> n *)
-          Hashtbl.set t.dependencies ~key:(AnyNode n) ~data:(Some (N.AnyNode ctrl), e);
-          add_aux t n [ Some (N.AnyNode ctrl) ]
+          Hashtbl.set t.dependencies ~key:(AnyNode n) ~data:(ctrl, e);
+          add_aux t n [ ctrl ]
 
-  let get_start t = t.start
-  let get_stop t = t.stop
-
-  let get_ctrl t n =
-      match Hashtbl.find t.dependencies (AnyNode n) with
-      | None -> None
-      | Some (ctrl, _) -> ctrl
-
-  let get_ctrl_exn t n = get_ctrl t n |> Option.value_exn
-
-  let get_dependencies : type q a tag. q t -> (a, tag) N.t -> a option =
-     fun t n ->
-      match Hashtbl.find t.dependencies (AnyNode n) with
-      | None -> None
-      | Some (_, Entry (n', e)) -> (
-          match N.type_eq n n' with
-          | Some (Type.Equal, Type.Equal) -> Some (N.inputs_of_list n e)
-          | None -> None)
-
-  let get_dependencies_exn : type q a tag. q t -> (a, tag) N.t -> a =
-     fun t n -> get_dependencies t n |> Option.value_exn
-
-  let get_dependencies_list t n =
-      match Hashtbl.find t.dependencies (AnyNode n) with
-      | None -> []
-      | Some (_, Entry (_, e)) -> e
-
-  let get_dependants g n = Hashtbl.find g.dependants (AnyNode n) |> Option.value ~default:[]
+  let set_ctrl t n ctrl = set_ctrl_aux t n (Some (N.AnyNode ctrl))
+  let unlink_ctrl t n = set_ctrl_aux t n None
   let mem g n = Hashtbl.mem g.dependants n
   let iter g ~f = Hashtbl.iter_keys g.dependants ~f
   let fold t ~init ~f = Hashtbl.fold t.dependants ~init ~f:(fun ~key ~data:_ acc -> f acc key)
