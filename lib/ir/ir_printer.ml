@@ -29,9 +29,9 @@ let node_label : type a b. (a, b) Node2.t -> string =
         | Ctrl (Proj i) ->
             Printf.sprintf "Proj %d" i
         | Data (Param i) -> Printf.sprintf "Param %d" i
-        | Mem (Load s) -> Printf.sprintf "Load %s" s
+        | Data (Load s) -> Printf.sprintf "Load %s" s
+        | Data (AddrOfField s) -> Printf.sprintf "AddrOfField %s" s
         | Mem (Store s) -> Printf.sprintf "Store %s" s
-        | Mem (AddrOfField s) -> Printf.sprintf "AddrOfField %s" s
         | Data d -> show_sexp (Node2.sexp_of_data_kind (Fun.const (Sexp.Atom "")) d)
         | Ctrl c -> show_sexp (Node2.sexp_of_ctrl_kind (Fun.const (Sexp.Atom "")) c)
         | Mem m -> show_sexp (Node2.sexp_of_mem_kind (Fun.const (Sexp.Atom "")) m)

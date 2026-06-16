@@ -28,15 +28,19 @@ module N = struct
       | Gt : binop data_kind
       | GEq : binop data_kind
       | Phi : any_data phi data_kind
-      | Proj : int -> any_data unary data_kind
+      | Proj : int -> any unary data_kind
       | Param : int -> any_data phi data_kind
       | External : string -> unit data_kind
       | Cast : any_data unary data_kind
+      | Load : string -> load data_kind
+      | AddrOf : addr_of data_kind
+      | AddrOfField : string -> addr_of data_kind
+      | Deref : deref data_kind
 
   and _ ctrl_kind =
       | Start : unit ctrl_kind
       | Stop : stop ctrl_kind
-      | Proj : int -> any_ctrl unary ctrl_kind
+      | Proj : int -> any unary ctrl_kind
       | If : any_data unary ctrl_kind
       | Region : merge_point ctrl_kind
       | Loop : loop ctrl_kind
@@ -52,11 +56,7 @@ module N = struct
 
   and _ mem_kind =
       | New : alloc mem_kind
-      | Load : string -> load mem_kind
       | Store : string -> store mem_kind
-      | AddrOf : addr_of mem_kind
-      | AddrOfField : string -> addr_of mem_kind
-      | Deref : deref mem_kind
       | Copy : copy mem_kind
       | Phi : any_mem phi mem_kind
       | Param : any_mem phi mem_kind
@@ -105,12 +105,12 @@ module N = struct
 
   and load = {
       mem : any_mem option;
-      ptr : any_mem option;
+      ptr : any_data option;
     }
 
   and store = {
       mem : any_mem option;
-      ptr : any_mem option;
+      ptr : any_data option;
       value : any_data option;
     }
 
@@ -121,13 +121,13 @@ module N = struct
 
   and deref = {
       mem : any_mem option;
-      ptr : any_mem option;
+      ptr : any_data option;
     }
 
   and copy = {
       mem : any_mem option;
-      src : any_mem option;
-      dst : any_mem option;
+      src : any_data option;
+      dst : any_data option;
     }
 
   and scope_kind = { vars : any option list }
@@ -209,14 +209,18 @@ module N = struct
       | Data LEq -> binop_inputs
       | Data Gt -> binop_inputs
       | Data GEq -> binop_inputs
-      | Data (Proj _) -> fun { input } -> [ any_of_data input ]
+      | Data (Proj _) -> fun { input } -> [ input ]
       | Data Phi -> fun { phi_inputs } -> List.map phi_inputs ~f:any_of_data
       | Data (Param _) -> fun { phi_inputs } -> List.map phi_inputs ~f:any_of_data
       | Data (External _) -> Fun.const []
       | Data Cast -> fun { input } -> [ any_of_data input ]
+      | Data (Load _) -> fun { mem; ptr } -> [ any_of_mem mem; any_of_data ptr ]
+      | Data AddrOf -> fun { place; offset } -> [ any_of_data place; any_of_data offset ]
+      | Data (AddrOfField _) -> fun { place; offset } -> [ any_of_data place; any_of_data offset ]
+      | Data Deref -> fun { mem; ptr } -> [ any_of_mem mem; any_of_data ptr ]
       | Ctrl Start -> fun () -> []
       | Ctrl Stop -> fun { mem } -> [ any_of_mem mem ]
-      | Ctrl (Proj _) -> fun { input } -> [ any_of_ctrl input ]
+      | Ctrl (Proj _) -> fun { input } -> [ input ]
       | Ctrl If -> fun { input } -> [ any_of_data input ]
       | Ctrl Region -> fun { ctrl_inputs } -> List.map ctrl_inputs ~f:any_of_ctrl
       | Ctrl Loop -> fun { entry; backedge } -> [ any_of_ctrl entry; any_of_ctrl backedge ]
@@ -227,13 +231,9 @@ module N = struct
             any_of_data fun_ptr :: any_of_mem mem :: List.map args ~f:any_of_data
       | Ctrl FunctionCallEnd -> fun { ret_nodes } -> List.map ret_nodes ~f:any_of_ctrl
       | Mem New -> fun { mem; size } -> [ any_of_mem mem; any_of_data size ]
-      | Mem (Load _) -> fun { mem; ptr } -> [ any_of_mem mem; any_of_mem ptr ]
       | Mem (Store _) ->
-          fun { mem; ptr; value } -> [ any_of_mem mem; any_of_mem ptr; any_of_data value ]
-      | Mem AddrOf -> fun { place; offset } -> [ any_of_data place; any_of_data offset ]
-      | Mem (AddrOfField _) -> fun { place; offset } -> [ any_of_data place; any_of_data offset ]
-      | Mem Deref -> fun { mem; ptr } -> [ any_of_mem mem; any_of_mem ptr ]
-      | Mem Copy -> fun { mem; src; dst } -> [ any_of_mem mem; any_of_mem src; any_of_mem dst ]
+          fun { mem; ptr; value } -> [ any_of_mem mem; any_of_data ptr; any_of_data value ]
+      | Mem Copy -> fun { mem; src; dst } -> [ any_of_mem mem; any_of_data src; any_of_data dst ]
       | Mem Phi -> fun { phi_inputs } -> List.map phi_inputs ~f:any_of_mem
       | Mem Param -> fun { phi_inputs } -> List.map phi_inputs ~f:any_of_mem
       | Scope _ -> fun { vars } -> vars
@@ -263,7 +263,7 @@ module N = struct
       | Data GEq -> binop_inputs
       | Data (Proj _) -> (
           function
-          | [ x ] -> { input = data_of_any x }
+          | [ x ] -> { input = x }
           | _ -> assert false)
       | Data Phi -> fun lst -> { phi_inputs = List.map lst ~f:data_of_any }
       | Data (Param _) -> fun lst -> { phi_inputs = List.map lst ~f:data_of_any }
@@ -272,6 +272,22 @@ module N = struct
           function
           | [ x ] -> { input = data_of_any x }
           | _ -> assert false)
+      | Data (Load _) -> (
+          function
+          | [ x; y ] -> { mem = mem_of_any x; ptr = data_of_any y }
+          | _ -> assert false)
+      | Data AddrOf -> (
+          function
+          | [ x; y ] -> { place = data_of_any x; offset = data_of_any y }
+          | _ -> assert false)
+      | Data (AddrOfField _) -> (
+          function
+          | [ x; y ] -> { place = data_of_any x; offset = data_of_any y }
+          | _ -> assert false)
+      | Data Deref -> (
+          function
+          | [ x; y ] -> { mem = mem_of_any x; ptr = data_of_any y }
+          | _ -> assert false)
       | Ctrl Start -> Fun.const ()
       | Ctrl Stop -> (
           function
@@ -279,7 +295,7 @@ module N = struct
           | _ -> assert false)
       | Ctrl (Proj _) -> (
           function
-          | [ x ] -> { input = ctrl_of_any x }
+          | [ x ] -> { input = x }
           | _ -> assert false)
       | Ctrl If -> (
           function
@@ -305,29 +321,13 @@ module N = struct
           function
           | [ x; y ] -> { mem = mem_of_any x; size = data_of_any y }
           | _ -> assert false)
-      | Mem (Load _) -> (
-          function
-          | [ x; y ] -> { mem = mem_of_any x; ptr = mem_of_any y }
-          | _ -> assert false)
       | Mem (Store _) -> (
           function
-          | [ x; y; z ] -> { mem = mem_of_any x; ptr = mem_of_any y; value = data_of_any z }
-          | _ -> assert false)
-      | Mem AddrOf -> (
-          function
-          | [ x; y ] -> { place = data_of_any x; offset = data_of_any y }
-          | _ -> assert false)
-      | Mem (AddrOfField _) -> (
-          function
-          | [ x; y ] -> { place = data_of_any x; offset = data_of_any y }
-          | _ -> assert false)
-      | Mem Deref -> (
-          function
-          | [ x; y ] -> { mem = mem_of_any x; ptr = mem_of_any y }
+          | [ x; y; z ] -> { mem = mem_of_any x; ptr = data_of_any y; value = data_of_any z }
           | _ -> assert false)
       | Mem Copy -> (
           function
-          | [ x; y; z ] -> { mem = mem_of_any x; src = mem_of_any y; dst = mem_of_any z }
+          | [ x; y; z ] -> { mem = mem_of_any x; src = data_of_any y; dst = data_of_any z }
           | _ -> assert false)
       | Mem Phi -> fun lst -> { phi_inputs = List.map lst ~f:mem_of_any }
       | Mem Param -> fun lst -> { phi_inputs = List.map lst ~f:mem_of_any }
@@ -428,6 +428,10 @@ module N = struct
       | Data Cast, Data Cast -> Some (Type.Equal, Type.Equal)
       | Data (Proj _), Data (Proj _) -> Some (Type.Equal, Type.Equal)
       | Data (Param _), Data (Param _) -> Some (Type.Equal, Type.Equal)
+      | Data AddrOf, Data AddrOf -> Some (Type.Equal, Type.Equal)
+      | Data Deref, Data Deref -> Some (Type.Equal, Type.Equal)
+      | Data (Load _), Data (Load _) -> Some (Type.Equal, Type.Equal)
+      | Data (AddrOfField _), Data (AddrOfField _) -> Some (Type.Equal, Type.Equal)
       (* Ctrl *)
       | Ctrl Start, Ctrl Start -> Some (Type.Equal, Type.Equal)
       | Ctrl Stop, Ctrl Stop -> Some (Type.Equal, Type.Equal)
@@ -441,12 +445,8 @@ module N = struct
       | Ctrl (Function _), Ctrl (Function _) -> Some (Type.Equal, Type.Equal)
       (* Mem *)
       | Mem New, Mem New -> Some (Type.Equal, Type.Equal)
-      | Mem AddrOf, Mem AddrOf -> Some (Type.Equal, Type.Equal)
-      | Mem Deref, Mem Deref -> Some (Type.Equal, Type.Equal)
       | Mem Copy, Mem Copy -> Some (Type.Equal, Type.Equal)
-      | Mem (Load _), Mem (Load _) -> Some (Type.Equal, Type.Equal)
       | Mem (Store _), Mem (Store _) -> Some (Type.Equal, Type.Equal)
-      | Mem (AddrOfField _), Mem (AddrOfField _) -> Some (Type.Equal, Type.Equal)
       (* Misc *)
       | Scope _, Scope _ -> Some (Type.Equal, Type.Equal)
       | ForwardRef _, ForwardRef _ -> Some (Type.Equal, Type.Equal)

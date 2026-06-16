@@ -204,8 +204,8 @@ let do_node : type a b. Node2.G.readwrite Node2.G.t -> (a, b) Node2.t -> unit =
                             Some (Node2.AnyData arg)))
         in
         Node2.G.set_node_inputs g n { Node2.fun_ptr; mem; args = new_args }
-    | Mem (AddrOfField f) -> (
-        let n = Node2.unpack_exn n (Mem (AddrOfField f)) in
+    | Data (AddrOfField f) -> (
+        let n = Node2.unpack_exn n (Data (AddrOfField f)) in
         let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
         match offset with
         | None -> ()

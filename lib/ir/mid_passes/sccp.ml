@@ -216,6 +216,61 @@ let do_data_node : type a.
         work linker extra_node_deps min_integer_types g n ~type_fn:Phi_node.compute_type
     | Data (External _) -> (* this is just like a constant *) []
     | Data Cast -> failwith "TODO"
+    | Data (Load field) ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
+            let { Node2.mem; ptr } : Node2.load = Node2.G.get_dependencies_exn g n in
+            let (AnyData ptr) = Option.value_exn ptr in
+            match ptr.typ with
+            (* TODO remove this *)
+            (* | Struct (Value { name = _; fields }) *)
+            (* | Ptr (Struct (Value { name = _; fields })) -> ( *)
+            (*     let field_type = Types.get_field_type ptr.typ field in *)
+            (*     match field_type with *)
+            (*     | None -> (~new_type:ALL, ~extra_deps:[]) *)
+            (*     | Some (ConstArray (Value arr)) -> ( *)
+            (*         let offs = Node2.G.get_dependency g n 3 |> Option.value_exn in *)
+            (*         match offs.typ with *)
+            (*         | Integer _ when Types.is_constant offs.typ -> *)
+            (*             let i = Types.get_integer_const_exn offs.typ in *)
+            (*             (* TODO: bounds check on the idx would be nice *) *)
+            (*             let idx = (Z.to_int i - 8) / Types.get_size arr.element_type in *)
+            (*             (~new_type:(List.nth_exn (arr.values :> Types.t list) idx), ~extra_deps:[]) *)
+            (*         | _ -> (~new_type:arr.element_type, ~extra_deps:[])) *)
+            (*     | Some field_type -> (~new_type:field_type, ~extra_deps:[])) *)
+            | Ptr p -> (~new_type:p, ~extra_deps:[])
+            | ANY -> (~new_type:ANY, ~extra_deps:[])
+            | ALL -> (~new_type:ALL, ~extra_deps:[])
+            | _ -> assert false)
+    | Data AddrOf ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
+            let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
+            let (AnyData place) = Option.value_exn place in
+            (~new_type:(Ptr place.typ), ~extra_deps:[]))
+    | Data (AddrOfField field) ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
+            let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
+            let (AnyData place) = Option.value_exn place in
+            match place.typ with
+            | Struct _ ->
+                let t = Types.get_field_type place.typ field |> Option.value_exn in
+                if offset |> Option.is_some && Types.is_a t (Array All) then
+                  let t = Types.get_array_element_type t in
+                  (~new_type:(Ptr t), ~extra_deps:[])
+                else
+                  (~new_type:(Ptr t), ~extra_deps:[])
+            | ANY -> (~new_type:(Ptr ANY), ~extra_deps:[])
+            | _ -> (~new_type:(Ptr ALL), ~extra_deps:[]))
+    | Data Deref ->
+        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
+            let { Node2.mem; ptr } : Node2.deref = Node2.G.get_dependencies_exn g n in
+            let (AnyData ptr) = Option.value_exn ptr in
+            let t =
+                match ptr.typ with
+                | Ptr p -> p
+                | ANY -> ANY
+                | _ -> ALL
+            in
+            (~new_type:t, ~extra_deps:[]))
     | ForwardRef _ ->
         (* handled in do_node function *)
         assert false
@@ -299,65 +354,10 @@ let do_mem_node : type a.
     Node2.any list =
    fun linker extra_node_deps min_integer_types g n ->
     match n.kind with
-    | Mem (Load field) ->
-        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
-            let { Node2.mem; ptr } : Node2.load = Node2.G.get_dependencies_exn g n in
-            let (AnyMem ptr) = Option.value_exn ptr in
-            match ptr.typ with
-            (* TODO remove this *)
-            (* | Struct (Value { name = _; fields }) *)
-            (* | Ptr (Struct (Value { name = _; fields })) -> ( *)
-            (*     let field_type = Types.get_field_type ptr.typ field in *)
-            (*     match field_type with *)
-            (*     | None -> (~new_type:ALL, ~extra_deps:[]) *)
-            (*     | Some (ConstArray (Value arr)) -> ( *)
-            (*         let offs = Node2.G.get_dependency g n 3 |> Option.value_exn in *)
-            (*         match offs.typ with *)
-            (*         | Integer _ when Types.is_constant offs.typ -> *)
-            (*             let i = Types.get_integer_const_exn offs.typ in *)
-            (*             (* TODO: bounds check on the idx would be nice *) *)
-            (*             let idx = (Z.to_int i - 8) / Types.get_size arr.element_type in *)
-            (*             (~new_type:(List.nth_exn (arr.values :> Types.t list) idx), ~extra_deps:[]) *)
-            (*         | _ -> (~new_type:arr.element_type, ~extra_deps:[])) *)
-            (*     | Some field_type -> (~new_type:field_type, ~extra_deps:[])) *)
-            | Ptr p -> (~new_type:p, ~extra_deps:[])
-            | ANY -> (~new_type:ANY, ~extra_deps:[])
-            | ALL -> (~new_type:ALL, ~extra_deps:[])
-            | _ -> assert false)
     | Mem (Store _) ->
         work linker extra_node_deps min_integer_types g n ~type_fn:(fun _ _ ->
             (~new_type:Memory, ~extra_deps:[]))
     | Mem New -> []
-    | Mem AddrOf ->
-        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
-            let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
-            let (AnyData place) = Option.value_exn place in
-            (~new_type:(Ptr place.typ), ~extra_deps:[]))
-    | Mem (AddrOfField field) ->
-        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
-            let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
-            let (AnyData place) = Option.value_exn place in
-            match place.typ with
-            | Struct _ ->
-                let t = Types.get_field_type place.typ field |> Option.value_exn in
-                if offset |> Option.is_some && Types.is_a t (Array All) then
-                  let t = Types.get_array_element_type t in
-                  (~new_type:(Ptr t), ~extra_deps:[])
-                else
-                  (~new_type:(Ptr t), ~extra_deps:[])
-            | ANY -> (~new_type:(Ptr ANY), ~extra_deps:[])
-            | _ -> (~new_type:(Ptr ALL), ~extra_deps:[]))
-    | Mem Deref ->
-        work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
-            let { Node2.mem; ptr } : Node2.deref = Node2.G.get_dependencies_exn g n in
-            let (AnyMem ptr) = Option.value_exn ptr in
-            let t =
-                match ptr.typ with
-                | Ptr p -> p
-                | ANY -> ANY
-                | _ -> ALL
-            in
-            (~new_type:t, ~extra_deps:[]))
     | Mem Copy ->
         work linker extra_node_deps min_integer_types g n ~type_fn:(fun _ _ ->
             (~new_type:Memory, ~extra_deps:[]))

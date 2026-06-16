@@ -102,6 +102,38 @@ let do_data_node : type a.
     | Data Cast ->
         (* TODO: probably should check *something* *)
         None
+    | Data (Load name) ->
+        let { Node2.mem; ptr } : Node2.load = Node2.G.get_dependencies_exn g n in
+        let (AnyData ptr) = Option.value_exn ptr in
+        expect_types n.loc ~expected:[ Types.Ptr ALL ] ~actual:[ ptr.typ ]
+    | Data AddrOf -> None
+    | Data (AddrOfField field) ->
+        let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
+        let (AnyData place) = Option.value_exn place in
+        let type_errors = expect_types n.loc ~expected:[ Struct All ] ~actual:[ place.typ ] in
+        let field_type = Types.get_field_type place.typ field in
+        if Option.is_none type_errors then
+          match
+            field_type
+          with
+          | None ->
+              Some
+                [
+                  ( n.loc,
+                    Printf.sprintf "Field %s not part of type %s" field
+                      (Types.human_readable place.typ) );
+                ]
+          | Some t ->
+              if Option.is_some offset && not (Types.is_a t (Array All)) then
+                Some [ (n.loc, Printf.sprintf "Field %s is not indexable" field) ]
+              else
+                None
+        else
+          type_errors
+    | Data Deref ->
+        let { Node2.mem; ptr } = Node2.G.get_dependencies_exn g n in
+        let (AnyData ptr) = Option.value_exn ptr in
+        expect_types n.loc ~expected:[ Types.Ptr ALL ] ~actual:[ ptr.typ ]
     | ForwardRef name -> Some [ (n.loc, Printf.sprintf "Symbol %s not found" name) ]
 
 let do_ctrl_node : type a.
@@ -170,7 +202,7 @@ let do_mem_node : type a.
           Some [ (n.loc, Printf.sprintf "Expected integer got %s" (Types.human_readable size.typ)) ]
     | Mem (Store name) -> (
         let { Node2.mem; ptr; value } = Node2.G.get_dependencies_exn g n in
-        let (AnyMem ptr) = Option.value_exn ptr in
+        let (AnyData ptr) = Option.value_exn ptr in
         let (AnyData value) = Option.value_exn value in
 
         match ptr.typ with
@@ -184,42 +216,10 @@ let do_mem_node : type a.
                   Printf.sprintf "Memory store expected pointer got %s"
                     (Types.human_readable ptr.typ) );
               ])
-    | Mem (Load name) ->
-        let { Node2.mem; ptr } : Node2.load = Node2.G.get_dependencies_exn g n in
-        let (AnyMem ptr) = Option.value_exn ptr in
-        expect_types n.loc ~expected:[ Types.Ptr ALL ] ~actual:[ ptr.typ ]
-    | Mem AddrOf -> None
-    | Mem (AddrOfField field) ->
-        let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
-        let (AnyData place) = Option.value_exn place in
-        let type_errors = expect_types n.loc ~expected:[ Struct All ] ~actual:[ place.typ ] in
-        let field_type = Types.get_field_type place.typ field in
-        if Option.is_none type_errors then
-          match
-            field_type
-          with
-          | None ->
-              Some
-                [
-                  ( n.loc,
-                    Printf.sprintf "Field %s not part of type %s" field
-                      (Types.human_readable place.typ) );
-                ]
-          | Some t ->
-              if Option.is_some offset && not (Types.is_a t (Array All)) then
-                Some [ (n.loc, Printf.sprintf "Field %s is not indexable" field) ]
-              else
-                None
-        else
-          type_errors
-    | Mem Deref ->
-        let { Node2.mem; ptr } = Node2.G.get_dependencies_exn g n in
-        let (AnyMem ptr) = Option.value_exn ptr in
-        expect_types n.loc ~expected:[ Types.Ptr ALL ] ~actual:[ ptr.typ ]
     | Mem Copy ->
         let { Node2.mem; src; dst } = Node2.G.get_dependencies_exn g n in
-        let (AnyMem src) = Option.value_exn src in
-        let (AnyMem dst) = Option.value_exn dst in
+        let (AnyData src) = Option.value_exn src in
+        let (AnyData dst) = Option.value_exn dst in
         let type_errors =
             expect_types n.loc ~expected:[ Types.Ptr ALL; Types.Ptr ALL ]
               ~actual:[ src.typ; dst.typ ]

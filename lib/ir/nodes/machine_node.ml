@@ -856,6 +856,15 @@ let rec of_data_node : type a.
             set_ctrl node;
             AnyNode node
     in
+    let simple : type a b t. a kind -> (b, t) Node2.t -> (b -> a) -> any =
+       fun kind n f ->
+        let node = create_node kind (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let inputs = Node2.G.get_dependencies_exn g n in
+        G.add_node machine_g node (f inputs);
+        set_ctrl node;
+        AnyNode node
+    in
     match n.kind with
     | ForwardRef _ -> failwith "ForwardRef nodes shouldn't exist by this point"
     | Data Add -> binop_commutative Add (fun i -> AddImm i) n
@@ -894,7 +903,7 @@ let rec of_data_node : type a.
         let node = create_node kind (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
         let { Node2.input } = Node2.G.get_dependencies_exn g n in
-        let (AnyData input) = Option.value_exn input in
+        let (AnyNode input) = Option.value_exn input in
         let input = convert_node memo g machine_g input in
         G.add_node machine_g node { input };
         set_ctrl node;
@@ -1040,6 +1049,97 @@ let rec of_data_node : type a.
         G.add_node machine_g node { input };
         set_ctrl node;
         AnyNode node
+    | Data (Load _) -> (
+        (* TODO check for ops like add that can address memory directly *)
+        match n.typ with
+        | Struct _ ->
+            let node = create_node AddrOf (AnyNode n) in
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+            let { Node2.mem = _; ptr } : Node2.load = Node2.G.get_dependencies_exn g n in
+            let (AnyData ptr) = Option.value_exn ptr in
+            let ptr = convert_node memo g machine_g ptr in
+            G.add_node machine_g node { input = ptr };
+            set_ctrl node;
+            AnyNode node
+        | _ ->
+            simple Load n (fun { Node2.mem; ptr } ->
+                let (AnyMem mem) = Option.value_exn mem in
+                let (AnyData ptr) = Option.value_exn ptr in
+                { mem = convert_node memo g machine_g mem; ptr = convert_node memo g machine_g ptr })
+        )
+    | Data AddrOf -> (
+        let node = create_node AddrOf (AnyNode n) in
+        let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
+        match offset with
+        | None ->
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+            let (AnyData place) = Option.value_exn place in
+            let place = convert_node memo g machine_g place in
+            G.add_node machine_g node { input = place };
+            set_ctrl node;
+            AnyNode node
+        | Some (AnyData offset) ->
+            let add_node = create_node Add (AnyNode n) in
+            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode add_node);
+            let (AnyData place) = Option.value_exn place in
+            let place = convert_node memo g machine_g place in
+            let offset = convert_node memo g machine_g offset in
+            G.add_node machine_g node { input = place };
+            set_ctrl node;
+            G.add_node machine_g add_node { lhs = AnyNode node; rhs = offset };
+            set_ctrl add_node;
+            AnyNode add_node)
+    | Data (AddrOfField f) ->
+        let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
+        let (AnyData place) = Option.value_exn place in
+        let field_offset = Types.get_offset place.typ f |> Option.value_exn in
+
+        let base_addr = create_node AddrOf (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode base_addr);
+        let place = convert_node memo g machine_g place in
+        G.add_node machine_g base_addr { input = place };
+        set_ctrl base_addr;
+
+        let field_addr = create_node (AddImm (Z.of_int field_offset)) (AnyNode n) in
+        G.add_node machine_g field_addr { input = AnyNode base_addr };
+        set_ctrl field_addr;
+        let addr =
+            match offset with
+            | Some (AnyData idx) ->
+                let idx = convert_node memo g machine_g idx in
+                let s =
+                    match n.typ with
+                    | Ptr p -> Types.get_size p
+                    | _ -> assert false
+                in
+                let m = create_node (MulImm (Z.of_int s)) (AnyNode n) in
+                G.add_node machine_g m { input = idx };
+                set_ctrl m;
+                let a = create_node Add (AnyNode n) in
+                G.add_node machine_g a { lhs = AnyNode field_addr; rhs = AnyNode m };
+                set_ctrl a;
+                AnyNode a
+            | None -> AnyNode field_addr
+        in
+        (* use set because the call to simple AddrOf already adds this key so we need to overwrite it *)
+        Hashtbl.set memo ~key:(AnyNode n) ~data:addr;
+        addr
+    | Data Deref -> (
+        match n.typ with
+        | Struct _ ->
+            (* struct dereference isn't a real thing because structs need to be accessed by ptr anyway *)
+            let { Node2.mem; ptr } = Node2.G.get_dependencies_exn g n in
+            let (AnyData ptr) = Option.value_exn ptr in
+            let ptr = convert_node memo g machine_g ptr in
+            Hashtbl.set memo ~key:(AnyNode n) ~data:ptr;
+            ptr
+        | _ ->
+            simple Deref n (fun { mem; ptr } ->
+                let (AnyMem mem) = Option.value_exn mem in
+                let mem = convert_node memo g machine_g mem in
+                let (AnyData ptr) = Option.value_exn ptr in
+                let ptr = convert_node memo g machine_g ptr in
+                { mem; ptr }))
 
 and of_ctrl_node : type a.
     (Node2.any, any) Hashtbl.t ->
@@ -1119,7 +1219,7 @@ and of_ctrl_node : type a.
         node
     | Ctrl (Proj i) ->
         simple (Ideal (CProj i)) n (fun { input } ->
-            let (AnyCtrl input) = Option.value_exn input in
+            let (AnyNode input) = Option.value_exn input in
             { input = convert_node memo g machine_g input })
     | Ctrl Loop ->
         simple (Ideal Loop) n (fun { entry; backedge } ->
@@ -1223,107 +1323,16 @@ and of_mem_node : type a.
         assert (size <= 8);
         simple Store n (fun { mem; ptr; value } ->
             let (AnyMem mem) = Option.value_exn mem in
-            let (AnyMem ptr) = Option.value_exn ptr in
+            let (AnyData ptr) = Option.value_exn ptr in
             let (AnyData value) = Option.value_exn value in
             {
               mem = convert_node memo g machine_g mem;
               ptr = convert_node memo g machine_g ptr;
               value = convert_node memo g machine_g value;
             })
-    | Mem (Load _) -> (
-        (* TODO check for ops like add that can address memory directly *)
-        match n.typ with
-        | Struct _ ->
-            let node = create_node AddrOf (AnyNode n) in
-            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-            let { Node2.mem = _; ptr } : Node2.load = Node2.G.get_dependencies_exn g n in
-            let (AnyMem ptr) = Option.value_exn ptr in
-            let ptr = convert_node memo g machine_g ptr in
-            G.add_node machine_g node { input = ptr };
-            set_ctrl node;
-            AnyNode node
-        | _ ->
-            simple Load n (fun { Node2.mem; ptr } ->
-                let (AnyMem mem) = Option.value_exn mem in
-                let (AnyMem ptr) = Option.value_exn ptr in
-                { mem = convert_node memo g machine_g mem; ptr = convert_node memo g machine_g ptr })
-        )
-    | Mem AddrOf -> (
-        let node = create_node AddrOf (AnyNode n) in
-        let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
-        match offset with
-        | None ->
-            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-            let (AnyData place) = Option.value_exn place in
-            let place = convert_node memo g machine_g place in
-            G.add_node machine_g node { input = place };
-            set_ctrl node;
-            AnyNode node
-        | Some (AnyData offset) ->
-            let add_node = create_node Add (AnyNode n) in
-            Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode add_node);
-            let (AnyData place) = Option.value_exn place in
-            let place = convert_node memo g machine_g place in
-            let offset = convert_node memo g machine_g offset in
-            G.add_node machine_g node { input = place };
-            set_ctrl node;
-            G.add_node machine_g add_node { lhs = AnyNode node; rhs = offset };
-            set_ctrl add_node;
-            AnyNode add_node)
-    | Mem (AddrOfField f) ->
-        let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
-        let (AnyData place) = Option.value_exn place in
-        let field_offset = Types.get_offset place.typ f |> Option.value_exn in
-
-        let base_addr = create_node AddrOf (AnyNode n) in
-        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode base_addr);
-        let place = convert_node memo g machine_g place in
-        G.add_node machine_g base_addr { input = place };
-        set_ctrl base_addr;
-
-        let field_addr = create_node (AddImm (Z.of_int field_offset)) (AnyNode n) in
-        G.add_node machine_g field_addr { input = AnyNode base_addr };
-        set_ctrl field_addr;
-        let addr =
-            match offset with
-            | Some (AnyData idx) ->
-                let idx = convert_node memo g machine_g idx in
-                let s =
-                    match n.typ with
-                    | Ptr p -> Types.get_size p
-                    | _ -> assert false
-                in
-                let m = create_node (MulImm (Z.of_int s)) (AnyNode n) in
-                G.add_node machine_g m { input = idx };
-                set_ctrl m;
-                let a = create_node Add (AnyNode n) in
-                G.add_node machine_g a { lhs = AnyNode field_addr; rhs = AnyNode m };
-                set_ctrl a;
-                AnyNode a
-            | None -> AnyNode field_addr
-        in
-        (* use set because the call to simple AddrOf already adds this key so we need to overwrite it *)
-        Hashtbl.set memo ~key:(AnyNode n) ~data:addr;
-        addr
-    | Mem Deref -> (
-        match n.typ with
-        | Struct _ ->
-            (* struct dereference isn't a real thing because structs need to be accessed by ptr anyway *)
-            let { Node2.mem; ptr } = Node2.G.get_dependencies_exn g n in
-            let (AnyMem ptr) = Option.value_exn ptr in
-            let ptr = convert_node memo g machine_g ptr in
-            Hashtbl.set memo ~key:(AnyNode n) ~data:ptr;
-            ptr
-        | _ ->
-            simple Deref n (fun { mem; ptr } ->
-                let (AnyMem mem) = Option.value_exn mem in
-                let mem = convert_node memo g machine_g mem in
-                let (AnyMem ptr) = Option.value_exn ptr in
-                let ptr = convert_node memo g machine_g ptr in
-                { mem; ptr }))
     | Mem Copy ->
         let inputs = Node2.G.get_dependencies_exn g n in
-        let (AnyMem src) = Option.value_exn inputs.src in
+        let (AnyData src) = Option.value_exn inputs.src in
         let size =
             match src.typ with
             | Ptr p -> Types.get_size p
@@ -1332,9 +1341,9 @@ and of_mem_node : type a.
         simple (RepMov size) n (fun { mem; src; dst } ->
             let (AnyMem mem) = Option.value_exn mem in
             let mem = convert_node memo g machine_g mem in
-            let (AnyMem src) = Option.value_exn src in
+            let (AnyData src) = Option.value_exn src in
             let src = convert_node memo g machine_g src in
-            let (AnyMem dst) = Option.value_exn dst in
+            let (AnyData dst) = Option.value_exn dst in
             let dst = convert_node memo g machine_g dst in
             { mem; src; dst })
     | Mem Phi ->

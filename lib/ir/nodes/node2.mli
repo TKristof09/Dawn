@@ -25,15 +25,20 @@ and _ data_kind =
     | Gt : binop data_kind
     | GEq : binop data_kind
     | Phi : any_data phi data_kind
-    | Proj : int -> any_data unary data_kind
+    (* proj nodes take in any because they need to be able to project off of a node that can be of other type (e.g. create pointer off of a New node *)
+    | Proj : int -> any unary data_kind
     | Param : int -> any_data phi data_kind
     | External : string -> unit data_kind
     | Cast : any_data unary data_kind
+    | Load : string -> load data_kind
+    | AddrOf : addr_of data_kind
+    | AddrOfField : string -> addr_of data_kind
+    | Deref : deref data_kind
 
 and _ ctrl_kind =
     | Start : unit ctrl_kind
     | Stop : stop ctrl_kind
-    | Proj : int -> any_ctrl unary ctrl_kind
+    | Proj : int -> any unary ctrl_kind
     | If : any_data unary ctrl_kind
     | Region : merge_point ctrl_kind
     | Loop : loop ctrl_kind
@@ -49,11 +54,7 @@ and _ ctrl_kind =
 
 and _ mem_kind =
     | New : alloc mem_kind
-    | Load : string -> load mem_kind
     | Store : string -> store mem_kind
-    | AddrOf : addr_of mem_kind
-    | AddrOfField : string -> addr_of mem_kind
-    | Deref : deref mem_kind
     | Copy : copy mem_kind
     | Phi : any_mem phi mem_kind
     | Param : any_mem phi mem_kind
@@ -102,12 +103,12 @@ and alloc = {
 
 and load = {
     mem : any_mem option;
-    ptr : any_mem option;
+    ptr : any_data option;
   }
 
 and store = {
     mem : any_mem option;
-    ptr : any_mem option;
+    ptr : any_data option;
     value : any_data option;
   }
 
@@ -118,13 +119,13 @@ and addr_of = {
 
 and deref = {
     mem : any_mem option;
-    ptr : any_mem option;
+    ptr : any_data option;
   }
 
 and copy = {
     mem : any_mem option;
-    src : any_mem option;
-    dst : any_mem option;
+    src : any_data option;
+    dst : any_data option;
   }
 
 and scope_kind = { vars : any option list }
