@@ -64,7 +64,6 @@ let backwards_prop_min_integer_type (min_integer_types : (Node2.any, Types.t) Ba
     | Data (Param _) ->
         ignore (update min_type (AnyNode n));
         Node2.G.get_dependencies_list g n
-        |> List.tl_exn
         |> List.filter_opt
         |> List.filter ~f:(fun (Node2.AnyNode n) -> Option.is_none n.min_typ)
         |> List.filter ~f:(update min_type)

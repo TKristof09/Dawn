@@ -44,17 +44,17 @@ module type S = sig
   val add_node : readwrite t -> ('a, 't) N.t -> 'a -> unit
   (** [add_node g n inputs] adds the node [n] to [g] along with its [inputs].
 
-      [n] must not be already in [g]. All the nodes in [inputs] have to already be in [g] *)
+      [n] must not be already in [g]. Nodes in [inputs] don't have to be in [g] already *)
 
   val set_node_inputs : readwrite t -> ('a, 't) N.t -> 'a -> unit
   (** [set_node_inputs g n inputs] overwrites [n]'s inputs in the graph [g].
 
-      [n] must already be part of [g]. All the nodes in [inputs] have to already be in [g] *)
+      [n] must already be part of [g]. Nodes in [inputs] don't have to be in [g] already *)
 
   val set_ctrl : readwrite t -> ('a, 'ta) N.t -> ('b, 'tb) N.t -> unit
   (** [set_ctrl g n ctrl] sets the control input of [n] to [ctrl].
 
-      [n] must already be part of [g]. [ctrl] must already be part of [g] *)
+      [n] must already be part of [g]. [ctrl] doesn't have to be in [g] already *)
 
   val unlink_ctrl : readwrite t -> ('a, 'ta) N.t -> unit
   (** [unlink_ctrl g n] sets n's control input to None.
@@ -130,6 +130,11 @@ module type S = sig
 
       This is the unsafe version. It is up to the user to make sure that the replacement is
       compatible with what the node expects as inputs. *)
+
+  val toggle_node_undying : readwrite t -> ('a, 'ta) N.t -> unit
+  (** [toggle_node_undying g n] toggles n's undying marker. While a node is undying it won't be
+      removed even if it has no dependants, however, it can still be removed by an explicit
+      [remove_node g n] or [replace_node_with g ~from:n ~to_] *)
 
   val partition :
     'q t ->

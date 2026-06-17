@@ -205,8 +205,20 @@ let schedule_late g =
         | Ideal Phi ->
             let { Machine_node.phi_inputs } = Machine_node.G.get_dependencies_exn g dependant in
             let (AnyNode region) = Machine_node.G.get_ctrl_exn g dependant in
-            let region = Machine_node.unpack_exn region (Ideal Region) in
-            let { Machine_node.ctrl_inputs } = Machine_node.G.get_dependencies_exn g region in
+            let ctrl_inputs =
+                match region.kind with
+                | Ideal Region ->
+                    let { Machine_node.ctrl_inputs } =
+                        Machine_node.G.get_dependencies_exn g region
+                    in
+                    ctrl_inputs
+                | Ideal Loop ->
+                    let { Machine_node.entry; backedge } =
+                        Machine_node.G.get_dependencies_exn g region
+                    in
+                    [ Some entry; Some backedge ]
+                | _ -> assert false
+            in
             List.zip_exn ctrl_inputs phi_inputs
             |> List.find_map_exn ~f:(fun (ctrl, data) ->
                 match data with

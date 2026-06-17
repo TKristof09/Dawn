@@ -330,6 +330,7 @@ let do_node g fun_node =
 
     let (AnyMem mem) = mem in
     List.iter mem_param_orig_uses ~f:(fun (AnyNode use) ->
+        [%log.debug "%a" Node2.pp mem];
         Node2.G.replace_input_unsafe g ~node:use ~from:(AnyNode mem_param) ~to_:(AnyNode mem))
 
 let run g =
@@ -342,7 +343,7 @@ let run g =
               (Node2.fun_def, Node2.ctrl) Node2.t list
             ->
             match n.kind with
-            | Ctrl (Function _) -> n :: acc
+            | Ctrl (Function f) -> if f.is_extern then acc else n :: acc
             | _ -> acc)
     in
     List.iter nodes ~f:(do_node g)

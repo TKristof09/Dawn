@@ -25,7 +25,7 @@ let create g loc fun_ptr_type =
     Node2.G.set_ctrl g ret_node return_region;
     let fun_node =
         Node2.create_ctrl loc Control
-          (Function { ret = ret_node; signature = fun_ptr_type; idx = -1 })
+          (Function { ret = ret_node; signature = fun_ptr_type; idx = -1; is_extern = false })
     in
     Node2.G.add_node g fun_node { Node2.call_sites = [] };
     (fun_node, ret_node)

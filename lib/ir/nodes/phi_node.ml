@@ -17,14 +17,14 @@ let create_mem g loc ?parent_fun ctrl nodes =
 let create_data_no_backedge g loc ?parent_fun ctrl dep =
     let typ = dep.Node2.typ in
     let n = Node2.create_data ?parent_fun loc typ Phi in
-    Node2.G.add_node g n { Node2.phi_inputs = [ None; Some (AnyData dep) ] };
+    Node2.G.add_node g n { Node2.phi_inputs = [ Some (AnyData dep); None ] };
     Node2.G.set_ctrl g n ctrl;
     n
 
 let create_mem_no_backedge g loc ?parent_fun ctrl dep =
     let typ = dep.Node2.typ in
     let n = Node2.create_mem ?parent_fun loc typ Phi in
-    Node2.G.add_node g n { Node2.phi_inputs = [ None; Some (AnyMem dep) ] };
+    Node2.G.add_node g n { Node2.phi_inputs = [ Some (AnyMem dep); None ] };
     Node2.G.set_ctrl g n ctrl;
     n
 
@@ -34,14 +34,27 @@ let add_backedge_input : type a b c.
     (* keep the phi's original type as the type, it will get recomputed by the
        scope_node.merge_loop function after all phis have both their inputs *)
     let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+    let entry =
+        match phi_inputs with
+        | [ (Some _ as entry); None ] -> entry
+        | _ -> assert false
+    in
     match n.kind with
     | Data Phi ->
-        Node2.G.set_node_inputs g n { Node2.phi_inputs = phi_inputs @ [ Some (Node2.AnyData dep) ] }
+        Node2.G.set_node_inputs g n { Node2.phi_inputs = [ entry; Some (Node2.AnyData dep) ] }
     | Data (Param _) -> failwith "Can't add backedge to param node"
     | Mem Phi ->
-        Node2.G.set_node_inputs g n { Node2.phi_inputs = phi_inputs @ [ Some (Node2.AnyMem dep) ] }
+        Node2.G.set_node_inputs g n { Node2.phi_inputs = [ entry; Some (Node2.AnyMem dep) ] }
     | Mem Param -> failwith "Can't add backedge to param node"
     | _ -> .
+
+let get_backedge_input g n =
+    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+    List.nth_exn phi_inputs 1
+
+let get_entry_edge_input g n =
+    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+    List.nth_exn phi_inputs 0
 
 let add_input g phi inp =
     let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g phi in

@@ -39,6 +39,7 @@ module type S = sig
     readwrite t -> node:('a, 'ta) N.t -> from:('b, 'tb) N.t -> to_:('b, 'tb) N.t -> unit
 
   val replace_input_unsafe : readwrite t -> node:('a, 'ta) N.t -> from:N.any -> to_:N.any -> unit
+  val toggle_node_undying : readwrite t -> ('a, 'ta) N.t -> unit
 
   val partition :
     'q t ->
@@ -62,15 +63,18 @@ module Make (N : NODE) : S with module N := N = struct
 
   (* invariants:
       - dependencies and dependants kept in sync: for all (n, [inp1, inp2...]) in dependencies, n is in dependants[inp1] 
-      - if no dependants then remove from graph: for all (n, users) in dependants, len(users) > 0 (NOTE: it can be that a node has empty dependencies e.g. constant node). start and stop are exempt from this rule and are never removed.
-      - dependants and dependencies hash tables have the same keys. If a node is added it is added to both and if it is removed it is removed from both.
-
+      - if no dependants then remove from graph: for all (n, users) in dependants, len(users) > 0 (NOTE: it can be that a node has empty dependencies e.g. constant node). start and stop are exempt from this rule and are never removed. Nodes in undying are also exempt from this.
+      - dependants and dependencies hash tables have the same keys. If a node is added it is added to both and if it is removed it is removed from both. Except for nodes in unfinished_nodes are part of dependants but not of dependencies until they get actually added to the graph
+      - nodes in unfinished_nodes are not in depedencies hash table's keys
   *)
+  (* nodes in unfinished_nodes set are there until they get added to the graph for real via add_node. Until then they can't really be accessed, calling functions on them is invalid (e.g. get_dependants, remove_dependency, ...) *)
   type 'q t = {
       dependencies : (N.any, N.any option * entry) Hashtbl.t;
       dependants : (N.any, N.any Hash_set.t) Hashtbl.t;
       start : N.any;
       stop : N.any;
+      undying : N.any Hash_set.t;
+      unfinished_nodes : N.any Hash_set.t;
     }
 
   module HashableNode = struct
@@ -99,32 +103,48 @@ module Make (N : NODE) : S with module N := N = struct
             ];
         start;
         stop;
+        undying = Hash_set.create (module HashableNode);
+        unfinished_nodes = Hash_set.create (module HashableNode);
       }
 
   let readonly t = (t :> readonly t)
 
   let add_dependant t n dependant =
-      (* n must already be in the graph *)
-      let s = Hashtbl.find_exn t.dependants n in
-      Hash_set.add s dependant
+      (* n must already be in the graph or in unfinished_nodes *)
+      match Hashtbl.find t.dependants n with
+      | None ->
+          assert (Hash_set.mem t.unfinished_nodes n);
+          Hashtbl.set t.dependants ~key:n
+            ~data:(Hash_set.of_list (module HashableNode) [ dependant ])
+      | Some s -> Hash_set.add s dependant
 
   let add_aux t n l =
       l
       |> List.filter_opt
       |> List.iter ~f:(fun n' ->
-          assert (Hashtbl.mem t.dependencies n');
-          assert (Hashtbl.mem t.dependants n');
+          if not (Hashtbl.mem t.dependencies n') then Hash_set.add t.unfinished_nodes n';
+
+          assert (Hash_set.mem t.unfinished_nodes n' || Hashtbl.mem t.dependencies n');
+          assert (Hash_set.mem t.unfinished_nodes n' || Hashtbl.mem t.dependants n');
           add_dependant t n' n)
 
   let add_node t n inputs =
       let l = N.list_of_inputs n inputs in
-      let ok = Hashtbl.add t.dependencies ~key:(AnyNode n) ~data:(None, Entry (n, l)) in
+      let n_wrapped = N.AnyNode n in
+      let ok = Hashtbl.add t.dependencies ~key:n_wrapped ~data:(None, Entry (n, l)) in
       match ok with
       | `Duplicate -> failwith "Node already part of graph"
       | `Ok ->
-          Hashtbl.add_exn t.dependants ~key:(AnyNode n)
-            ~data:(Hash_set.create (module HashableNode));
-          add_aux t (AnyNode n) l
+          (match
+             Hashtbl.add t.dependants ~key:n_wrapped ~data:(Hash_set.create (module HashableNode))
+           with
+          | `Duplicate ->
+              (* This can only happen if n was an unfinished_node before *)
+              assert (Hash_set.mem t.unfinished_nodes n_wrapped)
+          | `Ok -> ());
+          if Hash_set.mem t.unfinished_nodes n_wrapped then
+            Hash_set.remove t.unfinished_nodes n_wrapped;
+          add_aux t n_wrapped l
 
   let get_start t = t.start
   let get_stop t = t.stop
@@ -153,8 +173,9 @@ module Make (N : NODE) : S with module N := N = struct
       | None -> []
       | Some (_, Entry (_, e)) -> e
 
-  let get_dependants g n =
-      Hashtbl.find g.dependants (AnyNode n)
+  let get_dependants t n =
+      assert (not (Hash_set.mem t.unfinished_nodes (AnyNode n)));
+      Hashtbl.find t.dependants (AnyNode n)
       |> Option.map ~f:Hash_set.to_list
       |> Option.value ~default:[]
 
@@ -209,13 +230,19 @@ module Make (N : NODE) : S with module N := N = struct
           Hashtbl.remove t.dependants (AnyNode n)
 
   and remove_dependant t ~node ~dependant =
+      assert (not (Hash_set.mem t.unfinished_nodes node));
       let dependants = Hashtbl.find_exn t.dependants node in
       Hash_set.remove dependants dependant;
       let (AnyNode start) = t.start in
       let (AnyNode stop) = t.stop in
-      let (N.AnyNode node) = node in
-      if Hash_set.is_empty dependants && N.id node <> N.id start && N.id node <> N.id stop then
-        remove_node t node
+      let (N.AnyNode node_unwrapped) = node in
+      if
+        Hash_set.is_empty dependants
+        && N.id node_unwrapped <> N.id start
+        && N.id node_unwrapped <> N.id stop
+        && not (Hash_set.mem t.undying node)
+      then
+        remove_node t node_unwrapped
 
   let replace_input_unsafe g ~node ~from:(N.AnyNode from) ~to_ =
       let node = N.AnyNode node in
@@ -246,6 +273,17 @@ module Make (N : NODE) : S with module N := N = struct
 
   let replace_node_with : type a b. readwrite t -> from:(a, b) N.t -> to_:(a, b) N.t -> unit =
      fun g ~from ~to_ -> replace_node_with_unsafe g ~from:(N.AnyNode from) ~to_:(N.AnyNode to_)
+
+  let toggle_node_undying t n =
+      let n_wrapped = N.AnyNode n in
+      assert (not (Hash_set.mem t.unfinished_nodes n_wrapped));
+      if Hash_set.mem t.undying n_wrapped then (
+        Hash_set.remove t.undying n_wrapped;
+        match Hashtbl.find t.dependants n_wrapped with
+        | None -> ()
+        | Some s -> if Hash_set.is_empty s then remove_node t n)
+      else
+        Hash_set.add t.undying n_wrapped
 
   let set_ctrl_aux t n ctrl =
       let n = N.AnyNode n in
@@ -321,5 +359,16 @@ module Make (N : NODE) : S with module N := N = struct
 
           let start = Hash_set.find partition_nodes ~f:get_start |> Option.value_exn in
           let stop = Hash_set.find partition_nodes ~f:get_stop |> Option.value_exn in
-          { dependencies = new_deps; dependants = new_dependants; start; stop })
+          let undying = Hash_set.filter g.undying ~f:(Hash_set.mem partition_nodes) in
+          let unfinished_nodes =
+              Hash_set.filter g.unfinished_nodes ~f:(Hash_set.mem partition_nodes)
+          in
+          {
+            dependencies = new_deps;
+            dependants = new_dependants;
+            start;
+            stop;
+            undying;
+            unfinished_nodes;
+          })
 end

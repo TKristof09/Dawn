@@ -424,6 +424,8 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         Scope_node.push scope;
         let (AnyCtrl old_ctrl) = Scope_node.get_ctrl g scope in
         let (AnyMem old_mem) = Scope_node.get_mem g scope in
+        Node2.G.toggle_node_undying g old_ctrl;
+        Node2.G.toggle_node_undying g old_mem;
         Scope_node.set_ctrl g scope fun_node;
         let mem = Fun_node.create_mem_param ~parent_fun:fun_idx g loc fun_node in
         Scope_node.set_mem g scope mem;
@@ -465,6 +467,8 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         Scope_node.pop g scope;
         Scope_node.set_ctrl g scope old_ctrl;
         Scope_node.set_mem g scope old_mem;
+        Node2.G.toggle_node_undying g old_ctrl;
+        Node2.G.toggle_node_undying g old_mem;
         Some (AnyData fun_ptr)
     | Ast.ExternalFnDeclaration (typ, _, external_name) ->
         let ret_type, param_types =
@@ -486,7 +490,8 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         fun_node.parent_fun <- Some fun_idx;
         Linker.set_name linker fun_idx external_name;
         (match fun_node.kind with
-        | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx }));
+        | Ctrl (Function k) ->
+            fun_node.kind <- Ctrl (Function { k with idx = fun_idx; is_extern = true }));
         let fun_ptr = Const_node.create_fun_ptr ?parent_fun g loc fun_node fun_idx in
         (* TODO the extern node should probably also pretend to use the MEMORY
            since it could store stuff into the passed in ptr when return value

@@ -3,6 +3,7 @@ open Core
 let create g =
     let n = Node2.create_scope () in
     Node2.G.add_node g n { vars = [] };
+    Node2.G.toggle_node_undying g n;
     n
 
 let ctrl_identifier = "$ctrl"
@@ -66,9 +67,12 @@ and assign : type a b.
             in
             let symbol = Node2.unpack_exn symbol (Scope old_tbl) in
             let (AnyCtrl ctrl) = get_ctrl g symbol in
-            let (AnyNode tmp_ctrl) = Node2.G.get_ctrl_exn g tmp in
+            let tmp_ctrl = Node2.G.get_ctrl g tmp in
             match tmp.kind with
-            | Data Phi when Node2.equal tmp_ctrl ctrl -> Node2.AnyNode symbol
+            | Data Phi
+              when Option.exists tmp_ctrl ~f:(fun (AnyNode tmp_ctrl) -> Node2.equal tmp_ctrl ctrl)
+              ->
+                Node2.AnyNode symbol
             | Data _ ->
                 let (AnyNode sym) = get g symbol name in
                 let phi =
@@ -141,10 +145,13 @@ and get g scope name : Node2.any =
             in
             let old_scope = Node2.unpack_exn symbol (Scope old_tbl) in
             let (AnyCtrl ctrl) = get_ctrl g old_scope in
-            let (AnyNode tmp_ctrl) = Node2.G.get_ctrl_exn g tmp in
+            let tmp_ctrl = Node2.G.get_ctrl g tmp in
             let new_symbol =
                 match tmp.kind with
-                | Data Phi when Node2.equal tmp_ctrl ctrl -> Node2.AnyNode tmp
+                | Data Phi
+                  when Option.exists tmp_ctrl ~f:(fun (AnyNode tmp_ctrl) ->
+                           Node2.equal tmp_ctrl ctrl) ->
+                    Node2.AnyNode tmp
                 | Data _ ->
                     let (AnyNode s) = get g old_scope name in
                     let s = Node2.as_data_exn s in
@@ -216,7 +223,7 @@ let pop g scope =
 
 let dup g scope =
     let (Scope tbl) = scope.Node2.kind in
-    let scope_dup = Node2.create_scope () in
+    let scope_dup = create g in
     Symbol_table.iter tbl (fun ~name ~symbol ~depth:_ ->
         match symbol with
         | None -> push scope_dup
@@ -227,7 +234,7 @@ let dup g scope =
 (* Set symbols to point to the current symbol node itself (not the duped one), that way we can easily detect the symbols when they are first used in the loop and create phi nodes for them *)
 let dup_loop g scope =
     let (Scope tbl) = scope.Node2.kind in
-    let scope_dup = Node2.create_scope () in
+    let scope_dup = create g in
     Symbol_table.iter tbl (fun ~name ~symbol ~depth:_ ->
         match symbol with
         | None -> push scope_dup
@@ -343,8 +350,9 @@ let merge_loop ?parent_fun g ~this ~body ~exit =
               | Data Phi ->
                   let phi = Node2.unpack_exn this_node (Data Phi) in
                   if Node2.equal this_node body_node then (
-                    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g phi in
-                    let (AnyData value) = List.nth_exn phi_inputs 1 |> Option.value_exn in
+                    let (AnyData value) =
+                        Phi_node.get_entry_edge_input (Node2.G.readonly g) phi |> Option.value_exn
+                    in
                     Node2.G.replace_node_with_unsafe g ~from:v_this.node ~to_:(AnyNode value);
                     (* symbols get assigned from exit table to this table later *)
                     Symbol_table.reassign_symbol exit_tbl name (AnyNode value))
@@ -356,8 +364,9 @@ let merge_loop ?parent_fun g ~this ~body ~exit =
               | Mem Phi ->
                   let phi = Node2.unpack_exn this_node (Mem Phi) in
                   if Node2.equal this_node body_node then (
-                    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g phi in
-                    let (AnyMem value) = List.nth_exn phi_inputs 1 |> Option.value_exn in
+                    let (AnyMem value) =
+                        Phi_node.get_entry_edge_input (Node2.G.readonly g) phi |> Option.value_exn
+                    in
                     Node2.G.replace_node_with_unsafe g ~from:v_this.node ~to_:(AnyNode value);
                     (* symbols get assigned from exit table to this table later *)
                     Symbol_table.reassign_symbol exit_tbl name (AnyNode value))

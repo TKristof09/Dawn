@@ -33,6 +33,8 @@ val create_mem_no_backedge :
 val add_backedge_input :
   Node2.G.readwrite Node2.G.t -> ('a Node2.phi, 'b) Node2.t -> ('c, 'b) Node2.t -> unit
 
+val get_backedge_input : Node2.G.readonly Node2.G.t -> ('a Node2.phi, 'b) Node2.t -> 'a option
+val get_entry_edge_input : Node2.G.readonly Node2.G.t -> ('a Node2.phi, 'b) Node2.t -> 'a option
 val add_input : Node2.G.readwrite Node2.G.t -> ('a Node2.phi, 'b) Node2.t -> 'a -> unit
 
 val compute_type :

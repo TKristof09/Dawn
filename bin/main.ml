@@ -11,33 +11,36 @@ let compile filename =
     | Ok ast ->
         let linker = Linker.create () in
         let son = Son.of_ast ast linker in
-        [%log.debug "\n%s" (Ir_printer.to_dot son)];
+        [%log.debug "\n%s" (Ir_printer.to_dot (Node2.G.readonly son))];
         Sccp.run son linker;
-        let type_errors = Type_check.run (Graph.readonly son) in
-        [%log.debug "\n%s" (Ir_printer.to_dot son)];
+        let type_errors = Type_check.run (Node2.G.readonly son) in
+        [%log.debug "\n%s" (Ir_printer.to_dot (Node2.G.readonly son))];
         if not (List.is_empty type_errors) then (
           List.iter type_errors ~f:(fun err -> [%log.error err]);
           exit 1)
         else (
           Struct_fun_args.run son;
           Integer_widening.run son;
-          [%log.debug "\n%s" (Ir_printer.to_dot son)];
-          let schedules = Scheduler.schedule son in
+          [%log.debug "\n%s" (Ir_printer.to_dot (Node2.G.readonly son))];
+          let schedules = Scheduler.schedule (Node2.G.readonly son) in
           (* only do code gen on non external functions *)
           let functions =
               Core.List.filter schedules ~f:(fun (g, _) ->
-                  Graph.find g ~f:(fun n ->
+                  Machine_node.G.find g ~f:(fun (AnyNode n) ->
                       match n.kind with
                       | Ideal (External _) -> true
                       | _ -> false)
                   |> Option.is_none)
               |> Core.List.map ~f:(fun (g, program) ->
-                  [%log.debug "\n%a" Ir_printer.pp_dot_machine g];
                   let flat_program = List.concat program in
-                  [%log.debug "\n%a" Ir_printer.pp_machine_linear (g, flat_program)];
+                  let ro_g = Machine_node.G.readonly g in
+                  [%log.debug "\n%a" Ir_printer.pp_dot_machine ro_g];
+                  [%log.debug "\n%a" Ir_printer.pp_machine_linear (ro_g, flat_program)];
                   let program, reg_assignment = Reg_allocator.allocate g flat_program in
-                  [%log.debug "\n%a" Ir_printer.pp_machine_linear_regs (g, program, reg_assignment)];
-                  (g, reg_assignment, program))
+                  [%log.debug
+                      "\n%a" Ir_printer.pp_machine_linear_regs
+                        (Machine_node.G.readonly g, program, reg_assignment)];
+                  (Machine_node.G.readonly g, reg_assignment, program))
           in
           let code = Asm_emit.emit_program functions linker in
           let outfile = Filename.chop_extension filename ^ ".asm" in
