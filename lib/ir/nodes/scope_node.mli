@@ -1,4 +1,4 @@
-val create : unit -> (Node2.scope_kind, Node2.misc) Node2.t
+val create : Node2.G.readwrite Node2.G.t -> (Node2.scope_kind, Node2.misc) Node2.t
 
 val define :
   Node2.G.readwrite Node2.G.t ->

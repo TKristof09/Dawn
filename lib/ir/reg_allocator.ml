@@ -129,7 +129,7 @@ let build_live_ranges (g : Graph.readonly Graph.t) program =
                               | None -> false
                               | Some (AnyNode n') -> Machine_node.equal n n')
                       in
-                      match Machine_node.get_in_reg_mask g use (i - 1) with
+                      match Machine_node.get_in_reg_mask g use i with
                       | Some m ->
                           let single_reg_uses =
                               if Registers.Mask.length m = 1 then

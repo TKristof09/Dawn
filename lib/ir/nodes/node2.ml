@@ -141,8 +141,8 @@ module N = struct
       id : int;
       loc : Ast.loc;
       mutable parent_fun : int option;
-      list_of_inputs : 'a -> any option list;
-      inputs_of_list : any option list -> 'a;
+      list_of_inputs : 'a -> any option list; [@opaque]
+      inputs_of_list : any option list -> 'a; [@opaque]
     }
   [@@deriving sexp_of]
 
@@ -408,9 +408,67 @@ module N = struct
   let equal a b = a.id = b.id
   let list_of_inputs n inps = n.list_of_inputs inps
   let inputs_of_list n l = n.inputs_of_list l
-  let pp _ _ = failwithf "todo %s" __LOC__ ()
-  let show _ = failwithf "todo %s" __LOC__ ()
-  let show_kind _ = failwithf "todo %s" __LOC__ ()
+
+  let rec pp_data_kind : type a. Format.formatter -> a data_kind -> unit =
+     fun fmt -> function
+      | Constant -> Format.pp_print_string fmt "Constant"
+      | Add -> Format.pp_print_string fmt "Add"
+      | Sub -> Format.pp_print_string fmt "Sub"
+      | Mul -> Format.pp_print_string fmt "Mul"
+      | Div -> Format.pp_print_string fmt "Div"
+      | Lsh -> Format.pp_print_string fmt "Lsh"
+      | Rsh -> Format.pp_print_string fmt "Rsh"
+      | BAnd -> Format.pp_print_string fmt "BAnd"
+      | BOr -> Format.pp_print_string fmt "BOr"
+      | Eq -> Format.pp_print_string fmt "Eq"
+      | NEq -> Format.pp_print_string fmt "NEq"
+      | Lt -> Format.pp_print_string fmt "Lt"
+      | LEq -> Format.pp_print_string fmt "LEq"
+      | Gt -> Format.pp_print_string fmt "Gt"
+      | GEq -> Format.pp_print_string fmt "GEq"
+      | Phi -> Format.pp_print_string fmt "Phi"
+      | Proj i -> Format.fprintf fmt "Proj %d" i
+      | Param i -> Format.fprintf fmt "Param %d" i
+      | External s -> Format.fprintf fmt "External %s" s
+      | Cast -> Format.pp_print_string fmt "Cast"
+      | Load s -> Format.fprintf fmt "Load %s" s
+      | AddrOf -> Format.pp_print_string fmt "AddrOf"
+      | AddrOfField s -> Format.fprintf fmt "AddrOfField %s" s
+      | Deref -> Format.pp_print_string fmt "Deref"
+
+  and pp_ctrl_kind : type a. Format.formatter -> a ctrl_kind -> unit =
+     fun fmt -> function
+      | Start -> Format.pp_print_string fmt "Start"
+      | Stop -> Format.pp_print_string fmt "Stop"
+      | Proj i -> Format.fprintf fmt "Proj %d" i
+      | If -> Format.pp_print_string fmt "If"
+      | Region -> Format.pp_print_string fmt "Region"
+      | Loop -> Format.pp_print_string fmt "Loop"
+      | Function { ret = _; signature = _; idx } -> Format.fprintf fmt "Function %d" idx
+      | Return -> Format.pp_print_string fmt "Return"
+      | FunctionCall -> Format.pp_print_string fmt "FunctionCall"
+      | FunctionCallEnd -> Format.pp_print_string fmt "FunctionCallEnd"
+
+  and pp_mem_kind : type a. Format.formatter -> a mem_kind -> unit =
+     fun fmt -> function
+      | New -> Format.pp_print_string fmt "New"
+      | Store s -> Format.fprintf fmt "Store %s" s
+      | Copy -> Format.pp_print_string fmt "Copy"
+      | Phi -> Format.pp_print_string fmt "Phi"
+      | Param -> Format.pp_print_string fmt "Param"
+      | Proj i -> Format.fprintf fmt "Proj %d" i
+
+  and pp_kind : type a b. Format.formatter -> (a, b) kind -> unit =
+     fun fmt -> function
+      | Data k -> Format.fprintf fmt "Data(%a)" pp_data_kind k
+      | Ctrl k -> Format.fprintf fmt "Ctrl(%a)" pp_ctrl_kind k
+      | Mem k -> Format.fprintf fmt "Mem(%a)" pp_mem_kind k
+      | Scope _ -> Format.pp_print_string fmt "Scope"
+      | ForwardRef s -> Format.fprintf fmt "ForwardRef %s" s
+
+  and pp fmt n = Format.fprintf fmt "(node #%d %a)" n.id pp_kind n.kind
+  and show n = Format.asprintf "%a" pp n
+  and show_kind k = Format.asprintf "%a" pp_kind k
 
   let[@inline] kind_eq : type a b taga tagb.
       (a, taga) kind -> (b, tagb) kind -> ((a, b) Type.eq * (taga, tagb) Type.eq) option =
@@ -457,10 +515,57 @@ module N = struct
       | Mem Copy, Mem Copy -> Some (Type.Equal, Type.Equal)
       | Mem (Store _), Mem (Store _) -> Some (Type.Equal, Type.Equal)
       | Mem (Proj _), Mem (Proj _) -> Some (Type.Equal, Type.Equal)
+      | Mem Phi, Mem Phi -> Some (Type.Equal, Type.Equal)
+      | Mem Param, Mem Param -> Some (Type.Equal, Type.Equal)
       (* Misc *)
       | Scope _, Scope _ -> Some (Type.Equal, Type.Equal)
       | ForwardRef _, ForwardRef _ -> Some (Type.Equal, Type.Equal)
-      | _, _ -> None
+      (* Data *)
+      | Data Constant, _ -> None
+      | Data Add, _ -> None
+      | Data Sub, _ -> None
+      | Data Mul, _ -> None
+      | Data Div, _ -> None
+      | Data Lsh, _ -> None
+      | Data Rsh, _ -> None
+      | Data BAnd, _ -> None
+      | Data BOr, _ -> None
+      | Data Eq, _ -> None
+      | Data NEq, _ -> None
+      | Data Lt, _ -> None
+      | Data LEq, _ -> None
+      | Data Gt, _ -> None
+      | Data GEq, _ -> None
+      | Data Phi, _ -> None
+      | Data (External _), _ -> None
+      | Data Cast, _ -> None
+      | Data (Proj _), _ -> None
+      | Data (Param _), _ -> None
+      | Data AddrOf, _ -> None
+      | Data Deref, _ -> None
+      | Data (Load _), _ -> None
+      | Data (AddrOfField _), _ -> None
+      (* Ctrl *)
+      | Ctrl Start, _ -> None
+      | Ctrl Stop, _ -> None
+      | Ctrl If, _ -> None
+      | Ctrl Region, _ -> None
+      | Ctrl Loop, _ -> None
+      | Ctrl Return, _ -> None
+      | Ctrl FunctionCall, _ -> None
+      | Ctrl FunctionCallEnd, _ -> None
+      | Ctrl (Proj _), _ -> None
+      | Ctrl (Function _), _ -> None
+      (* Mem *)
+      | Mem New, _ -> None
+      | Mem Copy, _ -> None
+      | Mem (Store _), _ -> None
+      | Mem (Proj _), _ -> None
+      | Mem Phi, _ -> None
+      | Mem Param, _ -> None
+      (* Misc *)
+      | Scope _, _ -> None
+      | ForwardRef _, _ -> None
 
   let[@inline] type_eq : type a b taga tagb.
       (a, taga) t -> (b, tagb) t -> ((a, b) Type.eq * (taga, tagb) Type.eq) option =

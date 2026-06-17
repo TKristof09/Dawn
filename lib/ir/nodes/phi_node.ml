@@ -47,7 +47,6 @@ let add_input g phi inp =
     let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g phi in
     Node2.G.set_node_inputs g phi { phi_inputs = phi_inputs @ [ Some inp ] }
 
-
 let compute_type : type a b.
     Node2.G.readonly Node2.G.t ->
     (a Node2.phi, b) Node2.t ->

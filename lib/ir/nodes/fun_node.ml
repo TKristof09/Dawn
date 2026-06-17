@@ -42,6 +42,37 @@ let create_mem_param g loc ?parent_fun fun_node =
     Node2.G.set_ctrl g n fun_node;
     n
 
+let get_param_nodes g (fun_node : (Node2.fun_def, Node2.ctrl) Node2.t) =
+    let rec get_params_nodes : Node2.any list -> (Node2.any_data Node2.phi, Node2.data) Node2.t list
+        = function
+        | [] -> []
+        | Node2.AnyNode h :: t -> (
+            match h.Node2.kind with
+            | Data (Param _) -> h :: get_params_nodes t
+            | _ -> get_params_nodes t)
+    in
+    let compare_params :
+        (Node2.any_data Node2.phi, Node2.data) Node2.t ->
+        (Node2.any_data Node2.phi, Node2.data) Node2.t ->
+        int =
+       fun p p' ->
+        match (p.kind, p'.kind) with
+        | Data (Param i), Data (Param i') -> Int.compare i i'
+        | _, _ -> assert false
+    in
+    let datas =
+        Node2.G.get_dependants g fun_node |> get_params_nodes |> List.sort ~compare:compare_params
+    in
+    let mem =
+        Node2.G.get_dependants g fun_node
+        |> List.find_map_exn
+             ~f:(fun (AnyNode n) : (Node2.any_mem Node2.phi, Node2.mem) Node2.t option ->
+               match n.kind with
+               | Mem Param -> Some n
+               | _ -> None)
+    in
+    (mem, datas)
+
 let add_call : type a b c.
     Node2.G.readwrite Node2.G.t ->
     Ast.loc ->
@@ -87,27 +118,8 @@ let link_call g ~call_node ~fun_node =
             | _ -> find_call_end t)
     in
     let call_end = Node2.G.get_dependants g call_node |> find_call_end in
-    let rec get_params_nodes : Node2.any list -> (Node2.any_data Node2.phi, Node2.data) Node2.t list
-        = function
-        | [] -> []
-        | Node2.AnyNode h :: t -> (
-            match h.Node2.kind with
-            | Data (Param _) -> h :: get_params_nodes t
-            | _ -> get_params_nodes t)
-    in
-    let compare_params :
-        (Node2.any_data Node2.phi, Node2.data) Node2.t ->
-        (Node2.any_data Node2.phi, Node2.data) Node2.t ->
-        int =
-       fun p p' ->
-        match (p.kind, p'.kind) with
-        | Data (Param i), Data (Param i') -> Int.compare i i'
-        | _, _ -> assert false
-    in
-    let param_nodes =
-        Node2.G.get_dependants g fun_node |> get_params_nodes |> List.sort ~compare:compare_params
-    in
-    let { Node2.fun_ptr = _; mem = _; args } = Node2.G.get_dependencies_exn g call_node in
+    let { Node2.fun_ptr = _; mem = mem_arg; args } = Node2.G.get_dependencies_exn g call_node in
+    let mem_param, param_nodes = get_param_nodes g fun_node in
     match List.zip param_nodes args with
     | Unequal_lengths ->
         [%log.debug
@@ -122,7 +134,8 @@ let link_call g ~call_node ~fun_node =
           { call_sites = call_sites @ [ Some (AnyCtrl call_node) ] };
         List.iter l ~f:(fun (param, arg) ->
             let arg = Option.value_exn arg in
-            Phi_node.add_input g param arg)
+            Phi_node.add_input g param arg);
+        Phi_node.add_input g mem_param (Option.value_exn mem_arg)
 
 let add_return ?parent_fun g ret_node ~ctrl ~mem ~val_n =
     let { Node2.mem = phi_mem; data = phi_data } = Node2.G.get_dependencies_exn g ret_node in

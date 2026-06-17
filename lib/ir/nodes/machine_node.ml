@@ -224,7 +224,53 @@ module N = struct
       | Ideal Region, Ideal Region -> true
       | Ideal Phi, Ideal Phi -> true
       | Ideal (External s), Ideal (External s') -> String.equal s s'
-      | _, _ -> false
+      | Int i, _ -> false
+      | Ptr, _ -> false
+      | AddrOf, _ -> false
+      | Deref, _ -> false
+      | ZeroExtend, _ -> false
+      | SignExtend, _ -> false
+      | Add, _ -> false
+      | AddImm i, _ -> false
+      | Sub, _ -> false
+      | SubImm i, _ -> false
+      | Mul, _ -> false
+      | MulImm i, _ -> false
+      | Div, _ -> false
+      | Lsh, _ -> false
+      | Rsh, _ -> false
+      | And, _ -> false
+      | Or, _ -> false
+      | LshImm i, _ -> false
+      | RshImm i, _ -> false
+      | AndImm i, _ -> false
+      | OrImm i, _ -> false
+      | Cmp, _ -> false
+      | CmpImm i, _ -> false
+      | Set op, _ -> false
+      | JmpAlways, _ -> false
+      | Jmp op, _ -> false
+      | Mov, _ -> false
+      | DProj i, _ -> false
+      | FunctionProlog i, _ -> false
+      | Return, _ -> false
+      | FunctionCall i, _ -> false
+      | FunctionCallEnd, _ -> false
+      | Param i, _ -> false
+      | CalleeSave r, _ -> false
+      | New, _ -> false
+      | Store, _ -> false
+      | Load, _ -> false
+      | Noop, _ -> false
+      | RepMov i, _ -> false
+      | Ideal Loop, _ -> false
+      | Ideal (CProj i), _ -> false
+      | Ideal (MProj i), _ -> false
+      | Ideal Start, _ -> false
+      | Ideal Stop, _ -> false
+      | Ideal Region, _ -> false
+      | Ideal Phi, _ -> false
+      | Ideal (External s), _ -> false
 
   let rec pp_any fmt (AnyNode n) = pp fmt n
 
@@ -496,7 +542,53 @@ module N = struct
       | Ideal Region, Ideal Region -> Some Type.Equal
       | Ideal Phi, Ideal Phi -> Some Type.Equal
       | Ideal (External _), Ideal (External _) -> Some Type.Equal
-      | _, _ -> None
+      | Int _, _ -> None
+      | Ptr, _ -> None
+      | AddrOf, _ -> None
+      | Deref, _ -> None
+      | ZeroExtend, _ -> None
+      | SignExtend, _ -> None
+      | Add, _ -> None
+      | AddImm _, _ -> None
+      | Sub, _ -> None
+      | SubImm _, _ -> None
+      | Mul, _ -> None
+      | MulImm _, _ -> None
+      | Div, _ -> None
+      | Lsh, _ -> None
+      | Rsh, _ -> None
+      | And, _ -> None
+      | Or, _ -> None
+      | LshImm _, _ -> None
+      | RshImm _, _ -> None
+      | AndImm _, _ -> None
+      | OrImm _, _ -> None
+      | Cmp, _ -> None
+      | CmpImm _, _ -> None
+      | Set _, _ -> None
+      | JmpAlways, _ -> None
+      | Jmp _, _ -> None
+      | Mov, _ -> None
+      | DProj _, _ -> None
+      | FunctionProlog _, _ -> None
+      | Return, _ -> None
+      | FunctionCall _, _ -> None
+      | FunctionCallEnd, _ -> None
+      | Param _, _ -> None
+      | CalleeSave _, _ -> None
+      | New, _ -> None
+      | Store, _ -> None
+      | Load, _ -> None
+      | Noop, _ -> None
+      | RepMov _, _ -> None
+      | Ideal Loop, _ -> None
+      | Ideal (CProj _), _ -> None
+      | Ideal (MProj _), _ -> None
+      | Ideal Start, _ -> None
+      | Ideal Stop, _ -> None
+      | Ideal Region, _ -> None
+      | Ideal Phi, _ -> None
+      | Ideal (External _), _ -> None
 
   let[@inline] type_eq : type a b taga tagb.
       (a, taga) t -> (b, tagb) t -> ((a, b) Type.eq * (taga, tagb) Type.eq) option =
@@ -732,11 +824,11 @@ let get_in_reg_mask : type a b. G.readonly G.t -> (a, b) t -> int -> Registers.M
           let calle_saved = Registers.Mask.callee_save |> Registers.Mask.to_list in
           Some (Registers.Mask.of_list [ List.nth_exn calle_saved (i - 2) ])
     | FunctionCall (Some _) ->
-        (* skip memory input, known function call so no fun_ptr as input which makes memory at index 0 *)
-        if i = 0 then
+        (* skip non existant fun ptr input and the memory input, known function call so no fun_ptr as input which makes memory at index 0 *)
+        if i = 0 || i = 1 then
           None
         else
-          Some (Registers.Mask.x64_systemv (i - 1))
+          Some (Registers.Mask.x64_systemv (i - 2))
     | FunctionCall None ->
         (* When the call target is not compile time known the first input to
            the FunctionCall node is the function ptr then memory and arguments come after *)
@@ -1355,9 +1447,17 @@ and of_ctrl_node : type a.
         let node = G.get_start machine_g in
         node
     | Ctrl (Proj i) ->
-        simple (Ideal (CProj i)) n (fun { input } ->
-            let (AnyNode input) = Option.value_exn input in
-            { input = convert_node memo g machine_g input })
+        let kind = Ideal (CProj i) in
+
+        let node = create_node kind (AnyNode n) in
+        Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
+        let { Node2.input } = Node2.G.get_dependencies_exn g n in
+        let (AnyNode input) = Option.value_exn input in
+        let inputs = { input = convert_node memo g machine_g input } in
+        G.add_node machine_g node inputs;
+        let (AnyNode ctrl) = inputs.input in
+        G.set_ctrl machine_g node ctrl;
+        AnyNode node
     | Ctrl Loop ->
         simple (Ideal Loop) n (fun { entry; backedge } ->
             let (AnyCtrl entry) = Option.value_exn entry in

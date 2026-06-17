@@ -288,32 +288,13 @@ let pass_by_ptr g p =
     Node2.G.set_node_inputs g p { Node2.phi_inputs = new_inputs }
 
 let do_node g fun_node =
-    let params =
-        Node2.G.get_dependants g fun_node
-        |> List.filter_map ~f:(fun (AnyNode n) ->
-            match n.kind with
-            | Data (Param i) ->
-                let n = Node2.unpack_exn n (Data (Param i)) in
-                Some (i, n)
-            | _ -> None)
-        |> List.sort ~compare:(fun (i, _) (i', _) ->
-            assert (i <> i');
-            Int.compare i i')
-    in
-    let mem_param =
-        Node2.G.get_dependants g fun_node
-        |> List.find_map_exn
-             ~f:(fun (AnyNode n) : (Node2.any_mem Node2.phi, Node2.mem) Node2.t option ->
-               match n.kind with
-               | Mem Param -> Some n
-               | _ -> None)
-    in
+    let mem_param, params = Fun_node.get_param_nodes (Node2.G.readonly g) fun_node in
 
     let mem_param_orig_uses = Node2.G.get_dependants g mem_param in
 
     let _, new_params, mem, _ =
-        List.fold params ~init:(0, [], Node2.AnyMem mem_param, 0)
-          ~f:(fun (used_up_regs, params_acc, mem, extra_param_offset) (i, p) ->
+        List.foldi params ~init:(0, [], Node2.AnyMem mem_param, 0)
+          ~f:(fun i (used_up_regs, params_acc, mem, extra_param_offset) p ->
             p.kind <- Data (Param (i + extra_param_offset));
 
             if used_up_regs = max_regs_for_params then

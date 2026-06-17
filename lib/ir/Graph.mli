@@ -44,17 +44,17 @@ module type S = sig
   val add_node : readwrite t -> ('a, 't) N.t -> 'a -> unit
   (** [add_node g n inputs] adds the node [n] to [g] along with its [inputs].
 
-      [n] must not be already in [g]. The nodes in [input] do not have to already be in [g] *)
+      [n] must not be already in [g]. All the nodes in [inputs] have to already be in [g] *)
 
   val set_node_inputs : readwrite t -> ('a, 't) N.t -> 'a -> unit
   (** [set_node_inputs g n inputs] overwrites [n]'s inputs in the graph [g].
 
-      [n] must already be part of [g] *)
+      [n] must already be part of [g]. All the nodes in [inputs] have to already be in [g] *)
 
   val set_ctrl : readwrite t -> ('a, 'ta) N.t -> ('b, 'tb) N.t -> unit
   (** [set_ctrl g n ctrl] sets the control input of [n] to [ctrl].
 
-      [n] must already be part of [g] *)
+      [n] must already be part of [g]. [ctrl] must already be part of [g] *)
 
   val unlink_ctrl : readwrite t -> ('a, 'ta) N.t -> unit
   (** [unlink_ctrl g n] sets n's control input to None.

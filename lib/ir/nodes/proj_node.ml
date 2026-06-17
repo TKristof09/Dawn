@@ -29,7 +29,7 @@ let create_mem g loc ?parent_fun n i =
     | Tuple (Value l) -> (
         match List.nth_exn l i with
         | Types.Memory ->
-            let proj = Node2.create_mem ?parent_fun loc Control (Proj i) in
+            let proj = Node2.create_mem ?parent_fun loc Memory (Proj i) in
             Node2.G.add_node g proj { Node2.input = Some (AnyNode n) };
             proj
         | t -> assert false)

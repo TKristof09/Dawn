@@ -165,15 +165,7 @@ let do_node : type a b. Node2.G.readwrite Node2.G.t -> (a, b) Node2.t -> unit =
         let already_casted = Hash_set.create (module Node2.AnyData) in
         let new_args =
             List.fold functions ~init:args ~f:(fun args f ->
-                let params =
-                    Node2.G.get_dependants g f
-                    |> List.filter_map
-                         ~f:(fun
-                             (AnyNode n) : (Node2.any_data Node2.phi, Node2.data) Node2.t option ->
-                           match n.Node2.kind with
-                           | Data (Param _) -> Some n
-                           | _ -> None)
-                in
+                let _, params = Fun_node.get_param_nodes (Node2.G.readonly g) f in
                 List.zip_exn params args
                 |> List.map ~f:(fun (param, arg) ->
                     match arg with

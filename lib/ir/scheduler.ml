@@ -249,11 +249,26 @@ let schedule_late g =
           | CalleeSave _ ->
               Hashtbl.set m ~key:node ~data:(Machine_node.G.get_ctrl_exn g node_unwrapped)
           | DProj _ ->
-              let (AnyNode cfg) = Machine_node.G.get_ctrl_exn g node_unwrapped in
+              let { Machine_node.input = AnyNode input } =
+                  Machine_node.G.get_dependencies_exn g node_unwrapped
+              in
+              let (AnyNode cfg) = Machine_node.G.get_ctrl_exn g input in
               if Machine_node.is_control_node cfg then
                 Hashtbl.set m ~key:node ~data:(AnyNode cfg)
               else
                 ()
+          | Ideal (MProj _) ->
+              let { Machine_node.input = AnyNode input } =
+                  Machine_node.G.get_dependencies_exn g node_unwrapped
+              in
+              if Machine_node.is_control_node input then
+                Hashtbl.set m ~key:node ~data:(AnyNode input)
+              else
+                let (AnyNode cfg) = Machine_node.G.get_ctrl_exn g input in
+                if Machine_node.is_control_node cfg then
+                  Hashtbl.set m ~key:node ~data:(AnyNode cfg)
+                else
+                  ()
           | _ when Machine_node.is_control_node node_unwrapped ->
               if Machine_node.is_blockhead node_unwrapped then
                 Hashtbl.set m ~key:node ~data:node
@@ -286,7 +301,6 @@ let schedule_late g =
         match key.kind with
         | Ideal Phi -> ()
         | _ when Machine_node.is_control_node key -> ()
-        | DProj _ -> ()
         | _ -> Machine_node.G.set_ctrl g key data)
 
 let score g (Machine_node.AnyNode n) =
@@ -421,9 +435,9 @@ let duplicate_constants g function_graphs =
         | Some tbl ->
             Hashtbl.iteri tbl ~f:(fun ~key:old ~data ->
                 let new_copy = { old with id = Machine_node.next_id () } in
+                Machine_node.G.add_node g new_copy ();
                 List.iter data ~f:(fun (AnyNode use, dep_idx) ->
                     Machine_node.G.replace_input g ~node:use ~from:old ~to_:new_copy);
-                Machine_node.G.add_node g new_copy ();
                 Machine_node.G.set_ctrl g new_copy fun_start))
 
 let schedule g =

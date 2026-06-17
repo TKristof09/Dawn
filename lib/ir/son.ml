@@ -429,9 +429,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         Scope_node.set_mem g scope mem;
         List.zip_exn param_types param_names
         |> List.iteri ~f:(fun i (ptype, pname) ->
-            let param_node =
-                Fun_node.create_param ~parent_fun:fun_idx g loc fun_node ptype (i + 1)
-            in
+            let param_node = Fun_node.create_param ~parent_fun:fun_idx g loc fun_node ptype i in
             param_node.min_typ <- Some ptype;
             if String.equal pname Scope_node.ret_identifier then
               Scope_node.set_ret_ptr g scope param_node
@@ -496,7 +494,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let params =
             List.mapi param_types ~f:(fun i param_type ->
                 let param_node =
-                    Fun_node.create_param ~parent_fun:fun_idx g loc fun_node param_type (i + 1)
+                    Fun_node.create_param ~parent_fun:fun_idx g loc fun_node param_type i
                 in
                 param_node.min_typ <- Some param_type;
                 param_node)
@@ -598,7 +596,7 @@ let of_ast ast linker =
     let g = Node2.G.create ~start:(AnyNode start) ~stop:(AnyNode stop) in
     let ctrl = Proj_node.create_ctrl g loc start 0 in
     let mem = Proj_node.create_mem g loc start 1 in
-    let scope = Scope_node.create () in
+    let scope = Scope_node.create g in
     Scope_node.set_ctrl g scope ctrl;
     Scope_node.set_mem g scope mem;
     let builtin_types =
@@ -611,6 +609,7 @@ let of_ast ast linker =
     let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
     Node2.G.set_ctrl g stop ctrl;
     Scope_node.set_ctrl g scope stop;
+    Node2.G.set_node_inputs g stop { mem = Some (Scope_node.get_mem g scope) };
     (* makes life easier and we dont need the scope anymore i think*)
     Node2.G.remove_node g scope;
     (* Node2.G.add_dependencies g stop (Node2.G.get_dependencies g scope |> List.tl_exn); *)

@@ -50,6 +50,11 @@ val link_call :
 val get_call_fun_ptr :
   'a Node2.G.t -> (Node2.fun_call, Node2.ctrl) Node2.t -> (unit, Node2.data) Node2.t
 
+val get_param_nodes :
+  Node2.G.readonly Node2.G.t ->
+  (Node2.fun_def, Node2.ctrl) Node2.t ->
+  (Node2.any_mem Node2.phi, Node2.mem) Node2.t * (Node2.any_data Node2.phi, Node2.data) Node2.t list
+
 val compute_fun_node_type :
   Node2.G.readonly Node2.G.t ->
   (Node2.fun_def, Node2.ctrl) Node2.t ->

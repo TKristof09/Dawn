@@ -1,6 +1,10 @@
 open Core
 
-let create () = Node2.create_scope ()
+let create g =
+    let n = Node2.create_scope () in
+    Node2.G.add_node g n { vars = [] };
+    n
+
 let ctrl_identifier = "$ctrl"
 let mem_identifier = "$mem"
 let ret_identifier = "$ret"

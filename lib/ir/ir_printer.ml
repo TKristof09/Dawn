@@ -26,7 +26,8 @@ let node_label : type a b. (a, b) Node2.t -> string =
         match node.kind with
         | Data Constant -> "Const"
         | Data (Proj i)
-        | Ctrl (Proj i) ->
+        | Ctrl (Proj i)
+        | Mem (Proj i) ->
             Printf.sprintf "Proj %d" i
         | Data (Param i) -> Printf.sprintf "Param %d" i
         | Data (Load s) -> Printf.sprintf "Load %s" s
@@ -53,7 +54,8 @@ let get_edge_style : type a b c d. (a, b) Node2.t -> (c, d) Node2.t -> string =
         | Tuple (Value l) -> (
             match use.kind with
             | Ctrl (Proj i)
-            | Data (Proj i) ->
+            | Data (Proj i)
+            | Mem (Proj i) ->
                 aux (List.nth_exn l i) use_typ
             | Ctrl (Function _) -> "color=red"
             | Ctrl FunctionCallEnd -> ""
@@ -98,10 +100,9 @@ let pp_dot fmt g =
     Hashtbl.iteri functions ~f:(fun ~key:fun_idx ~data:nodes ->
         Format.fprintf fmt "subgraph cluster_func_%d {\n" fun_idx;
         if fun_idx = 0 then
-          Format.fprintf fmt "  label=\"Top level\";"
+          Format.fprintf fmt "  label=\"Top level\";\n"
         else
-          Format.fprintf fmt "  label=\"Function #%d\";" fun_idx;
-
+          Format.fprintf fmt "  label=\"Function #%d\";\n" fun_idx;
         List.iter nodes ~f:(fun (AnyNode node) ->
             match node.kind with
             | Scope _ -> () (* Skip scopes for now *)
@@ -146,7 +147,8 @@ let pp_dot fmt g =
         | Data Constant -> ()
         | _ ->
             let deps = Node2.G.get_dependencies_list g node in
-            List.iteri deps ~f:(fun i dep ->
+            let ctrl = Node2.G.get_ctrl g node in
+            List.iteri (ctrl :: deps) ~f:(fun i dep ->
                 match dep with
                 | None -> ()
                 | Some (AnyNode dep) -> (
@@ -246,7 +248,8 @@ let pp_dot_machine fmt g =
         | Data Constant -> ()
         | _ ->
             let deps = Machine_node.G.get_dependencies_list g node in
-            List.iteri deps ~f:(fun i dep ->
+            let ctrl = Machine_node.G.get_ctrl g node in
+            List.iteri (ctrl :: deps) ~f:(fun i dep ->
                 match dep with
                 | None -> ()
                 | Some (AnyNode dep) ->
