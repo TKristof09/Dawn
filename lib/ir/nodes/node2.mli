@@ -46,7 +46,6 @@ and _ ctrl_kind =
         ret : (ret, ctrl) t;
         signature : Types.t;
         idx : int;
-        is_extern : bool;
       }
         -> fun_def ctrl_kind
     | Return : ret ctrl_kind

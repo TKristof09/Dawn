@@ -50,8 +50,9 @@ type allocation_failure = {
 let build_live_ranges (g : Graph.readonly Graph.t) program =
     let ranges = Hashtbl.create (module Machine_node.Any) in
     List.iter program ~f:(fun (Machine_node.AnyNode n) ->
+        let (Node2.AnyNode ir_node) = n.ir_node in
         (match n.kind with
-        | Ideal Phi ->
+        | Ideal Phi when not (Types.equal ir_node.typ Memory) ->
             (* merge all depedencies into same live range except for the control depedency, we don't care about that *)
             let { Machine_node.phi_inputs } = Graph.get_dependencies_exn g n in
             let merged =
@@ -253,9 +254,8 @@ end = struct
                           | Ideal Phi ->
                               let (AnyNode ctrl) = Graph.get_ctrl_exn g n in
                               let { Machine_node.phi_inputs } = Graph.get_dependencies_exn g n in
-                              if Machine_node.equal ctrl head then (
-                                assert (i <> 0);
-                                List.nth_exn phi_inputs i |> Option.value_exn)
+                              if Machine_node.equal ctrl head then
+                                List.nth_exn phi_inputs i |> Option.value_exn
                               else
                                 AnyNode n
                           | _ -> AnyNode n
@@ -342,8 +342,6 @@ end = struct
 
           (* add the nodes it uses *)
           Graph.get_dependencies_list g node_unwrapped
-          |> List.tl
-          |> Option.value ~default:[]
           |> List.iter ~f:(function
             | None -> ()
             | Some dep -> (
@@ -584,7 +582,7 @@ let spill_node g (lrg : Range.t) (Machine_node.AnyNode n) =
        fun g n ->
         let n' = Machine_node.create_node n.kind n.ir_node in
         let (AnyNode cfg) = Graph.get_ctrl_exn g n in
-        Graph.add_node g n' (Graph.get_dependencies_list g n |> n.inputs_of_list);
+        Graph.add_node g n' (Graph.get_dependencies_exn g n);
         Graph.set_ctrl g n' cfg;
         n'
     in
@@ -861,8 +859,13 @@ let split g program (lrg : Range.t) =
             List.fold (Graph.get_dependants g n) ~init:prog ~f:(fun prog use ->
                 insert_before g prog lrg ~before_this:use ~node_to_spill:(AnyNode n))
         in
-        (* create spill, this makes every reload that we just created use the spill rather than the original n *)
-        duplicate_after g prog lrg n)
+        (* create spill, this makes every reload that we just created use the
+           spill rather than the original n. Except if the node was
+           rematerialised and not spilled *)
+        if not (Machine_node.is_cheap_to_clone n) then
+          duplicate_after g prog lrg n
+        else
+          prog)
 
 let cleanup_mov g (n : (Machine_node.unary, 'a) Machine_node.t) reg_assign =
     let { Machine_node.input = AnyNode input } = Graph.get_dependencies_exn g n in

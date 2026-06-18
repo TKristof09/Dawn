@@ -47,8 +47,7 @@ val link_call :
   fun_node:(Node2.fun_def, Node2.ctrl) Node2.t ->
   unit
 
-val get_call_fun_ptr :
-  'a Node2.G.t -> (Node2.fun_call, Node2.ctrl) Node2.t -> (unit, Node2.data) Node2.t
+val get_call_fun_ptr : 'a Node2.G.t -> (Node2.fun_call, Node2.ctrl) Node2.t -> Node2.any_data
 
 val get_param_nodes :
   Node2.G.readonly Node2.G.t ->

@@ -20,6 +20,7 @@ let compile filename =
           exit 1)
         else (
           Struct_fun_args.run son;
+          [%log.debug "\n%s" (Ir_printer.to_dot (Node2.G.readonly son))];
           Integer_widening.run son;
           [%log.debug "\n%s" (Ir_printer.to_dot (Node2.G.readonly son))];
           let schedules = Scheduler.schedule (Node2.G.readonly son) in

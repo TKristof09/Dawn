@@ -343,7 +343,7 @@ let run g =
               (Node2.fun_def, Node2.ctrl) Node2.t list
             ->
             match n.kind with
-            | Ctrl (Function f) -> if f.is_extern then acc else n :: acc
+            | Ctrl (Function f) -> n :: acc
             | _ -> acc)
     in
     List.iter nodes ~f:(do_node g)

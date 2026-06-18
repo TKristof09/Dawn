@@ -26,7 +26,7 @@ let set_name linker idx new_name =
 
 let link linker g call_node =
     let fun_nodes = ref [] in
-    let fun_ptr = Fun_node.get_call_fun_ptr g call_node in
+    let (AnyData fun_ptr) = Fun_node.get_call_fun_ptr g call_node in
     Types.iter_fun_indices fun_ptr.typ linker.universe ~f:(fun fun_idx ->
         let fun_node = Dynarray.get linker.functions (fun_idx - 1) |> snd in
         [%log.debug "Linking %a to %s" Node2.pp call_node (get_name linker fun_idx)];

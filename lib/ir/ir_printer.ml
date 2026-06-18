@@ -59,7 +59,7 @@ let get_edge_style : type a b c d. (a, b) Node2.t -> (c, d) Node2.t -> string =
                 aux (List.nth_exn l i) use_typ
             | Ctrl (Function _) -> "color=red"
             | Ctrl FunctionCallEnd -> ""
-            | _ -> assert false)
+            | _ -> "color=purple")
         | _ -> ""
     in
     match (def.kind, use.kind) with
@@ -281,8 +281,6 @@ let show_node_compact g node =
     let type_str = Types.show node.typ |> String.substr_replace_all ~pattern:"\n" ~with_:" " in
     let deps_str =
         Node2.G.get_dependencies_list g node
-        |> List.tl
-        |> Option.value ~default:[]
         |> List.map ~f:(function
           | None -> "_"
           | Some (AnyNode n) -> Printf.sprintf "%%%d" n.id)
@@ -355,8 +353,6 @@ let show_machine_compact : type a b.
     let deps_str =
         Machine_node.G.get_dependencies_list g node
         |> List.filter_opt
-        |> List.tl
-        |> Option.value ~default:[]
         |> List.map ~f:(fun (AnyNode n) ->
             match reg_assoc with
             | Some tbl -> (

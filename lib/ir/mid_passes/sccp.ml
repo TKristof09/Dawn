@@ -25,6 +25,8 @@ let as_binop : type a b. (a, b) Node2.t -> (Node2.binop, Node2.data) Node2.t =
     | Data GEq -> n
     | Data BAnd -> n
     | Data BOr -> n
+    | Data Lsh -> n
+    | Data Rsh -> n
     | _ -> assert false
 
 let set_type g n new_type =
@@ -152,7 +154,8 @@ let work : type a b.
                        ~f:(fun (AnyNode dep) : (Node2.fun_call, Node2.ctrl) Node2.t option ->
                          match dep.kind with
                          | Ctrl FunctionCall ->
-                             if Node2.equal (Fun_node.get_call_fun_ptr g dep) n then
+                             let (AnyData fun_ptr) = Fun_node.get_call_fun_ptr g dep in
+                             if Node2.equal fun_ptr n then
                                Some dep
                              else
                                None

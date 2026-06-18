@@ -33,6 +33,8 @@ let as_binop : type a b. (a, b) Node2.t -> (Node2.binop, Node2.data) Node2.t =
     | Data GEq -> n
     | Data BAnd -> n
     | Data BOr -> n
+    | Data Lsh -> n
+    | Data Rsh -> n
     | _ -> assert false
 
 let do_data_node : type a.

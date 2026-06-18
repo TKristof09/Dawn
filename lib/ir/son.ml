@@ -490,8 +490,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         fun_node.parent_fun <- Some fun_idx;
         Linker.set_name linker fun_idx external_name;
         (match fun_node.kind with
-        | Ctrl (Function k) ->
-            fun_node.kind <- Ctrl (Function { k with idx = fun_idx; is_extern = true }));
+        | Ctrl (Function k) -> fun_node.kind <- Ctrl (Function { k with idx = fun_idx }));
         let fun_ptr = Const_node.create_fun_ptr ?parent_fun g loc fun_node fun_idx in
         (* TODO the extern node should probably also pretend to use the MEMORY
            since it could store stuff into the passed in ptr when return value

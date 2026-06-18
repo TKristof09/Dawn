@@ -62,14 +62,16 @@ and assign : type a b.
     let symbol =
         match symbol.kind with
         | Scope old_tbl -> (
-            let { name = _; node = AnyNode tmp; is_const = _; is_forward_ref = _; idx = _ } =
-                Symbol_table.find_symbol old_tbl name |> Core.Option.value_exn
-            in
-            let symbol = Node2.unpack_exn symbol (Scope old_tbl) in
-            let (AnyCtrl ctrl) = get_ctrl g symbol in
+            let old_scope = Node2.unpack_exn symbol (Scope old_tbl) in
+            let (AnyNode tmp) = get g old_scope name in
+            let (AnyCtrl ctrl) = get_ctrl g old_scope in
             let tmp_ctrl = Node2.G.get_ctrl g tmp in
             match tmp.kind with
             | Data Phi
+              when Option.exists tmp_ctrl ~f:(fun (AnyNode tmp_ctrl) -> Node2.equal tmp_ctrl ctrl)
+              ->
+                Node2.AnyNode symbol
+            | Mem Phi
               when Option.exists tmp_ctrl ~f:(fun (AnyNode tmp_ctrl) -> Node2.equal tmp_ctrl ctrl)
               ->
                 Node2.AnyNode symbol
@@ -135,20 +137,24 @@ and get g scope name : Node2.any =
     match symbol with
     | None ->
         let fref = Node2.create_forward_ref name in
+        Node2.G.add_node g fref ();
         define g scope name fref false;
         AnyNode fref
     | Some { name = _; node = AnyNode symbol; is_const = _; is_forward_ref = _; idx = _ } -> (
         match symbol.kind with
         | Scope old_tbl ->
-            let { name = _; node = AnyNode tmp; is_const = _; is_forward_ref = _; idx = _ } =
-                Symbol_table.find_symbol old_tbl name |> Core.Option.value_exn
-            in
+            let old_scope = symbol in
+            let (AnyNode tmp) = get g old_scope name in
             let old_scope = Node2.unpack_exn symbol (Scope old_tbl) in
             let (AnyCtrl ctrl) = get_ctrl g old_scope in
             let tmp_ctrl = Node2.G.get_ctrl g tmp in
             let new_symbol =
                 match tmp.kind with
                 | Data Phi
+                  when Option.exists tmp_ctrl ~f:(fun (AnyNode tmp_ctrl) ->
+                           Node2.equal tmp_ctrl ctrl) ->
+                    Node2.AnyNode tmp
+                | Mem Phi
                   when Option.exists tmp_ctrl ~f:(fun (AnyNode tmp_ctrl) ->
                            Node2.equal tmp_ctrl ctrl) ->
                     Node2.AnyNode tmp

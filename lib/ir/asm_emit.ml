@@ -115,6 +115,7 @@ let get_label (Machine_node.AnyNode n) =
 let rec is_jmp_target g (Machine_node.AnyNode n) =
     match n.kind with
     | Ideal Region -> true
+    | Ideal Loop -> true
     | _ ->
         List.exists (Graph.get_dependencies_list g n) ~f:(fun n' ->
             match n' with
@@ -417,9 +418,11 @@ let asm_of_node g reg_assoc linker n prev_node next_node =
                     (Hashtbl.find_exn reg_assoc input, size)
             in
             let reg = Hashtbl.find_exn reg_assoc n in
-            let size = Types.get_size ir_node.typ in
+
             let op_str = asm_of_op n_unwrapped.kind in
-            Printf.sprintf "\t%s %s, %s" op_str (asm_of_loc reg size) (asm_of_loc in_reg in_size)
+            (* input size and output size are the same (since mov is just
+               spill/reload and has same .ir_node as it's input) *)
+            Printf.sprintf "\t%s %s, %s" op_str (asm_of_loc reg in_size) (asm_of_loc in_reg in_size)
         | Set _ ->
             let op_str = asm_of_op n_unwrapped.kind in
             let reg = Hashtbl.find_exn reg_assoc n in
@@ -506,23 +509,79 @@ let asm_of_node g reg_assoc linker n prev_node next_node =
     let jmp_target =
         match prev_node with
         | None -> None
-        | Some (Machine_node.AnyNode prev_node) ->
+        | Some (Machine_node.AnyNode prev_node) -> (
+            let get_successor_cfg cfg =
+                let (AnyNode succ_ctrl) =
+                    Graph.get_dependants g cfg
+                    |> List.find_exn ~f:(fun (AnyNode n) -> Machine_node.is_control_node n)
+                in
+                if Machine_node.is_blockhead succ_ctrl then
+                  Machine_node.AnyNode succ_ctrl
+                else
+                  Graph.get_dependants g succ_ctrl
+                  |> List.find_exn ~f:(fun (AnyNode n) -> Machine_node.is_blockhead n)
+            in
             let (AnyNode cfg_prev) =
                 if Machine_node.is_control_node prev_node then
                   Machine_node.AnyNode prev_node
                 else
                   Graph.get_ctrl_exn g prev_node
             in
-            let (AnyNode precedent) = Graph.get_ctrl_exn g n_unwrapped in
-            if Machine_node.is_blockhead n_unwrapped && not (Machine_node.equal precedent cfg_prev)
-            then
-              let target =
-                  Graph.get_dependants g cfg_prev
-                  |> List.find_exn ~f:(fun (AnyNode n) -> Machine_node.is_blockhead n)
-              in
-              Some target
-            else
-              None
+            match n_unwrapped.kind with
+            | Ideal Loop
+            | Ideal Region ->
+                let ctrl_inputs =
+                    match n_unwrapped.kind with
+                    | Ideal Region ->
+                        let { Machine_node.ctrl_inputs } =
+                            Graph.get_dependencies_exn g n_unwrapped
+                        in
+                        ctrl_inputs |> List.filter_opt
+                    | Ideal Loop ->
+                        let { Machine_node.entry; backedge } =
+                            Graph.get_dependencies_exn g n_unwrapped
+                        in
+                        [ entry; backedge ]
+                    | _ -> assert false
+                in
+
+                let precedent_cfgs =
+                    List.map ctrl_inputs ~f:(fun (AnyNode prev) ->
+                        if Machine_node.is_blockhead prev then
+                          Machine_node.AnyNode prev
+                        else
+                          let (AnyNode precedent) = Graph.get_ctrl_exn g prev in
+                          Graph.get_ctrl_exn g precedent)
+                in
+
+                if
+                  Machine_node.is_blockhead n_unwrapped
+                  && List.for_all precedent_cfgs ~f:(fun (AnyNode precedent_cfg) ->
+                      not (Machine_node.equal precedent_cfg cfg_prev))
+                  && not (Machine_node.equal_kind cfg_prev.kind (Ideal Stop))
+                then
+                  let target = get_successor_cfg cfg_prev in
+                  Some target
+                else
+                  None
+            | _ ->
+                let (AnyNode precedent) = Graph.get_ctrl_exn g n_unwrapped in
+                let (AnyNode precedent_cfg) =
+                    if Machine_node.is_blockhead precedent then
+                      Machine_node.AnyNode precedent
+                    else
+                      Graph.get_ctrl_exn g precedent
+                in
+
+                if
+                  Machine_node.is_blockhead n_unwrapped
+                  && (not (Machine_node.equal precedent_cfg cfg_prev))
+                  && not (Machine_node.equal_kind cfg_prev.kind (Ideal Stop))
+                then
+                  let target = get_successor_cfg cfg_prev in
+                  Some target
+                else
+                  None)
     in
     match jmp_target with
     | None ->

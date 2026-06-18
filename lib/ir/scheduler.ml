@@ -136,19 +136,20 @@ let schedule_early g =
           let is_pinned =
               match node.kind with
               | Ideal Phi
-              | DProj _ ->
+              | DProj _
+              | Ideal (MProj _) ->
                   true
               | _ -> false
           in
           if not is_pinned then
             let AnyNode scheduled_n, _ =
-                List.fold
-                  (List.tl deps |> Option.value ~default:[])
+                List.fold deps
                   ~init:(start, idepth g start)
                   ~f:(fun (max_n, max_depth) n ->
                     match n with
                     | None -> (max_n, max_depth)
                     | Some (AnyNode n) ->
+                        [%log.debug "%a %a" Machine_node.pp node Machine_node.pp n];
                         let cfg = Machine_node.G.get_ctrl_exn g n in
                         let d = idepth g cfg in
                         if d > max_depth then
@@ -156,7 +157,39 @@ let schedule_early g =
                         else
                           (max_n, max_depth))
             in
-            Machine_node.G.set_ctrl g node scheduled_n)
+            Machine_node.G.set_ctrl g node scheduled_n
+          else
+            match
+              node.kind
+            with
+            | DProj _ ->
+                let { Machine_node.input = AnyNode input } =
+                    Machine_node.G.get_dependencies_exn g node
+                in
+                let (AnyNode cfg) =
+                    if Machine_node.is_control_node input then
+                      Machine_node.AnyNode input
+                    else
+                      Machine_node.G.get_ctrl_exn g input
+                in
+                Machine_node.G.set_ctrl g node cfg
+            | Ideal (MProj _) ->
+                let { Machine_node.input = AnyNode input } =
+                    Machine_node.G.get_dependencies_exn g node
+                in
+                let (AnyNode cfg) =
+                    if Machine_node.is_control_node input then
+                      Machine_node.AnyNode input
+                    else
+                      Machine_node.G.get_ctrl_exn g input
+                in
+                Machine_node.G.set_ctrl g node cfg
+            | Ideal (CProj _) ->
+                let { Machine_node.input = AnyNode input } =
+                    Machine_node.G.get_dependencies_exn g node
+                in
+                Machine_node.G.set_ctrl g node input
+            | _ -> ())
     in
     rev_post_order_cfg g start
     |> List.iter ~f:(fun (AnyNode n) ->
@@ -192,6 +225,7 @@ let schedule_late g =
             let (AnyNode ctrl) = Machine_node.G.get_ctrl_exn g dependant in
             match ctrl.kind with
             | Ideal Loop ->
+                [%log.debug "\n%s" (Ir_printer.to_dot_machine (Machine_node.G.readonly g))];
                 let (AnyNode backedge) =
                     Machine_node.get_phi_backedge (Machine_node.G.readonly g) dependant
                     |> Option.value_exn
@@ -264,11 +298,11 @@ let schedule_late g =
               let { Machine_node.input = AnyNode input } =
                   Machine_node.G.get_dependencies_exn g node_unwrapped
               in
-              let (AnyNode cfg) = Machine_node.G.get_ctrl_exn g input in
-              if Machine_node.is_control_node cfg then
-                Hashtbl.set m ~key:node ~data:(AnyNode cfg)
+              if Machine_node.is_control_node input then
+                Hashtbl.set m ~key:node ~data:(AnyNode input)
               else
-                ()
+                let (AnyNode cfg) = Machine_node.G.get_ctrl_exn g input in
+                Hashtbl.set m ~key:node ~data:(AnyNode cfg)
           | Ideal (MProj _) ->
               let { Machine_node.input = AnyNode input } =
                   Machine_node.G.get_dependencies_exn g node_unwrapped
@@ -452,8 +486,8 @@ let duplicate_constants g function_graphs =
                     Machine_node.G.replace_input g ~node:use ~from:old ~to_:new_copy);
                 Machine_node.G.set_ctrl g new_copy fun_start))
 
-let schedule g =
-    let g = Machine_node.convert_graph g in
+let schedule ideal_g =
+    let g = Machine_node.convert_graph ideal_g in
     let per_function_graphs =
         Machine_node.G.partition g
           ~f:(fun (AnyNode n) -> get_function n)
@@ -548,7 +582,19 @@ let schedule g =
                 List.map (Registers.Mask.callee_save |> Registers.Mask.to_list) ~f:(fun r ->
                     match r with
                     | Reg reg ->
-                        let n = Machine_node.create_node (CalleeSave reg) fun_prolog.ir_node in
+                        (* create a dummy ir node for callee saves that is
+                               64 bit wide. This is needed because if they get
+                               spilled the Mov node gets the register size from
+                               ir_node.typ so can't just put the fun_prolog as
+                               ir_node since that has Control type *)
+                        let (AnyNode fun_ir_node) = fun_prolog.ir_node in
+                        let (AnyNode ret_ir_node) = ret_node.ir_node in
+                        let t = Types.make_int_const ~fixed_width:64 Z.zero in
+                        let fake_ir_node =
+                            Node2.create_data ?parent_fun:ret_ir_node.parent_fun fun_ir_node.loc t
+                              Constant
+                        in
+                        let n = Machine_node.create_node (CalleeSave reg) (AnyNode fake_ir_node) in
                         Machine_node.G.add_node g n ();
                         Machine_node.G.set_ctrl g n fun_prolog;
                         Machine_node.AnyNode n

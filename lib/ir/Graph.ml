@@ -245,31 +245,39 @@ module Make (N : NODE) : S with module N := N = struct
         remove_node t node_unwrapped
 
   let replace_input_unsafe g ~node ~from:(N.AnyNode from) ~to_ =
-      let node = N.AnyNode node in
-      match Hashtbl.find g.dependencies node with
-      | None -> failwith "Node not part of graph"
-      | Some (ctrl, Entry (ne, le)) ->
-          (* replace "from" with "to_" in node's dependencies *)
-          let new_le =
-              List.map le ~f:(function
-                | None -> None
-                | Some (N.AnyNode n') as o -> if N.id n' = N.id from then Some to_ else o)
-          in
-          Hashtbl.set g.dependencies ~key:node ~data:(ctrl, Entry (ne, new_le));
-          (* remove "node" from the dependants of "from" *)
-          remove_dependant g ~node:(N.AnyNode from) ~dependant:node;
-          (* add "node" to "to_"'s dependants *)
-          add_dependant g to_ node
+      let (N.AnyNode to_unwrapped) = to_ in
+      if N.id from = N.id to_unwrapped then
+        ()
+      else
+        let node = N.AnyNode node in
+        match Hashtbl.find g.dependencies node with
+        | None -> failwith "Node not part of graph"
+        | Some (ctrl, Entry (ne, le)) ->
+            (* replace "from" with "to_" in node's dependencies *)
+            let new_le =
+                List.map le ~f:(function
+                  | None -> None
+                  | Some (N.AnyNode n') as o -> if N.id n' = N.id from then Some to_ else o)
+            in
+            Hashtbl.set g.dependencies ~key:node ~data:(ctrl, Entry (ne, new_le));
+            (* add "node" to "to_"'s dependants *)
+            add_dependant g to_ node;
+            (* remove "node" from the dependants of "from" *)
+            remove_dependant g ~node:(N.AnyNode from) ~dependant:node
 
   let replace_input : type a ta b tb.
       readwrite t -> node:(a, ta) N.t -> from:(b, tb) N.t -> to_:(b, tb) N.t -> unit =
      fun g ~node ~from ~to_ -> replace_input_unsafe g ~node ~from:(AnyNode from) ~to_:(AnyNode to_)
 
   let replace_node_with_unsafe g ~from:(N.AnyNode from) ~to_ =
-      let users = get_dependants g from in
-      List.iter users ~f:(fun (N.AnyNode user) ->
-          replace_input_unsafe g ~node:user ~from:(AnyNode from) ~to_);
-      remove_node g from
+      let (N.AnyNode to_unwrapped) = to_ in
+      if N.id from = N.id to_unwrapped then
+        ()
+      else
+        let users = get_dependants g from in
+        (* after replacing all users of 'from', 'from' will be removed from the graph (because no dependants) so no need to call remove_node *)
+        List.iter users ~f:(fun (N.AnyNode user) ->
+            replace_input_unsafe g ~node:user ~from:(AnyNode from) ~to_)
 
   let replace_node_with : type a b. readwrite t -> from:(a, b) N.t -> to_:(a, b) N.t -> unit =
      fun g ~from ~to_ -> replace_node_with_unsafe g ~from:(N.AnyNode from) ~to_:(N.AnyNode to_)

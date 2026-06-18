@@ -48,7 +48,6 @@ module N = struct
           ret : (ret, ctrl) t;
           signature : Types.t;
           idx : int;
-          is_extern : bool;
         }
           -> fun_def ctrl_kind
       | Return : ret ctrl_kind
@@ -585,19 +584,20 @@ module N = struct
      fun n ->
       match n.kind with
       | Ctrl _ -> n
-      | _ -> failwith "Not a control node"
+      | _ -> failwithf "Not a control node %s" (show n) ()
 
   let[@inline] as_data_exn : type a b. (a, b) t -> (a, data) t =
      fun n ->
       match n.kind with
       | Data _ -> n
-      | _ -> failwith "Not a data node"
+      | ForwardRef _ -> n
+      | _ -> failwithf "Not a data node %s" (show n) ()
 
   let[@inline] as_mem_exn : type a b. (a, b) t -> (a, mem) t =
      fun n ->
       match n.kind with
       | Mem _ -> n
-      | _ -> failwith "Not a memory node"
+      | _ -> failwithf "Not a memory node %s" (show n) ()
 
   let is_ctrl : type a b. (a, b) t -> bool =
      fun n ->

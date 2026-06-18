@@ -1045,7 +1045,6 @@ let rec of_data_node : type a.
             Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
             let (AnyData normal) = lhs in
             let lhs = convert_node memo g machine_g normal in
-            [%log.debug "%a" Node2.pp n];
             G.add_node machine_g node { input = lhs };
             set_ctrl node;
             AnyNode node

@@ -25,7 +25,7 @@ let create g loc fun_ptr_type =
     Node2.G.set_ctrl g ret_node return_region;
     let fun_node =
         Node2.create_ctrl loc Control
-          (Function { ret = ret_node; signature = fun_ptr_type; idx = -1; is_extern = false })
+          (Function { ret = ret_node; signature = fun_ptr_type; idx = -1 })
     in
     Node2.G.add_node g fun_node { Node2.call_sites = [] };
     (fun_node, ret_node)
@@ -170,9 +170,7 @@ let get_signature n =
 
 let get_call_fun_ptr g (n : (Node2.fun_call, Node2.ctrl) Node2.t) =
     let { Node2.fun_ptr; mem = _; args = _ } = Node2.G.get_dependencies_exn g n in
-    let (AnyData fun_ptr) = Option.value_exn fun_ptr in
-    let fun_ptr = Node2.unpack_exn fun_ptr (Data Constant) in
-    fun_ptr
+    Option.value_exn fun_ptr
 
 let compute_fun_node_type g n =
     let { Node2.call_sites } = Node2.G.get_dependencies_exn g n in

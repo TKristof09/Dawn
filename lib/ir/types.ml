@@ -917,6 +917,7 @@ let rec get_size t =
             else
               get_size t)
     | ConstArray (Value { element_type; values = _ }) -> get_size element_type
+    | Array (Value { element_type; values = _ }) -> get_size element_type
     | Ptr _
     | FunPtr _ ->
         8
