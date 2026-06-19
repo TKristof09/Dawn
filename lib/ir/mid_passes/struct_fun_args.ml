@@ -330,7 +330,6 @@ let do_node g fun_node =
 
     let (AnyMem mem) = mem in
     List.iter mem_param_orig_uses ~f:(fun (AnyNode use) ->
-        [%log.debug "%a" Node2.pp mem];
         Node2.G.replace_input_unsafe g ~node:use ~from:(AnyNode mem_param) ~to_:(AnyNode mem))
 
 let run g =

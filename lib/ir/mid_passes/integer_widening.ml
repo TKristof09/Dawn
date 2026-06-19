@@ -165,7 +165,6 @@ let do_node : type a b. Node2.G.readwrite Node2.G.t -> (a, b) Node2.t -> unit =
         let already_casted = Hash_set.create (module Node2.AnyData) in
         let new_args =
             List.fold functions ~init:args ~f:(fun args f ->
-                [%log.debug "\n%s" (Ir_printer.to_dot (Node2.G.readonly g))];
                 let _, params = Fun_node.get_param_nodes (Node2.G.readonly g) f in
                 List.zip_exn params args
                 |> List.map ~f:(fun (param, arg) ->

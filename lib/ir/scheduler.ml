@@ -149,7 +149,6 @@ let schedule_early g =
                     match n with
                     | None -> (max_n, max_depth)
                     | Some (AnyNode n) ->
-                        [%log.debug "%a %a" Machine_node.pp node Machine_node.pp n];
                         let cfg = Machine_node.G.get_ctrl_exn g n in
                         let d = idepth g cfg in
                         if d > max_depth then
@@ -225,7 +224,6 @@ let schedule_late g =
             let (AnyNode ctrl) = Machine_node.G.get_ctrl_exn g dependant in
             match ctrl.kind with
             | Ideal Loop ->
-                [%log.debug "\n%s" (Ir_printer.to_dot_machine (Machine_node.G.readonly g))];
                 let (AnyNode backedge) =
                     Machine_node.get_phi_backedge (Machine_node.G.readonly g) dependant
                     |> Option.value_exn

@@ -928,6 +928,5 @@ let allocate g program =
     let reg_assign = Hashtbl.create (module Machine_node.Any) in
     Hashtbl.iteri lrg_to_reg ~f:(fun ~key:range ~data:reg ->
         Set.iter range.nodes ~f:(fun n -> Hashtbl.set reg_assign ~key:n ~data:reg));
-    [%log.debug "\n%s\n" ([%derive.show: Machine_node.any list] program)];
     let program = post_alloc_cleanup g program reg_assign in
     (program, reg_assign)
