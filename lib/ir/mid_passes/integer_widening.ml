@@ -216,6 +216,21 @@ let do_node : type a b. Node.G.readwrite Node.G.t -> (a, b) Node.t -> unit =
             if size_size < 8 then
               let cast = create_cast g size n n.loc 64 in
               Node.G.set_node_inputs g n { Node.mem; size = Some cast })
+    | Mem (Store f) ->
+        let { Node.mem; ptr; value } = Node.G.get_dependencies_exn g n in
+        let (AnyData value) = Option.value_exn value in
+        let (AnyData ptr_unwrapped) = Option.value_exn ptr in
+        if Types.is_a value.typ (Integer All) then
+          let value_size = Types.get_size value.typ in
+          let field_type =
+              match ptr_unwrapped.typ with
+              | Ptr p -> p
+              | _ -> assert false
+          in
+          let field_size = Types.get_size field_type in
+          if value_size < field_size then
+            let casted = create_cast g value n n.loc (field_size * 8) in
+            Node.G.set_node_inputs g n { mem; ptr; value = Some casted }
     | _ -> ()
 
 let run g =
