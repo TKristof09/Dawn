@@ -1,55 +1,33 @@
-/*
-const S = type {
-    a: i64,
-    f: (i64 -> void)
-};
-
-const print_int = fun(i: i64) -> void = @extern("print_int");
-//TODO: const instance = S{ 5,  print};
-const instance = S{ .a = 5,  .f = print_int};
-const s = "hello world";
-instance.f(instance.a + s.len);
-//TODO: const x = i64{5};
-*/
 const print = fun(s: str) -> void = @extern("print");
-
-const s = "hello";
-
-const S = type {
-    left: str,
-    right: str
+const print_int = fun(i: i64) -> void = @extern("print_int");
+const S = type { 
+    a: u32,
+    b: u32
 };
-// TODO: returning a struct allocates it in the stack frame of the function so after returning it's actually a memory violation
-const f = fun(s: str, s2: str) -> S {
-//    let i:i32 = 0;
-//    let left: u8[s.len];
-//    let right: u8[s.len];
-//    let idx: i32 = 0;
-//    let using_right: bool = false;
-//    while(i < s.len) {
-//        if(s[i] == 32) {
-//            using_right = true;
-//        }
-//        else {
-//            if(using_right) {
-//                right[idx] = s[i];
-//            }
-//            else {
-//                left[idx] = s[i];
-//            }
-//            idx = idx + 1;
-//        }
-//        i = i + 1;
-//    }
-    let res = S{
-        .left = s,
-        .right = s2
-    };
-    res
+const T = trait {
+    f: (u32, u32) -> u32 
 };
-const x = f(s, " world\n");
-const y = f("goodbye", " me");
-print(x.left);
-print(x.right);
-print(y.left);
-print(y.right);
+
+impl T for S {
+    f = fun (x: u32, y: u32) -> u32 {
+        x + y
+    }
+}
+
+const s = S{.a = 34, .b = 35};
+print_int(S.f(s.a, s.b));
+
+print("\n");
+
+const SS = type {
+    a: u32
+};
+
+impl T for SS {
+    f = fun (x: u32, y: u32) -> u32 {
+        x * y
+    }
+}
+
+const ss = SS{.a = 6};
+print_int(SS.f(ss.a, ss.a));

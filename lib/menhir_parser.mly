@@ -53,7 +53,7 @@
 %token IF
 %token ELSE
 %token WHILE
-(* %token FOR *)
+%token FOR
 (* %token RETURN *)
 (* %token BREAK *)
 (* %token CONTINUE *)
@@ -63,6 +63,8 @@
 %token CONST
 %token FUN
 %token TYPE
+%token TRAIT
+%token IMPL
 %token ARROW
 %token EXTERN
 %token EOF
@@ -117,6 +119,10 @@ let statement :=
             | Some t -> 
                 Declaration (id, t) |> make_node $sloc 
         }
+    | IMPL; t_trait = IDENTIFIER; FOR; t_base = IDENTIFIER; LBRACE; fields = separated_list(SEMICOLON, separated_pair(IDENTIFIER, ASSIGN, expr)); RBRACE;
+        {
+            TraitImplementation(t_base, t_trait, fields) |> make_node $sloc
+        }
 
 
 let param := id = IDENTIFIER; COLON; typ = type_name; { (id, typ) }
@@ -156,6 +162,10 @@ let expr :=
     | TYPE; t = type_name; 
         { 
             TypeDeclaration t |> make_node $sloc
+        }
+    | TRAIT; LBRACE; funs = separated_list(SEMICOLON, separated_pair(IDENTIFIER, COLON, fun_type_expression)); RBRACE;
+        {
+            TraitDeclaration (funs) |> make_node $sloc
         }
     | id = IDENTIFIER; LBRACE; field_values = field_initialiser_list; RBRACE; 
         {

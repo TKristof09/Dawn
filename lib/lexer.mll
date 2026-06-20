@@ -20,6 +20,9 @@
                 (   "const",    CONST);
                 (     "fun",      FUN);
                 (    "type",     TYPE);
+                (   "trait",    TRAIT);
+                (    "impl",     IMPL);
+                (     "for",      FOR);
                 ( "@extern",   EXTERN);
             ]
     

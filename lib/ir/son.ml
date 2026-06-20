@@ -123,6 +123,50 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
         let (AnyCtrl body_ctrl) = Scope_node.get_ctrl g body_scope in
         Loop_node.set_back_edge g loop_node body_ctrl;
         Scope_node.merge_loop ?parent_fun g ~this:scope ~body:body_scope ~exit:exit_scope
+    | TraitImplementation (t_base, t_trait, fields) ->
+        let (AnyNode trait) = Scope_node.get g scope t_trait in
+        let (AnyNode base) = Scope_node.get g scope t_base in
+        let trait_fields =
+            match trait.typ with
+            | Type (Value (Struct (Value { name; fields }))) ->
+                assert (String.equal name t_trait);
+                List.map fields ~f:(fun (name, e) -> (Printf.sprintf "$%s$%s" t_trait name, e))
+            | _ -> assert false
+        in
+        let field_names = List.map trait_fields ~f:fst |> String.Set.of_list in
+        let fields =
+            List.map fields ~f:(fun (name, e) -> (Printf.sprintf "$%s$%s" t_trait name, e))
+        in
+        let remaining_field_names =
+            List.fold fields ~init:field_names ~f:(fun remaining_field_names (field_name, e) ->
+                if not (Set.mem remaining_field_names field_name) then
+                  if Set.mem field_names field_name then
+                    failwithf "%s:%d: Field %s is implemented multiple times" loc.filename loc.line
+                      field_name ()
+                  else
+                    failwithf "%s:%d: Field %s is not part of trait %s" loc.filename loc.line
+                      field_name t_trait ()
+                else
+                  let (AnyData field) =
+                      do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn
+                  in
+                  (* field name is already mangled like "$trait_name$field_name" *)
+                  Scope_node.define g scope (t_base ^ field_name) field true;
+                  Set.remove remaining_field_names field_name)
+        in
+        if not (Set.is_empty remaining_field_names) then
+          failwithf "%s:%d: Following fields were not implemented: %s" loc.filename loc.line
+            (Set.to_list remaining_field_names |> String.concat ~sep:", ")
+            ();
+        let base_fields =
+            match base.typ with
+            | Type (Value (Struct (Value { name = _; fields }))) -> fields
+            | _ -> assert false
+        in
+        let fields = base_fields @ (("$" ^ t_trait, Void) :: trait_fields) in
+        let new_typ = Types.make_struct t_base fields in
+        let new_typ = Const_node.create_from_type g loc ?parent_fun (Type (Value new_typ)) in
+        Scope_node.assign g scope ~force:true t_base new_typ
 
 and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Node.any_data option =
     let loc = e.loc in
@@ -529,9 +573,12 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         Scope_node.set_mem g scope mem;
         let struct_node = Proj_node.create_data ?parent_fun g loc n 1 in
         struct_node.min_typ <- Some typ;
-        let field_names =
+        let trait_fields, field_names =
             match typ with
-            | Struct (Value { name = _; fields }) -> List.map fields ~f:fst |> String.Set.of_list
+            | Struct (Value { name = _; fields }) ->
+                List.map fields ~f:fst
+                |> List.partition_tf ~f:(fun s -> String.is_prefix s ~prefix:"$")
+                |> Tuple2.map ~f:String.Set.of_list
             | _ ->
                 (* TODO: this should also be allowed for primitives (e.g. i64{5}) *)
                 assert false
@@ -568,21 +615,62 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
                       Scope_node.set_mem g scope mem;
                       Set.remove remaining_field_names name)
         in
+        (* trait fields are just functions. They are already checked in the TraitImplementation expression *)
+        let remaining_field_names = Set.diff remaining_field_names trait_fields in
         if not (Set.is_empty remaining_field_names) then
           failwithf "%s:%d: Following fields were not initialised: %s" loc.filename loc.line
             (Set.to_list remaining_field_names |> String.concat ~sep:", ")
             ();
         Some (AnyData struct_node)
-    | FieldAccess (e, field_name) ->
+    | FieldAccess (e, field_name) -> (
         let (AnyData base) = do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn in
         let (AnyMem mem) = Scope_node.get_mem g scope in
-        let field_typ = Types.get_field_type base.typ field_name |> Option.value ~default:ALL in
-        let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc base field_name in
-        let load =
-            Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr field_name field_typ
+        match base.typ with
+        | Struct _ ->
+            let field_typ = Types.get_field_type base.typ field_name |> Option.value ~default:ALL in
+            let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc base field_name in
+            let load =
+                Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr field_name field_typ
+            in
+            load.min_typ <- Some field_typ;
+            Some (AnyData load)
+        | Type (Value t) ->
+            let base_name =
+                match t with
+                | Struct (Value { name; fields = _ }) -> name
+                | _ -> assert false
+            in
+            let field_name =
+                match t with
+                | Struct (Value { name = _; fields }) ->
+                    List.find_map_exn fields ~f:(fun (name, t) ->
+                        (* mangled names are like $trait_name$fun_name so we check suffix *)
+                        (* TODO: name collisions *)
+                        if String.is_suffix name ~suffix:field_name then
+                          Some name
+                        else
+                          None)
+                | _ -> assert false
+            in
+            let field_typ = Types.get_field_type t field_name |> Option.value ~default:ALL in
+            (* TODO: only functions are accessible on Types for now *)
+            assert (Types.is_a field_typ (FunPtr All));
+            let (AnyNode n) = Scope_node.get g scope (base_name ^ field_name) in
+            let n = Node.as_data_exn n in
+            Some (AnyData n)
+        | _ ->
+            failwithf "%s:%d: Can't access field on type %s" loc.filename loc.line
+              (Types.human_readable base.typ) ())
+    | TraitDeclaration funs ->
+        let funs =
+            List.map funs ~f:(fun (n, t) ->
+                let t = Types.of_ast_type t in
+                assert (Types.is_a t (FunPtr All));
+                (n, t))
         in
-        load.min_typ <- Some field_typ;
-        Some (AnyData load)
+        let t = Types.make_struct "" funs in
+        let c = Const_node.create_from_type ?parent_fun g loc (Type (Value t)) in
+        Some (AnyData c)
     | _ -> failwithf "TODO: unimplemented %s" (Ast.show_expr e.node) ()
 
 let define_builtin_type g scope t =

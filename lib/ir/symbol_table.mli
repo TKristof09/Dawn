@@ -4,7 +4,7 @@ val create : unit -> 'a t
 val push : 'a t -> 'a t
 val pop : 'a t -> 'a t
 val find_symbol : 'a t -> string -> 'a Variable.t option
-val reassign_symbol : 'a t -> string -> 'a -> unit
+val reassign_symbol : 'a t -> ?force:bool -> string -> 'a -> unit
 val add_symbol : 'a t -> string -> 'a Variable.t -> unit
 val iter : 'a t -> (name:string -> symbol:'a Variable.t option -> depth:int -> unit) -> unit
 val iter_current_depth : 'a t -> (name:string -> symbol:'a Variable.t -> unit) -> unit

@@ -41,10 +41,10 @@ let rec find_symbol t s =
         | Some p -> find_symbol p s
         | None -> None)
 
-let rec reassign_symbol t sym node =
+let rec reassign_symbol t ?(force = false) sym node =
     match Hashtbl.find t.symbols sym with
     | Some old_variable ->
-        if old_variable.is_const && not old_variable.is_forward_ref then
+        if (not force) && old_variable.is_const && not old_variable.is_forward_ref then
           failwithf "Trying to mutate const variable %s" sym ()
         else
           Hashtbl.set t.symbols ~key:sym ~data:{ old_variable with node; is_forward_ref = false }

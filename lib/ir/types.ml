@@ -364,7 +364,8 @@ let make_struct name fields =
         | ConstArray _
         | Array _
         | FunPtr _
-        | Struct _ ->
+        | Struct _
+        | Void ->
             true
         | _ -> false
     in
@@ -921,6 +922,7 @@ let rec get_size t =
     | Ptr _
     | FunPtr _ ->
         8
+    | Void -> 0
     | _ -> failwithf "todo: %s" (show t) ()
 
 let rec get_offset t field =

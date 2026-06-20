@@ -342,7 +342,12 @@ let run g =
               (Node.fun_def, Node.ctrl) Node.t list
             ->
             match n.kind with
-            | Ctrl (Function f) -> n :: acc
+            | Ctrl (Function f) ->
+                (* TODO: dead code elim should happen before this pass in the future so this is a temporary fix until then *)
+                if Types.equal n.typ Control then
+                  n :: acc
+                else
+                  acc
             | _ -> acc)
     in
     List.iter nodes ~f:(do_node g)

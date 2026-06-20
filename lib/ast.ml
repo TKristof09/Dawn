@@ -44,6 +44,7 @@ and statement =
     | Declaration_assign of name * var_type * expr node * qualifier
     | ExprStatement of expr node
     | While of expr node * expr node
+    | TraitImplementation of name * name * (name * expr node) list
 
 and expr =
     | String of string
@@ -83,6 +84,7 @@ and expr =
                      Option.equal name_equal field_name field_name' && node_equal value value')
                    l l']
     | FieldAccess of expr node * name
+    | TraitDeclaration of (name * var_type) list
 [@@deriving show { with_path = false }, eq]
 
 let compare_loc l l' =
