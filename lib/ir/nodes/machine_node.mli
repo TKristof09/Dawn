@@ -123,7 +123,7 @@ and return = {
 and ('a, 'b) t = {
     id : int;
     mutable kind : 'a kind;
-    ir_node : Node2.any;
+    ir_node : Node.any;
     list_of_inputs : 'a -> any option list;
     inputs_of_list : any option list -> 'a;
     _tag_witness : ('b, unit) Type.eq;
@@ -133,7 +133,7 @@ and ('a, 'b) t = {
 module N : Graph.NODE with type ('a, 'tag) t = ('a, 'tag) t and type any = any
 module G : Graph.S with module N := N
 
-val create_node : 'a kind -> Node2.any -> ('a, unit) t
+val create_node : 'a kind -> Node.any -> ('a, unit) t
 val invert_cond : cmp -> cmp
 val is_cheap_to_clone : ('a, 't) t -> bool
 val is_control_node : ('a, 't) t -> bool
@@ -143,7 +143,7 @@ val is_multi_output : ('a, 't) t -> bool
 val get_in_reg_mask : G.readonly G.t -> ('a, 't) t -> int -> Registers.Mask.t option
 val get_out_reg_mask : G.readonly G.t -> ('a, 't) t -> int -> Registers.Mask.t option
 val get_register_kills : ('a, 't) t -> Registers.Mask.t option
-val convert_graph : Node2.G.readonly Node2.G.t -> G.readwrite G.t
+val convert_graph : Node.G.readonly Node.G.t -> G.readwrite G.t
 val next_id : unit -> int
 val reset_id : unit -> unit
 val id : ('a, 't) t -> int

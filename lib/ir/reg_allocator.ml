@@ -50,7 +50,7 @@ type allocation_failure = {
 let build_live_ranges (g : Graph.readonly Graph.t) program =
     let ranges = Hashtbl.create (module Machine_node.Any) in
     List.iter program ~f:(fun (Machine_node.AnyNode n) ->
-        let (Node2.AnyNode ir_node) = n.ir_node in
+        let (Node.AnyNode ir_node) = n.ir_node in
         (match n.kind with
         | Ideal Phi when not (Types.equal ir_node.typ Memory) ->
             (* merge all depedencies into same live range except for the control depedency, we don't care about that *)

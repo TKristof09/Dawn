@@ -1,10 +1,10 @@
 open Core
 
-let common g loc ?parent_fun (lhs : ('a, Node2.data) Node2.t) (rhs : ('b, Node2.data) Node2.t)
-    (kind : 'c Node2.data_kind) =
+let common g loc ?parent_fun (lhs : ('a, Node.data) Node.t) (rhs : ('b, Node.data) Node.t)
+    (kind : 'c Node.data_kind) =
     let typ = Types.Integer Any in
-    let n = Node2.create_data ?parent_fun loc typ kind in
-    Node2.G.add_node g n { Node2.lhs = Some (AnyData lhs); rhs = Some (AnyData rhs) };
+    let n = Node.create_data ?parent_fun loc typ kind in
+    Node.G.add_node g n { Node.lhs = Some (AnyData lhs); rhs = Some (AnyData rhs) };
     n
 
 let create_add g loc ?parent_fun lhs rhs = common g loc ?parent_fun lhs rhs Add
@@ -14,14 +14,14 @@ let create_div g loc ?parent_fun lhs rhs = common g loc ?parent_fun lhs rhs Div
 
 let compute_type g n =
     let op =
-        match n.Node2.kind with
+        match n.Node.kind with
         | Data Add -> Z.add
         | Data Sub -> Z.sub
         | Data Mul -> Z.mul
         | Data Div -> Z.div
         | _ -> assert false
     in
-    let { Node2.lhs; rhs } = Node2.G.get_dependencies_exn g n in
+    let { Node.lhs; rhs } = Node.G.get_dependencies_exn g n in
     let (AnyData lhs) = Option.value_exn lhs in
     let (AnyData rhs) = Option.value_exn rhs in
     let new_type : Types.t =

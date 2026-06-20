@@ -2,15 +2,15 @@ open Core
 
 module NodeSet = struct
   include Set.Make_plain (struct
-    include Node2.Any
-    include Comparator.Make (Node2.Any)
+    include Node.Any
+    include Comparator.Make (Node.Any)
   end)
 end
 
-type extra_deps_tbl = (Node2.any, NodeSet.t) Hashtbl.t
-type min_int_types_tbl = (Node2.any, Types.t) Hashtbl.t
+type extra_deps_tbl = (Node.any, NodeSet.t) Hashtbl.t
+type min_int_types_tbl = (Node.any, Types.t) Hashtbl.t
 
-let as_binop : type a b. (a, b) Node2.t -> (Node2.binop, Node2.data) Node2.t =
+let as_binop : type a b. (a, b) Node.t -> (Node.binop, Node.data) Node.t =
    fun n ->
     match n.kind with
     | Data Add -> n
@@ -36,11 +36,11 @@ let set_type g n new_type =
        in these cases. But since this min type moves monotonically it will terminate
        at some point and from then on the node type drops monotonically so the whole
        SCCP terminates *)
-    n.Node2.typ <- new_type;
-    Node2.G.get_dependants g n
+    n.Node.typ <- new_type;
+    Node.G.get_dependants g n
 
-let backwards_prop_min_integer_type (min_integer_types : (Node2.any, Types.t) Base.Hashtbl.t) g
-    (Node2.AnyNode n) min_type =
+let backwards_prop_min_integer_type (min_integer_types : (Node.any, Types.t) Base.Hashtbl.t) g
+    (Node.AnyNode n) min_type =
     assert (Types.is_a min_type (Integer All));
     let update min_type n =
         let changed = ref false in
@@ -55,7 +55,7 @@ let backwards_prop_min_integer_type (min_integer_types : (Node2.any, Types.t) Ba
         !changed
     in
 
-    match n.Node2.kind with
+    match n.Node.kind with
     | Data Add
     | Data Sub
     | Data Mul
@@ -65,21 +65,21 @@ let backwards_prop_min_integer_type (min_integer_types : (Node2.any, Types.t) Ba
     | Data BOr
     | Data (Param _) ->
         ignore (update min_type (AnyNode n));
-        Node2.G.get_dependencies_list g n
+        Node.G.get_dependencies_list g n
         |> List.filter_opt
-        |> List.filter ~f:(fun (Node2.AnyNode n) -> Option.is_none n.min_typ)
+        |> List.filter ~f:(fun (Node.AnyNode n) -> Option.is_none n.min_typ)
         |> List.filter ~f:(update min_type)
     | Data Lsh
     | Data Rsh ->
         ignore (update min_type (AnyNode n));
         let n = as_binop n in
-        let { Node2.lhs; rhs } = Node2.G.get_dependencies_exn g n in
+        let { Node.lhs; rhs } = Node.G.get_dependencies_exn g n in
         let (AnyData lhs) = Option.value_exn lhs in
         let (AnyData rhs) = Option.value_exn rhs in
         let changed1 = update min_type (AnyNode lhs) in
         (* TODO: rhs of shift needs to be smaller (e.g. if lhs is i32 then rhs has to be u5) *)
         let changed2 = update min_type (AnyNode rhs) in
-        let l = if changed1 then [ Node2.AnyNode lhs ] else [] in
+        let l = if changed1 then [ Node.AnyNode lhs ] else [] in
         if changed2 then AnyNode rhs :: l else l
     | _ -> []
 
@@ -87,21 +87,19 @@ let work : type a b.
     Linker.t ->
     extra_deps_tbl ->
     min_int_types_tbl ->
-    Node2.G.readwrite Node2.G.t ->
-    (a, b) Node2.t ->
+    Node.G.readwrite Node.G.t ->
+    (a, b) Node.t ->
     type_fn:
-      (Node2.G.readonly Node2.G.t ->
-      (a, b) Node2.t ->
-      (new_type:Types.t * extra_deps:Node2.any list)) ->
-    Node2.any list =
+      (Node.G.readonly Node.G.t -> (a, b) Node.t -> (new_type:Types.t * extra_deps:Node.any list)) ->
+    Node.any list =
    fun linker extra_node_deps min_integer_types g n ~type_fn ->
-    let ~new_type, ~extra_deps = type_fn (Node2.G.readonly g) n in
+    let ~new_type, ~extra_deps = type_fn (Node.G.readonly g) n in
 
     let integer_min_type_changes =
         match Hashtbl.find min_integer_types (AnyNode n) with
         | Some min_type -> backwards_prop_min_integer_type min_integer_types g (AnyNode n) min_type
         | None -> (
-            match n.Node2.min_typ with
+            match n.Node.min_typ with
             | Some (Integer _ as min_type) ->
                 backwards_prop_min_integer_type min_integer_types g (AnyNode n) min_type
             | _ -> [])
@@ -149,13 +147,13 @@ let work : type a b.
           let new_fun_links =
               match new_type with
               | FunPtr _ ->
-                  Node2.G.get_dependants g n
+                  Node.G.get_dependants g n
                   |> List.filter_map
-                       ~f:(fun (AnyNode dep) : (Node2.fun_call, Node2.ctrl) Node2.t option ->
+                       ~f:(fun (AnyNode dep) : (Node.fun_call, Node.ctrl) Node.t option ->
                          match dep.kind with
                          | Ctrl FunctionCall ->
                              let (AnyData fun_ptr) = Fun_node.get_call_fun_ptr g dep in
-                             if Node2.equal fun_ptr n then
+                             if Node.equal fun_ptr n then
                                Some dep
                              else
                                None
@@ -164,13 +162,13 @@ let work : type a b.
                       let fun_nodes = Linker.link linker g dep in
                       List.fold fun_nodes ~init:acc ~f:(fun acc fun_node ->
                           let params =
-                              Node2.G.get_dependants g fun_node
+                              Node.G.get_dependants g fun_node
                               |> List.filter_map ~f:(fun (AnyNode n) ->
                                   match n.kind with
-                                  | Data (Param _) -> Some (Node2.AnyNode n)
+                                  | Data (Param _) -> Some (Node.AnyNode n)
                                   | _ -> None)
                           in
-                          (Node2.AnyNode fun_node :: params) @ acc))
+                          (Node.AnyNode fun_node :: params) @ acc))
               | _ -> []
           in
           let extras =
@@ -184,9 +182,9 @@ let do_data_node : type a.
     Linker.t ->
     extra_deps_tbl ->
     min_int_types_tbl ->
-    Node2.G.readwrite Node2.G.t ->
-    (a, Node2.data) Node2.t ->
-    Node2.any list =
+    Node.G.readwrite Node.G.t ->
+    (a, Node.data) Node.t ->
+    Node.any list =
    fun linker extra_node_deps min_integer_types g n ->
     match n.kind with
     | Data Constant -> (* constant stays the same as it was *) []
@@ -220,7 +218,7 @@ let do_data_node : type a.
     | Data Cast -> failwith "TODO"
     | Data (Load field) ->
         work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
-            let { Node2.mem; ptr } : Node2.load = Node2.G.get_dependencies_exn g n in
+            let { Node.mem; ptr } : Node.load = Node.G.get_dependencies_exn g n in
             let (AnyData ptr) = Option.value_exn ptr in
             match ptr.typ with
             (* TODO remove this *)
@@ -230,7 +228,7 @@ let do_data_node : type a.
             (*     match field_type with *)
             (*     | None -> (~new_type:ALL, ~extra_deps:[]) *)
             (*     | Some (ConstArray (Value arr)) -> ( *)
-            (*         let offs = Node2.G.get_dependency g n 3 |> Option.value_exn in *)
+            (*         let offs = Node.G.get_dependency g n 3 |> Option.value_exn in *)
             (*         match offs.typ with *)
             (*         | Integer _ when Types.is_constant offs.typ -> *)
             (*             let i = Types.get_integer_const_exn offs.typ in *)
@@ -245,26 +243,30 @@ let do_data_node : type a.
             | _ -> assert false)
     | Data AddrOf ->
         work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
-            let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
+            let { Node.place; offset } = Node.G.get_dependencies_exn g n in
             let (AnyData place) = Option.value_exn place in
             (~new_type:(Ptr place.typ), ~extra_deps:[]))
     | Data (AddrOfField field) ->
         work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
-            let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
+            let { Node.place; offset } = Node.G.get_dependencies_exn g n in
             let (AnyData place) = Option.value_exn place in
             match place.typ with
             | Struct _ ->
-                let t = Types.get_field_type place.typ field |> Option.value_exn in
-                if offset |> Option.is_some && Types.is_a t (Array All) then
-                  let t = Types.get_array_element_type t in
-                  (~new_type:(Ptr t), ~extra_deps:[])
+                let t = Types.get_field_type place.typ field in
+                if Option.is_none t then
+                  (~new_type:ALL, ~extra_deps:[])
                 else
-                  (~new_type:(Ptr t), ~extra_deps:[])
+                  let t = Option.value_exn t in
+                  if offset |> Option.is_some && Types.is_a t (Array All) then
+                    let t = Types.get_array_element_type t in
+                    (~new_type:(Ptr t), ~extra_deps:[])
+                  else
+                    (~new_type:(Ptr t), ~extra_deps:[])
             | ANY -> (~new_type:(Ptr ANY), ~extra_deps:[])
             | _ -> (~new_type:(Ptr ALL), ~extra_deps:[]))
     | Data Deref ->
         work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
-            let { Node2.mem; ptr } : Node2.deref = Node2.G.get_dependencies_exn g n in
+            let { Node.mem; ptr } : Node.deref = Node.G.get_dependencies_exn g n in
             let (AnyData ptr) = Option.value_exn ptr in
             let t =
                 match ptr.typ with
@@ -281,9 +283,9 @@ let do_ctrl_node : type a.
     Linker.t ->
     extra_deps_tbl ->
     min_int_types_tbl ->
-    Node2.G.readwrite Node2.G.t ->
-    (a, Node2.ctrl) Node2.t ->
-    Node2.any list =
+    Node.G.readwrite Node.G.t ->
+    (a, Node.ctrl) Node.t ->
+    Node.any list =
    fun linker extra_node_deps min_integer_types g n ->
     match n.kind with
     | Ctrl Start ->
@@ -299,26 +301,26 @@ let do_ctrl_node : type a.
         work linker extra_node_deps min_integer_types g n ~type_fn:Region_node.compute_type
     | Ctrl Loop ->
         work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
-            let { Node2.entry; backedge } = Node2.G.get_dependencies_exn g n in
+            let { Node.entry; backedge } = Node.G.get_dependencies_exn g n in
             let (AnyCtrl entry) = Option.value_exn entry in
             (~new_type:entry.typ, ~extra_deps:[]))
     | Ctrl (Function _) ->
         work linker extra_node_deps min_integer_types g n ~type_fn:Fun_node.compute_fun_node_type
     | Ctrl Return ->
         work linker extra_node_deps min_integer_types g n ~type_fn:(fun g n ->
-            let { Node2.mem; data } = Node2.G.get_dependencies_exn g n in
+            let { Node.mem; data } = Node.G.get_dependencies_exn g n in
             let (AnyMem mem) = Option.value_exn mem in
             let (AnyData data) = Option.value_exn data in
-            let (AnyNode ctrl) = Node2.G.get_ctrl_exn g n in
+            let (AnyNode ctrl) = Node.G.get_ctrl_exn g n in
             let new_type = Types.Tuple (Value [ ctrl.typ; mem.typ; data.typ ]) in
             (~new_type, ~extra_deps:[]))
     | Ctrl FunctionCall ->
         let old_type = n.typ in
         let new_type =
-            let (AnyNode ctrl) = Node2.G.get_ctrl_exn g n in
+            let (AnyNode ctrl) = Node.G.get_ctrl_exn g n in
             ctrl.typ
         in
-        let { Node2.fun_ptr; mem = _; args = _ } = Node2.G.get_dependencies_exn g n in
+        let { Node.fun_ptr; mem = _; args = _ } = Node.G.get_dependencies_exn g n in
         let (AnyData fun_ptr) = Option.value_exn fun_ptr in
         (* link calls to function when it just became reachable *)
         let param_work =
@@ -331,13 +333,13 @@ let do_ctrl_node : type a.
               let fun_nodes = Linker.link linker g n in
               List.fold fun_nodes ~init:[] ~f:(fun acc fun_node ->
                   let params =
-                      Node2.G.get_dependants g fun_node
+                      Node.G.get_dependants g fun_node
                       |> List.filter_map ~f:(fun (AnyNode n) ->
                           match n.kind with
-                          | Data (Param _) -> Some (Node2.AnyNode n)
+                          | Data (Param _) -> Some (Node.AnyNode n)
                           | _ -> None)
                   in
-                  (Node2.AnyNode fun_node :: params) @ acc)
+                  (Node.AnyNode fun_node :: params) @ acc)
             else
               []
         in
@@ -351,9 +353,9 @@ let do_mem_node : type a.
     Linker.t ->
     extra_deps_tbl ->
     min_int_types_tbl ->
-    Node2.G.readwrite Node2.G.t ->
-    (a, Node2.mem) Node2.t ->
-    Node2.any list =
+    Node.G.readwrite Node.G.t ->
+    (a, Node.mem) Node.t ->
+    Node.any list =
    fun linker extra_node_deps min_integer_types g n ->
     match n.kind with
     | Mem (Store _) ->
@@ -373,10 +375,10 @@ let do_mem_node : type a.
 let do_node : type a b.
     extra_deps_tbl ->
     min_int_types_tbl ->
-    Node2.G.readwrite Node2.G.t ->
+    Node.G.readwrite Node.G.t ->
     Linker.t ->
-    (a, b) Node2.t ->
-    Node2.any list =
+    (a, b) Node.t ->
+    Node.any list =
    fun extra_node_deps min_integer_types g linker n ->
     match n.kind with
     | Data _ -> do_data_node linker extra_node_deps min_integer_types g n
@@ -388,8 +390,8 @@ let do_node : type a b.
         []
 
 let run g linker =
-    let worklist = Queue.create ~capacity:(Node2.G.get_num_nodes g) () in
-    Node2.G.iter g ~f:(fun (Node2.AnyNode n) ->
+    let worklist = Queue.create ~capacity:(Node.G.get_num_nodes g) () in
+    Node.G.iter g ~f:(fun (Node.AnyNode n) ->
         (* TODO: I really dont like this type of skipping some kinds, looks like a mess waiting to happen *)
         (match n.kind with
         | Data Constant
@@ -400,25 +402,25 @@ let run g linker =
             (* new needs to keep the type it will produce *)
             ()
         | _ -> n.typ <- ANY);
-        Queue.enqueue worklist (Node2.AnyNode n));
+        Queue.enqueue worklist (Node.AnyNode n));
 
     let fun_nodes =
-        Node2.G.fold g ~init:[]
+        Node.G.fold g ~init:[]
           ~f:(fun
-              (acc : (Node2.fun_def, Node2.ctrl) Node2.t list)
+              (acc : (Node.fun_def, Node.ctrl) Node.t list)
               (AnyNode n)
               :
-              (Node2.fun_def, Node2.ctrl) Node2.t list
+              (Node.fun_def, Node.ctrl) Node.t list
             ->
             match n.kind with
             | Ctrl (Function _) -> n :: acc
             | _ -> acc)
     in
     (* unlink start from function nodes as we only want to care about functions if someone actually callls them, the start->function node connection was just for convenience *)
-    List.iter fun_nodes ~f:(fun n -> Node2.G.unlink_ctrl g n);
+    List.iter fun_nodes ~f:(fun n -> Node.G.unlink_ctrl g n);
 
-    let extra_node_deps = Hashtbl.create (module Node2.Any) in
-    let min_integer_types = Hashtbl.create (module Node2.Any) in
+    let extra_node_deps = Hashtbl.create (module Node.Any) in
+    let min_integer_types = Hashtbl.create (module Node.Any) in
     let rec loop i =
         match Queue.dequeue worklist with
         | None -> i
@@ -431,5 +433,5 @@ let run g linker =
     [%log.debug "SCCP took %d iters" num_iters];
     (* relink function nodes to start because we'll unlink them from FunctionCalls during scheduling so if they arent linked to start they'd be unreachable i think *)
     List.iter fun_nodes ~f:(fun n ->
-        let (AnyNode start) = Node2.G.get_start g in
-        Node2.G.set_ctrl g n start)
+        let (AnyNode start) = Node.G.get_start g in
+        Node.G.set_ctrl g n start)

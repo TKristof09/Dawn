@@ -1,62 +1,62 @@
 val create_new :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  ctrl:('a, Node2.ctrl) Node2.t ->
-  mem:('b, Node2.mem) Node2.t ->
-  size:('c, Node2.data) Node2.t ->
+  ctrl:('a, Node.ctrl) Node.t ->
+  mem:('b, Node.mem) Node.t ->
+  size:('c, Node.data) Node.t ->
   Types.t ->
-  (Node2.alloc, Node2.mem) Node2.t
+  (Node.alloc, Node.mem) Node.t
 
 val create_store :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  mem:('a, Node2.mem) Node2.t ->
-  ptr:('b, Node2.data) Node2.t ->
+  mem:('a, Node.mem) Node.t ->
+  ptr:('b, Node.data) Node.t ->
   string ->
-  value:('c, Node2.data) Node2.t ->
-  (Node2.store, Node2.mem) Node2.t
+  value:('c, Node.data) Node.t ->
+  (Node.store, Node.mem) Node.t
 
 val create_load :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  mem:('a, Node2.mem) Node2.t ->
-  ptr:('b, Node2.data) Node2.t ->
+  mem:('a, Node.mem) Node.t ->
+  ptr:('b, Node.data) Node.t ->
   string ->
   Types.t ->
-  (Node2.load, Node2.data) Node2.t
+  (Node.load, Node.data) Node.t
 
 val create_addr_of :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  ('a, Node2.data) Node2.t ->
-  (Node2.addr_of, Node2.data) Node2.t
+  ('a, Node.data) Node.t ->
+  (Node.addr_of, Node.data) Node.t
 
 val create_addr_of_field :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  ('a, Node2.data) Node2.t ->
-  ?index:('b, Node2.data) Node2.t ->
+  ('a, Node.data) Node.t ->
+  ?index:('b, Node.data) Node.t ->
   string ->
-  (Node2.addr_of, Node2.data) Node2.t
+  (Node.addr_of, Node.data) Node.t
 
 val create_deref :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  mem:('a, Node2.mem) Node2.t ->
-  ('b, Node2.data) Node2.t ->
-  (Node2.deref, Node2.data) Node2.t
+  mem:('a, Node.mem) Node.t ->
+  ('b, Node.data) Node.t ->
+  (Node.deref, Node.data) Node.t
 
 val create_copy :
   ?parent_fun:int ->
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
-  mem:('a, Node2.mem) Node2.t ->
-  src:('b, Node2.data) Node2.t ->
-  dst:('c, Node2.data) Node2.t ->
-  (Node2.copy, Node2.mem) Node2.t
+  mem:('a, Node.mem) Node.t ->
+  src:('b, Node.data) Node.t ->
+  dst:('c, Node.data) Node.t ->
+  (Node.copy, Node.mem) Node.t

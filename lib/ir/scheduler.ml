@@ -589,7 +589,7 @@ let schedule ideal_g =
                         let (AnyNode ret_ir_node) = ret_node.ir_node in
                         let t = Types.make_int_const ~fixed_width:64 Z.zero in
                         let fake_ir_node =
-                            Node2.create_data ?parent_fun:ret_ir_node.parent_fun fun_ir_node.loc t
+                            Node.create_data ?parent_fun:ret_ir_node.parent_fun fun_ir_node.loc t
                               Constant
                         in
                         let n = Machine_node.create_node (CalleeSave reg) (AnyNode fake_ir_node) in

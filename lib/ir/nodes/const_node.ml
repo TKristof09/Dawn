@@ -1,10 +1,10 @@
 open Core
 
 let common g loc parent_fun typ =
-    let n = Node2.create_data ?parent_fun loc typ Constant in
-    Node2.G.add_node g n ();
-    let (AnyNode start) = Node2.G.get_start g in
-    Node2.G.set_ctrl g n start;
+    let n = Node.create_data ?parent_fun loc typ Constant in
+    Node.G.add_node g n ();
+    let (AnyNode start) = Node.G.get_start g in
+    Node.G.set_ctrl g n start;
     n
 
 let create_zint g loc ?parent_fun i = common g loc parent_fun (Types.make_int_const i)

@@ -1,12 +1,12 @@
 val create :
   ?parent_fun:int ->
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
-  ctrl:('a, Node2.ctrl) Node2.t ->
-  pred:('b, Node2.data) Node2.t ->
-  (Node2.any_data Node2.unary, Node2.ctrl) Node2.t
+  ctrl:('a, Node.ctrl) Node.t ->
+  pred:('b, Node.data) Node.t ->
+  (Node.any_data Node.unary, Node.ctrl) Node.t
 
 val compute_type :
-  Node2.G.readonly Node2.G.t ->
-  (Node2.any_data Node2.unary, Node2.ctrl) Node2.t ->
-  (new_type:Types.t * extra_deps:Node2.any list)
+  Node.G.readonly Node.G.t ->
+  (Node.any_data Node.unary, Node.ctrl) Node.t ->
+  (new_type:Types.t * extra_deps:Node.any list)

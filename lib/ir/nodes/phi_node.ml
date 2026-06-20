@@ -1,39 +1,39 @@
 open Core
 
 let create_data g loc ?parent_fun ctrl nodes =
-    let typ = List.map nodes ~f:(fun (Node2.AnyData n) -> n.typ) |> List.reduce_exn ~f:Types.meet in
-    let n = Node2.create_data ?parent_fun loc typ Phi in
-    Node2.G.add_node g n { Node2.phi_inputs = List.map nodes ~f:Option.some };
-    Node2.G.set_ctrl g n ctrl;
+    let typ = List.map nodes ~f:(fun (Node.AnyData n) -> n.typ) |> List.reduce_exn ~f:Types.meet in
+    let n = Node.create_data ?parent_fun loc typ Phi in
+    Node.G.add_node g n { Node.phi_inputs = List.map nodes ~f:Option.some };
+    Node.G.set_ctrl g n ctrl;
     n
 
 let create_mem g loc ?parent_fun ctrl nodes =
-    let typ = List.map nodes ~f:(fun (Node2.AnyMem n) -> n.typ) |> List.reduce_exn ~f:Types.meet in
-    let n = Node2.create_mem ?parent_fun loc typ Phi in
-    Node2.G.add_node g n { Node2.phi_inputs = List.map nodes ~f:Option.some };
-    Node2.G.set_ctrl g n ctrl;
+    let typ = List.map nodes ~f:(fun (Node.AnyMem n) -> n.typ) |> List.reduce_exn ~f:Types.meet in
+    let n = Node.create_mem ?parent_fun loc typ Phi in
+    Node.G.add_node g n { Node.phi_inputs = List.map nodes ~f:Option.some };
+    Node.G.set_ctrl g n ctrl;
     n
 
 let create_data_no_backedge g loc ?parent_fun ctrl dep =
-    let typ = dep.Node2.typ in
-    let n = Node2.create_data ?parent_fun loc typ Phi in
-    Node2.G.add_node g n { Node2.phi_inputs = [ Some (AnyData dep); None ] };
-    Node2.G.set_ctrl g n ctrl;
+    let typ = dep.Node.typ in
+    let n = Node.create_data ?parent_fun loc typ Phi in
+    Node.G.add_node g n { Node.phi_inputs = [ Some (AnyData dep); None ] };
+    Node.G.set_ctrl g n ctrl;
     n
 
 let create_mem_no_backedge g loc ?parent_fun ctrl dep =
-    let typ = dep.Node2.typ in
-    let n = Node2.create_mem ?parent_fun loc typ Phi in
-    Node2.G.add_node g n { Node2.phi_inputs = [ Some (AnyMem dep); None ] };
-    Node2.G.set_ctrl g n ctrl;
+    let typ = dep.Node.typ in
+    let n = Node.create_mem ?parent_fun loc typ Phi in
+    Node.G.add_node g n { Node.phi_inputs = [ Some (AnyMem dep); None ] };
+    Node.G.set_ctrl g n ctrl;
     n
 
 let add_backedge_input : type a b c.
-    Node2.G.readwrite Node2.G.t -> (a Node2.phi, b) Node2.t -> (c, b) Node2.t -> unit =
+    Node.G.readwrite Node.G.t -> (a Node.phi, b) Node.t -> (c, b) Node.t -> unit =
    fun g n dep ->
     (* keep the phi's original type as the type, it will get recomputed by the
        scope_node.merge_loop function after all phis have both their inputs *)
-    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+    let { Node.phi_inputs } = Node.G.get_dependencies_exn g n in
     let entry =
         match phi_inputs with
         | [ (Some _ as entry); None ] -> entry
@@ -41,45 +41,44 @@ let add_backedge_input : type a b c.
     in
     match n.kind with
     | Data Phi ->
-        Node2.G.set_node_inputs g n { Node2.phi_inputs = [ entry; Some (Node2.AnyData dep) ] }
+        Node.G.set_node_inputs g n { Node.phi_inputs = [ entry; Some (Node.AnyData dep) ] }
     | Data (Param _) -> failwith "Can't add backedge to param node"
-    | Mem Phi ->
-        Node2.G.set_node_inputs g n { Node2.phi_inputs = [ entry; Some (Node2.AnyMem dep) ] }
+    | Mem Phi -> Node.G.set_node_inputs g n { Node.phi_inputs = [ entry; Some (Node.AnyMem dep) ] }
     | Mem Param -> failwith "Can't add backedge to param node"
     | _ -> .
 
 let get_backedge_input g n =
-    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+    let { Node.phi_inputs } = Node.G.get_dependencies_exn g n in
     List.nth_exn phi_inputs 1
 
 let get_entry_edge_input g n =
-    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+    let { Node.phi_inputs } = Node.G.get_dependencies_exn g n in
     List.nth_exn phi_inputs 0
 
 let add_input g phi inp =
-    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g phi in
-    Node2.G.set_node_inputs g phi { phi_inputs = phi_inputs @ [ Some inp ] }
+    let { Node.phi_inputs } = Node.G.get_dependencies_exn g phi in
+    Node.G.set_node_inputs g phi { phi_inputs = phi_inputs @ [ Some inp ] }
 
 let compute_type : type a b.
-    Node2.G.readonly Node2.G.t ->
-    (a Node2.phi, b) Node2.t ->
-    (new_type:Types.t * extra_deps:Node2.any list) =
+    Node.G.readonly Node.G.t ->
+    (a Node.phi, b) Node.t ->
+    (new_type:Types.t * extra_deps:Node.any list) =
    fun g n ->
-    let (AnyNode region) = Node2.G.get_ctrl_exn g n in
+    let (AnyNode region) = Node.G.get_ctrl_exn g n in
     let ctrl_inputs =
         match region.kind with
         | Ctrl Region ->
-            let { Node2.ctrl_inputs } = Node2.G.get_dependencies_exn g region in
+            let { Node.ctrl_inputs } = Node.G.get_dependencies_exn g region in
             ctrl_inputs
         | Ctrl Loop ->
-            let { Node2.entry; backedge } = Node2.G.get_dependencies_exn g region in
+            let { Node.entry; backedge } = Node.G.get_dependencies_exn g region in
             [ entry; backedge ]
         | Ctrl (Function _) ->
-            let { Node2.call_sites } = Node2.G.get_dependencies_exn g region in
+            let { Node.call_sites } = Node.G.get_dependencies_exn g region in
             call_sites
         | _ -> assert false
     in
-    let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+    let { Node.phi_inputs } = Node.G.get_dependencies_exn g n in
     let new_type =
         List.zip_exn ctrl_inputs phi_inputs
         |> List.filter_map ~f:(fun (c, d) ->
@@ -112,7 +111,7 @@ let compute_type : type a b.
     let any_of_ctrl n =
         match n with
         | None -> None
-        | Some (Node2.AnyCtrl n) -> Some (Node2.AnyNode n)
+        | Some (Node.AnyCtrl n) -> Some (Node.AnyNode n)
     in
     let old_type = n.typ in
     match (region.kind, new_type, old_type) with

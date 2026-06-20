@@ -1,8 +1,8 @@
 open Core
 
 let create_common g loc ?parent_fun lhs rhs kind =
-    let n = Node2.create_data ?parent_fun loc (Bool Any) kind in
-    Node2.G.add_node g n { Node2.lhs = Some (AnyData lhs); rhs = Some (AnyData rhs) };
+    let n = Node.create_data ?parent_fun loc (Bool Any) kind in
+    Node.G.add_node g n { Node.lhs = Some (AnyData lhs); rhs = Some (AnyData rhs) };
     n
 
 let create_eq g loc ?parent_fun lhs rhs = create_common g loc ?parent_fun lhs rhs Eq
@@ -14,7 +14,7 @@ let create_geq g loc ?parent_fun lhs rhs = create_common g loc ?parent_fun lhs r
 
 let compute_type g n =
     let op =
-        match n.Node2.kind with
+        match n.Node.kind with
         | Data Eq -> Z.equal
         | Data NEq -> fun a b -> not (Z.equal a b)
         | Data Lt -> Z.lt
@@ -23,7 +23,7 @@ let compute_type g n =
         | Data GEq -> Z.geq
         | _ -> assert false
     in
-    let { Node2.lhs; rhs } = Node2.G.get_dependencies_exn g n in
+    let { Node.lhs; rhs } = Node.G.get_dependencies_exn g n in
     let (AnyData lhs) = Option.value_exn lhs in
     let (AnyData rhs) = Option.value_exn rhs in
     let new_type : Types.t =

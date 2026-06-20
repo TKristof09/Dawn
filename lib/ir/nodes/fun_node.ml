@@ -6,54 +6,54 @@ let create g loc fun_ptr_type =
         | Types.FunPtr (Value { params = _; ret; fun_indices = _ }) -> ret
         | _ -> failwithf "Expected function pointer type got %s" (Types.show fun_ptr_type) ()
     in
-    let return_value = Node2.create_data loc ret_typ Phi in
-    let return_mem = Node2.create_mem loc Memory Phi in
-    let return_region = Node2.create_ctrl loc Control Region in
-    Node2.G.add_node g return_region { Node2.ctrl_inputs = [] };
-    Node2.G.add_node g return_value { Node2.phi_inputs = [] };
-    Node2.G.set_ctrl g return_value return_region;
-    Node2.G.add_node g return_mem { Node2.phi_inputs = [] };
-    Node2.G.set_ctrl g return_mem return_region;
+    let return_value = Node.create_data loc ret_typ Phi in
+    let return_mem = Node.create_mem loc Memory Phi in
+    let return_region = Node.create_ctrl loc Control Region in
+    Node.G.add_node g return_region { Node.ctrl_inputs = [] };
+    Node.G.add_node g return_value { Node.phi_inputs = [] };
+    Node.G.set_ctrl g return_value return_region;
+    Node.G.add_node g return_mem { Node.phi_inputs = [] };
+    Node.G.set_ctrl g return_mem return_region;
     let ret_node_typ : Types.t =
         match return_value.typ with
         | Tuple (Value t) -> Tuple (Value (Types.Control :: Memory :: t))
         | v -> Tuple (Value [ Control; Memory; v ])
     in
-    let ret_node = Node2.create_ctrl loc ret_node_typ Return in
-    Node2.G.add_node g ret_node
-      { Node2.data = Some (AnyData return_value); mem = Some (AnyMem return_mem) };
-    Node2.G.set_ctrl g ret_node return_region;
+    let ret_node = Node.create_ctrl loc ret_node_typ Return in
+    Node.G.add_node g ret_node
+      { Node.data = Some (AnyData return_value); mem = Some (AnyMem return_mem) };
+    Node.G.set_ctrl g ret_node return_region;
     let fun_node =
-        Node2.create_ctrl loc Control
+        Node.create_ctrl loc Control
           (Function { ret = ret_node; signature = fun_ptr_type; idx = -1 })
     in
-    Node2.G.add_node g fun_node { Node2.call_sites = [] };
+    Node.G.add_node g fun_node { Node.call_sites = [] };
     (fun_node, ret_node)
 
 let create_param g loc ?parent_fun fun_node param_type i =
-    let n = Node2.create_data ?parent_fun loc param_type (Param i) in
-    Node2.G.add_node g n { Node2.phi_inputs = [] };
-    Node2.G.set_ctrl g n fun_node;
+    let n = Node.create_data ?parent_fun loc param_type (Param i) in
+    Node.G.add_node g n { Node.phi_inputs = [] };
+    Node.G.set_ctrl g n fun_node;
     n
 
 let create_mem_param g loc ?parent_fun fun_node =
-    let n = Node2.create_mem ?parent_fun loc Memory Param in
-    Node2.G.add_node g n { Node2.phi_inputs = [] };
-    Node2.G.set_ctrl g n fun_node;
+    let n = Node.create_mem ?parent_fun loc Memory Param in
+    Node.G.add_node g n { Node.phi_inputs = [] };
+    Node.G.set_ctrl g n fun_node;
     n
 
-let get_param_nodes g (fun_node : (Node2.fun_def, Node2.ctrl) Node2.t) =
-    let rec get_params_nodes : Node2.any list -> (Node2.any_data Node2.phi, Node2.data) Node2.t list
-        = function
+let get_param_nodes g (fun_node : (Node.fun_def, Node.ctrl) Node.t) =
+    let rec get_params_nodes : Node.any list -> (Node.any_data Node.phi, Node.data) Node.t list =
+      function
         | [] -> []
-        | Node2.AnyNode h :: t -> (
-            match h.Node2.kind with
+        | Node.AnyNode h :: t -> (
+            match h.Node.kind with
             | Data (Param _) -> h :: get_params_nodes t
             | _ -> get_params_nodes t)
     in
     let compare_params :
-        (Node2.any_data Node2.phi, Node2.data) Node2.t ->
-        (Node2.any_data Node2.phi, Node2.data) Node2.t ->
+        (Node.any_data Node.phi, Node.data) Node.t ->
+        (Node.any_data Node.phi, Node.data) Node.t ->
         int =
        fun p p' ->
         match (p.kind, p'.kind) with
@@ -61,12 +61,12 @@ let get_param_nodes g (fun_node : (Node2.fun_def, Node2.ctrl) Node2.t) =
         | _, _ -> assert false
     in
     let datas =
-        Node2.G.get_dependants g fun_node |> get_params_nodes |> List.sort ~compare:compare_params
+        Node.G.get_dependants g fun_node |> get_params_nodes |> List.sort ~compare:compare_params
     in
     let mem =
-        Node2.G.get_dependants g fun_node
+        Node.G.get_dependants g fun_node
         |> List.find_map_exn
-             ~f:(fun (AnyNode n) : (Node2.any_mem Node2.phi, Node2.mem) Node2.t option ->
+             ~f:(fun (AnyNode n) : (Node.any_mem Node.phi, Node.mem) Node.t option ->
                match n.kind with
                | Mem Param -> Some n
                | _ -> None)
@@ -74,126 +74,125 @@ let get_param_nodes g (fun_node : (Node2.fun_def, Node2.ctrl) Node2.t) =
     (mem, datas)
 
 let add_call : type a b c.
-    Node2.G.readwrite Node2.G.t ->
+    Node.G.readwrite Node.G.t ->
     Ast.loc ->
     ?parent_fun:int ->
-    ctrl:(a, Node2.ctrl) Node2.t ->
-    mem:(b, Node2.mem) Node2.t ->
-    fun_ptr:(c, Node2.data) Node2.t ->
-    Node2.any_data list ->
-    (Node2.fun_call, Node2.ctrl) Node2.t * (Node2.fun_call_end, Node2.ctrl) Node2.t =
+    ctrl:(a, Node.ctrl) Node.t ->
+    mem:(b, Node.mem) Node.t ->
+    fun_ptr:(c, Node.data) Node.t ->
+    Node.any_data list ->
+    (Node.fun_call, Node.ctrl) Node.t * (Node.fun_call_end, Node.ctrl) Node.t =
    fun g loc ?parent_fun ~ctrl ~mem ~fun_ptr args ->
     let ret_typ =
-        match fun_ptr.Node2.typ with
+        match fun_ptr.Node.typ with
         | FunPtr (Value { params = _; ret; fun_indices = _ }) -> ret
         | t -> (
             match fun_ptr.kind with
             | ForwardRef _ -> ALL
             | _ -> failwithf "Expected function pointer got: %s" (Types.show t) ())
     in
-    let call = Node2.create_ctrl ?parent_fun loc Control FunctionCall in
-    Node2.G.add_node g call
+    let call = Node.create_ctrl ?parent_fun loc Control FunctionCall in
+    Node.G.add_node g call
       {
-        Node2.fun_ptr = Some (AnyData fun_ptr);
+        Node.fun_ptr = Some (AnyData fun_ptr);
         mem = Some (AnyMem mem);
         args = List.map args ~f:Option.some;
       };
-    Node2.G.set_ctrl g call ctrl;
+    Node.G.set_ctrl g call ctrl;
     let call_end =
-        Node2.create_ctrl ?parent_fun loc
+        Node.create_ctrl ?parent_fun loc
           (Tuple (Value [ Control; Memory; ret_typ ]))
           FunctionCallEnd
     in
-    Node2.G.add_node g call_end { Node2.ret_nodes = [] };
-    Node2.G.set_ctrl g call_end call;
+    Node.G.add_node g call_end { Node.ret_nodes = [] };
+    Node.G.set_ctrl g call_end call;
     (call, call_end)
 
 let link_call g ~call_node ~fun_node =
-    let (Ctrl (Function { ret = ret_node; signature = _; idx = _ })) = fun_node.Node2.kind in
-    let rec find_call_end : Node2.any list -> (Node2.fun_call_end, Node2.ctrl) Node2.t = function
+    let (Ctrl (Function { ret = ret_node; signature = _; idx = _ })) = fun_node.Node.kind in
+    let rec find_call_end : Node.any list -> (Node.fun_call_end, Node.ctrl) Node.t = function
         | [] -> assert false
-        | Node2.AnyNode h :: t -> (
-            match h.Node2.kind with
+        | Node.AnyNode h :: t -> (
+            match h.Node.kind with
             | Ctrl FunctionCallEnd -> h
             | _ -> find_call_end t)
     in
-    let call_end = Node2.G.get_dependants g call_node |> find_call_end in
-    let { Node2.fun_ptr = _; mem = mem_arg; args } = Node2.G.get_dependencies_exn g call_node in
+    let call_end = Node.G.get_dependants g call_node |> find_call_end in
+    let { Node.fun_ptr = _; mem = mem_arg; args } = Node.G.get_dependencies_exn g call_node in
     let mem_param, param_nodes = get_param_nodes g fun_node in
     match List.zip param_nodes args with
     | Unequal_lengths ->
         [%log.debug
-            "Call linking failed for %a, incorrect number of arguments. Expected %d got %d" Node2.pp
+            "Call linking failed for %a, incorrect number of arguments. Expected %d got %d" Node.pp
               call_node (List.length param_nodes) (List.length args)]
     | Ok l ->
-        let { Node2.ret_nodes } = Node2.G.get_dependencies_exn g call_end in
-        let { Node2.call_sites } = Node2.G.get_dependencies_exn g fun_node in
-        Node2.G.set_node_inputs g call_end
-          { Node2.ret_nodes = ret_nodes @ [ Some (AnyCtrl ret_node) ] };
-        Node2.G.set_node_inputs g fun_node
-          { call_sites = call_sites @ [ Some (AnyCtrl call_node) ] };
+        let { Node.ret_nodes } = Node.G.get_dependencies_exn g call_end in
+        let { Node.call_sites } = Node.G.get_dependencies_exn g fun_node in
+        Node.G.set_node_inputs g call_end
+          { Node.ret_nodes = ret_nodes @ [ Some (AnyCtrl ret_node) ] };
+        Node.G.set_node_inputs g fun_node { call_sites = call_sites @ [ Some (AnyCtrl call_node) ] };
         List.iter l ~f:(fun (param, arg) ->
             let arg = Option.value_exn arg in
             Phi_node.add_input g param arg);
         Phi_node.add_input g mem_param (Option.value_exn mem_arg)
 
 let add_return ?parent_fun g ret_node ~ctrl ~mem ~val_n =
-    let { Node2.mem = phi_mem; data = phi_data } = Node2.G.get_dependencies_exn g ret_node in
+    let { Node.mem = phi_mem; data = phi_data } = Node.G.get_dependencies_exn g ret_node in
     let (AnyMem phi_mem) = Option.value_exn phi_mem in
     let (AnyData phi_data) = Option.value_exn phi_data in
-    let (AnyNode region) = Node2.G.get_ctrl g ret_node |> Option.value_exn in
+    let (AnyNode region) = Node.G.get_ctrl g ret_node |> Option.value_exn in
 
-    let region = Node2.unpack_exn region (Ctrl Region) in
-    let { Node2.ctrl_inputs } = Node2.G.get_dependencies_exn g region in
+    let region = Node.unpack_exn region (Ctrl Region) in
+    let { Node.ctrl_inputs } = Node.G.get_dependencies_exn g region in
 
-    let phi_mem = Node2.unpack_exn phi_mem (Mem Phi) in
-    let phi_data = Node2.unpack_exn phi_data (Data Phi) in
+    let phi_mem = Node.unpack_exn phi_mem (Mem Phi) in
+    let phi_data = Node.unpack_exn phi_data (Data Phi) in
 
-    if Option.is_none ret_node.Node2.parent_fun then (
+    if Option.is_none ret_node.Node.parent_fun then (
       region.parent_fun <- parent_fun;
       phi_mem.parent_fun <- parent_fun;
       phi_data.parent_fun <- parent_fun;
       ret_node.parent_fun <- parent_fun);
 
-    Phi_node.add_input g phi_data (Node2.AnyData val_n);
-    Phi_node.add_input g phi_mem (Node2.AnyMem mem);
-    Node2.G.set_node_inputs g region { Node2.ctrl_inputs = ctrl_inputs @ [ Some (AnyCtrl ctrl) ] };
+    Phi_node.add_input g phi_data (Node.AnyData val_n);
+    Phi_node.add_input g phi_mem (Node.AnyMem mem);
+    Node.G.set_node_inputs g region { Node.ctrl_inputs = ctrl_inputs @ [ Some (AnyCtrl ctrl) ] };
     (* TODO do i care about this? we will set the types to ANY during SCCP anyway *)
-    let ~new_type:typ, ~extra_deps:_ = Phi_node.compute_type (Node2.G.readonly g) phi_mem in
+    let ~new_type:typ, ~extra_deps:_ = Phi_node.compute_type (Node.G.readonly g) phi_mem in
     phi_mem.typ <- typ;
-    let ~new_type:typ, ~extra_deps:_ = Phi_node.compute_type (Node2.G.readonly g) phi_data in
+    let ~new_type:typ, ~extra_deps:_ = Phi_node.compute_type (Node.G.readonly g) phi_data in
     phi_data.typ <- typ
 
 let get_signature n =
-    match n.Node2.kind with
+    match n.Node.kind with
     | Ctrl (Function { ret = _; signature; idx = _ }) -> signature
 
-let get_call_fun_ptr g (n : (Node2.fun_call, Node2.ctrl) Node2.t) =
-    let { Node2.fun_ptr; mem = _; args = _ } = Node2.G.get_dependencies_exn g n in
+let get_call_fun_ptr g (n : (Node.fun_call, Node.ctrl) Node.t) =
+    let { Node.fun_ptr; mem = _; args = _ } = Node.G.get_dependencies_exn g n in
     Option.value_exn fun_ptr
 
 let compute_fun_node_type g n =
-    let { Node2.call_sites } = Node2.G.get_dependencies_exn g n in
+    let { Node.call_sites } = Node.G.get_dependencies_exn g n in
     let new_type =
         List.filter_map call_sites ~f:(function
           | None -> None
           | Some (AnyCtrl dep) ->
               (* only calls should be here *)
-              let _ = Node2.unpack_exn dep (Ctrl FunctionCall) in
+              let _ = Node.unpack_exn dep (Ctrl FunctionCall) in
               Some dep.typ)
         |> List.fold ~init:Types.DeadControl ~f:Types.meet
     in
     (~new_type, ~extra_deps:[])
 
 let compute_call_end_type g n =
-    let (AnyNode call) = Node2.G.get_ctrl_exn g n in
-    let call = Node2.unpack_exn call (Ctrl FunctionCall) in
+    let (AnyNode call) = Node.G.get_ctrl_exn g n in
+    let call = Node.unpack_exn call (Ctrl FunctionCall) in
     let new_type =
         if not (Poly.equal call.typ Types.Control) then
           (* if call is not yet sure to be reachable we stay as ANY *)
           Types.Tuple (Value [ DeadControl; Memory; ANY ])
         else
-          let { Node2.fun_ptr; mem; args } = Node2.G.get_dependencies_exn g call in
+          let { Node.fun_ptr; mem; args } = Node.G.get_dependencies_exn g call in
           let (AnyData fun_ptr) = Option.value_exn fun_ptr in
           let fun_typ = fun_ptr.typ in
           match fun_typ with
@@ -206,7 +205,7 @@ let compute_call_end_type g n =
               possible functions. In this case we'll only want to do the
               Types.meet for precise return type calculation once all possible
               functions are already linked *)
-              let { Node2.ret_nodes } = Node2.G.get_dependencies_exn g n in
+              let { Node.ret_nodes } = Node.G.get_dependencies_exn g n in
               let ret_type =
                   ret_nodes
                   |> List.filter_opt

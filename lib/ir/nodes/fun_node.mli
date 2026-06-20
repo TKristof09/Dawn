@@ -1,65 +1,65 @@
 val create :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   Types.t ->
-  (Node2.fun_def, Node2.ctrl) Node2.t * (Node2.ret, Node2.ctrl) Node2.t
+  (Node.fun_def, Node.ctrl) Node.t * (Node.ret, Node.ctrl) Node.t
 
 val create_param :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  (Node2.fun_def, Node2.ctrl) Node2.t ->
+  (Node.fun_def, Node.ctrl) Node.t ->
   Types.t ->
   int ->
-  (Node2.any_data Node2.phi, Node2.data) Node2.t
+  (Node.any_data Node.phi, Node.data) Node.t
 
 val create_mem_param :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  (Node2.fun_def, Node2.ctrl) Node2.t ->
-  (Node2.any_mem Node2.phi, Node2.mem) Node2.t
+  (Node.fun_def, Node.ctrl) Node.t ->
+  (Node.any_mem Node.phi, Node.mem) Node.t
 
 val add_call :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  ctrl:('a, Node2.ctrl) Node2.t ->
-  mem:('b, Node2.mem) Node2.t ->
-  fun_ptr:('c, Node2.data) Node2.t ->
-  Node2.any_data list ->
-  (Node2.fun_call, Node2.ctrl) Node2.t * (Node2.fun_call_end, Node2.ctrl) Node2.t
+  ctrl:('a, Node.ctrl) Node.t ->
+  mem:('b, Node.mem) Node.t ->
+  fun_ptr:('c, Node.data) Node.t ->
+  Node.any_data list ->
+  (Node.fun_call, Node.ctrl) Node.t * (Node.fun_call_end, Node.ctrl) Node.t
 
 val add_return :
   ?parent_fun:int ->
-  Node2.G.readwrite Node2.G.t ->
-  (Node2.ret, Node2.ctrl) Node2.t ->
-  ctrl:('a, Node2.ctrl) Node2.t ->
-  mem:('b, Node2.mem) Node2.t ->
-  val_n:('c, Node2.data) Node2.t ->
+  Node.G.readwrite Node.G.t ->
+  (Node.ret, Node.ctrl) Node.t ->
+  ctrl:('a, Node.ctrl) Node.t ->
+  mem:('b, Node.mem) Node.t ->
+  val_n:('c, Node.data) Node.t ->
   unit
 
-val get_signature : (Node2.fun_def, Node2.ctrl) Node2.t -> Types.t
+val get_signature : (Node.fun_def, Node.ctrl) Node.t -> Types.t
 
 val link_call :
-  Node2.G.readwrite Node2.G.t ->
-  call_node:(Node2.fun_call, Node2.ctrl) Node2.t ->
-  fun_node:(Node2.fun_def, Node2.ctrl) Node2.t ->
+  Node.G.readwrite Node.G.t ->
+  call_node:(Node.fun_call, Node.ctrl) Node.t ->
+  fun_node:(Node.fun_def, Node.ctrl) Node.t ->
   unit
 
-val get_call_fun_ptr : 'a Node2.G.t -> (Node2.fun_call, Node2.ctrl) Node2.t -> Node2.any_data
+val get_call_fun_ptr : 'a Node.G.t -> (Node.fun_call, Node.ctrl) Node.t -> Node.any_data
 
 val get_param_nodes :
-  Node2.G.readonly Node2.G.t ->
-  (Node2.fun_def, Node2.ctrl) Node2.t ->
-  (Node2.any_mem Node2.phi, Node2.mem) Node2.t * (Node2.any_data Node2.phi, Node2.data) Node2.t list
+  Node.G.readonly Node.G.t ->
+  (Node.fun_def, Node.ctrl) Node.t ->
+  (Node.any_mem Node.phi, Node.mem) Node.t * (Node.any_data Node.phi, Node.data) Node.t list
 
 val compute_fun_node_type :
-  Node2.G.readonly Node2.G.t ->
-  (Node2.fun_def, Node2.ctrl) Node2.t ->
-  (new_type:Types.t * extra_deps:Node2.any list)
+  Node.G.readonly Node.G.t ->
+  (Node.fun_def, Node.ctrl) Node.t ->
+  (new_type:Types.t * extra_deps:Node.any list)
 
 val compute_call_end_type :
-  Node2.G.readonly Node2.G.t ->
-  (Node2.fun_call_end, Node2.ctrl) Node2.t ->
-  (new_type:Types.t * extra_deps:Node2.any list)
+  Node.G.readonly Node.G.t ->
+  (Node.fun_call_end, Node.ctrl) Node.t ->
+  (new_type:Types.t * extra_deps:Node.any list)

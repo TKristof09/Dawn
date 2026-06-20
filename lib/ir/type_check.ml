@@ -18,7 +18,7 @@ let expect_types (loc : Ast.loc) ~expected ~actual =
         else
           Some errors
 
-let as_binop : type a b. (a, b) Node2.t -> (Node2.binop, Node2.data) Node2.t =
+let as_binop : type a b. (a, b) Node.t -> (Node.binop, Node.data) Node.t =
    fun n ->
     match n.kind with
     | Data Add -> n
@@ -38,7 +38,7 @@ let as_binop : type a b. (a, b) Node2.t -> (Node2.binop, Node2.data) Node2.t =
     | _ -> assert false
 
 let do_data_node : type a.
-    Node2.G.readonly Node2.G.t -> (a, Node2.data) Node2.t -> (Ast.loc * string) list option =
+    Node.G.readonly Node.G.t -> (a, Node.data) Node.t -> (Ast.loc * string) list option =
    fun g n ->
     match n.kind with
     | Data Add
@@ -46,7 +46,7 @@ let do_data_node : type a.
     | Data Mul
     | Data Div ->
         let n = as_binop n in
-        let { Node2.lhs; rhs } = Node2.G.get_dependencies_exn g n in
+        let { Node.lhs; rhs } = Node.G.get_dependencies_exn g n in
         let (AnyData lhs) = Option.value_exn lhs in
         let (AnyData rhs) = Option.value_exn rhs in
         let expected = [ Types.i64; Types.i64 ] in
@@ -63,7 +63,7 @@ let do_data_node : type a.
     | Data Gt
     | Data GEq ->
         let n = as_binop n in
-        let { Node2.lhs; rhs } = Node2.G.get_dependencies_exn g n in
+        let { Node.lhs; rhs } = Node.G.get_dependencies_exn g n in
         let (AnyData lhs) = Option.value_exn lhs in
         let (AnyData rhs) = Option.value_exn rhs in
         let expected = [ Types.i64; Types.i64 ] in
@@ -73,18 +73,18 @@ let do_data_node : type a.
     | Data (Proj _) -> None
     | Data Phi ->
         (* FIXME: This feels kind of useless since phi.typ is always the meet of its alive inputs so this expected_types should never find errors since every input isa phi.typ by definition *)
-        let (AnyNode region) = Node2.G.get_ctrl_exn g n in
+        let (AnyNode region) = Node.G.get_ctrl_exn g n in
         let ctrl_inputs =
             match region.kind with
             | Ctrl Region ->
-                let { Node2.ctrl_inputs } = Node2.G.get_dependencies_exn g region in
+                let { Node.ctrl_inputs } = Node.G.get_dependencies_exn g region in
                 ctrl_inputs
             | Ctrl Loop ->
-                let { Node2.entry; backedge } = Node2.G.get_dependencies_exn g region in
+                let { Node.entry; backedge } = Node.G.get_dependencies_exn g region in
                 [ entry; backedge ]
             | _ -> assert false
         in
-        let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+        let { Node.phi_inputs } = Node.G.get_dependencies_exn g n in
         let inputs =
             List.zip_exn ctrl_inputs phi_inputs
             |> List.filter_map ~f:(fun (c, d) ->
@@ -105,12 +105,12 @@ let do_data_node : type a.
         (* TODO: probably should check *something* *)
         None
     | Data (Load name) ->
-        let { Node2.mem; ptr } : Node2.load = Node2.G.get_dependencies_exn g n in
+        let { Node.mem; ptr } : Node.load = Node.G.get_dependencies_exn g n in
         let (AnyData ptr) = Option.value_exn ptr in
         expect_types n.loc ~expected:[ Types.Ptr ALL ] ~actual:[ ptr.typ ]
     | Data AddrOf -> None
     | Data (AddrOfField field) ->
-        let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
+        let { Node.place; offset } = Node.G.get_dependencies_exn g n in
         let (AnyData place) = Option.value_exn place in
         let type_errors = expect_types n.loc ~expected:[ Struct All ] ~actual:[ place.typ ] in
         let field_type = Types.get_field_type place.typ field in
@@ -133,20 +133,20 @@ let do_data_node : type a.
         else
           type_errors
     | Data Deref ->
-        let { Node2.mem; ptr } = Node2.G.get_dependencies_exn g n in
+        let { Node.mem; ptr } = Node.G.get_dependencies_exn g n in
         let (AnyData ptr) = Option.value_exn ptr in
         expect_types n.loc ~expected:[ Types.Ptr ALL ] ~actual:[ ptr.typ ]
     | ForwardRef name -> Some [ (n.loc, Printf.sprintf "Symbol %s not found" name) ]
 
 let do_ctrl_node : type a.
-    Node2.G.readonly Node2.G.t -> (a, Node2.ctrl) Node2.t -> (Ast.loc * string) list option =
+    Node.G.readonly Node.G.t -> (a, Node.ctrl) Node.t -> (Ast.loc * string) list option =
    fun g n ->
     match n.kind with
     | Ctrl Start -> None
     | Ctrl Stop -> None
     | Ctrl (Proj _) -> None
     | Ctrl If ->
-        let { Node2.input } = Node2.G.get_dependencies_exn g n in
+        let { Node.input } = Node.G.get_dependencies_exn g n in
         let (AnyData input) = Option.value_exn input in
         (* TODO bool type *)
         if Types.is_a input.typ (Bool All) then
@@ -172,7 +172,7 @@ let do_ctrl_node : type a.
         (* return type checked in the Function node check because that has easier access to expected signature *)
         None
     | Ctrl FunctionCall ->
-        let { Node2.fun_ptr; mem; args } = Node2.G.get_dependencies_exn g n in
+        let { Node.fun_ptr; mem; args } = Node.G.get_dependencies_exn g n in
         let (AnyData fun_ptr) = Option.value_exn fun_ptr in
         let expected =
             match fun_ptr.typ with
@@ -192,18 +192,18 @@ let do_ctrl_node : type a.
     | Ctrl FunctionCallEnd -> None
 
 let do_mem_node : type a.
-    Node2.G.readonly Node2.G.t -> (a, Node2.mem) Node2.t -> (Ast.loc * string) list option =
+    Node.G.readonly Node.G.t -> (a, Node.mem) Node.t -> (Ast.loc * string) list option =
    fun g n ->
     match n.kind with
     | Mem New ->
-        let { Node2.mem; size } = Node2.G.get_dependencies_exn g n in
+        let { Node.mem; size } = Node.G.get_dependencies_exn g n in
         let (AnyData size) = Option.value_exn size in
         if Types.is_a size.typ Types.i64 then
           None
         else
           Some [ (n.loc, Printf.sprintf "Expected integer got %s" (Types.human_readable size.typ)) ]
     | Mem (Store name) -> (
-        let { Node2.mem; ptr; value } = Node2.G.get_dependencies_exn g n in
+        let { Node.mem; ptr; value } = Node.G.get_dependencies_exn g n in
         let (AnyData ptr) = Option.value_exn ptr in
         let (AnyData value) = Option.value_exn value in
 
@@ -219,7 +219,7 @@ let do_mem_node : type a.
                     (Types.human_readable ptr.typ) );
               ])
     | Mem Copy ->
-        let { Node2.mem; src; dst } = Node2.G.get_dependencies_exn g n in
+        let { Node.mem; src; dst } = Node.G.get_dependencies_exn g n in
         let (AnyData src) = Option.value_exn src in
         let (AnyData dst) = Option.value_exn dst in
         let type_errors =
@@ -258,7 +258,7 @@ let do_mem_node : type a.
     | Mem (Proj _) -> None
 
 let type_check_node : type a b.
-    Node2.G.readonly Node2.G.t -> (a, b) Node2.t -> (Ast.loc * string) list option =
+    Node.G.readonly Node.G.t -> (a, b) Node.t -> (Ast.loc * string) list option =
    fun g n ->
     match n.kind with
     | Data d -> do_data_node g n
@@ -268,7 +268,7 @@ let type_check_node : type a b.
     | ForwardRef name -> Some [ (n.loc, Printf.sprintf "Undefined symbol %s" name) ]
 
 let run g =
-    Node2.G.fold g ~init:[] ~f:(fun errors (AnyNode n) ->
+    Node.G.fold g ~init:[] ~f:(fun errors (AnyNode n) ->
         match type_check_node g n with
         | None -> errors
         | Some errs -> errs @ errors)

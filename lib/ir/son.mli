@@ -1,1 +1,1 @@
-val of_ast : Ast.statement Ast.node list -> Linker.t -> Node2.G.readwrite Node2.G.t
+val of_ast : Ast.statement Ast.node list -> Linker.t -> Node.G.readwrite Node.G.t

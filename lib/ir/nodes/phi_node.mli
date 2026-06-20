@@ -1,43 +1,43 @@
 val create_data :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  ('a, Node2.ctrl) Node2.t ->
-  Node2.any_data list ->
-  (Node2.any_data Node2.phi, Node2.data) Node2.t
+  ('a, Node.ctrl) Node.t ->
+  Node.any_data list ->
+  (Node.any_data Node.phi, Node.data) Node.t
 
 val create_mem :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  ('a, Node2.ctrl) Node2.t ->
-  Node2.any_mem list ->
-  (Node2.any_mem Node2.phi, Node2.mem) Node2.t
+  ('a, Node.ctrl) Node.t ->
+  Node.any_mem list ->
+  (Node.any_mem Node.phi, Node.mem) Node.t
 
 val create_data_no_backedge :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  ('a, Node2.ctrl) Node2.t ->
-  ('b, Node2.data) Node2.t ->
-  (Node2.any_data Node2.phi, Node2.data) Node2.t
+  ('a, Node.ctrl) Node.t ->
+  ('b, Node.data) Node.t ->
+  (Node.any_data Node.phi, Node.data) Node.t
 
 val create_mem_no_backedge :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  ('a, Node2.ctrl) Node2.t ->
-  ('b, Node2.mem) Node2.t ->
-  (Node2.any_mem Node2.phi, Node2.mem) Node2.t
+  ('a, Node.ctrl) Node.t ->
+  ('b, Node.mem) Node.t ->
+  (Node.any_mem Node.phi, Node.mem) Node.t
 
 val add_backedge_input :
-  Node2.G.readwrite Node2.G.t -> ('a Node2.phi, 'b) Node2.t -> ('c, 'b) Node2.t -> unit
+  Node.G.readwrite Node.G.t -> ('a Node.phi, 'b) Node.t -> ('c, 'b) Node.t -> unit
 
-val get_backedge_input : Node2.G.readonly Node2.G.t -> ('a Node2.phi, 'b) Node2.t -> 'a option
-val get_entry_edge_input : Node2.G.readonly Node2.G.t -> ('a Node2.phi, 'b) Node2.t -> 'a option
-val add_input : Node2.G.readwrite Node2.G.t -> ('a Node2.phi, 'b) Node2.t -> 'a -> unit
+val get_backedge_input : Node.G.readonly Node.G.t -> ('a Node.phi, 'b) Node.t -> 'a option
+val get_entry_edge_input : Node.G.readonly Node.G.t -> ('a Node.phi, 'b) Node.t -> 'a option
+val add_input : Node.G.readwrite Node.G.t -> ('a Node.phi, 'b) Node.t -> 'a -> unit
 
 val compute_type :
-  Node2.G.readonly Node2.G.t ->
-  ('a Node2.phi, 'b) Node2.t ->
-  (new_type:Types.t * extra_deps:Node2.any list)
+  Node.G.readonly Node.G.t ->
+  ('a Node.phi, 'b) Node.t ->
+  (new_type:Types.t * extra_deps:Node.any list)

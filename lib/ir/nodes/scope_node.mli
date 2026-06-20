@@ -1,78 +1,65 @@
-val create : Node2.G.readwrite Node2.G.t -> (Node2.scope_kind, Node2.misc) Node2.t
+val create : Node.G.readwrite Node.G.t -> (Node.scope_kind, Node.misc) Node.t
 
 val define :
-  Node2.G.readwrite Node2.G.t ->
-  (Node2.scope_kind, Node2.misc) Node2.t ->
+  Node.G.readwrite Node.G.t ->
+  (Node.scope_kind, Node.misc) Node.t ->
   string ->
-  ('a, 'b) Node2.t ->
+  ('a, 'b) Node.t ->
   bool ->
   unit
 
 val assign :
-  Node2.G.readwrite Node2.G.t ->
-  (Node2.scope_kind, Node2.misc) Node2.t ->
+  Node.G.readwrite Node.G.t ->
+  (Node.scope_kind, Node.misc) Node.t ->
+  ?force:bool ->
   string ->
-  ('a, 'b) Node2.t ->
+  ('a, 'b) Node.t ->
   unit
 
-val get :
-  Node2.G.readwrite Node2.G.t -> (Node2.scope_kind, Node2.misc) Node2.t -> string -> Node2.any
-
-val push : (Node2.scope_kind, Node2.misc) Node2.t -> unit
-val pop : Node2.G.readwrite Node2.G.t -> (Node2.scope_kind, Node2.misc) Node2.t -> unit
+val get : Node.G.readwrite Node.G.t -> (Node.scope_kind, Node.misc) Node.t -> string -> Node.any
+val push : (Node.scope_kind, Node.misc) Node.t -> unit
+val pop : Node.G.readwrite Node.G.t -> (Node.scope_kind, Node.misc) Node.t -> unit
 
 val dup :
-  Node2.G.readwrite Node2.G.t ->
-  (Node2.scope_kind, Node2.misc) Node2.t ->
-  (Node2.scope_kind, Node2.misc) Node2.t
+  Node.G.readwrite Node.G.t ->
+  (Node.scope_kind, Node.misc) Node.t ->
+  (Node.scope_kind, Node.misc) Node.t
 
 val dup_loop :
-  Node2.G.readwrite Node2.G.t ->
-  (Node2.scope_kind, Node2.misc) Node2.t ->
-  (Node2.scope_kind, Node2.misc) Node2.t
+  Node.G.readwrite Node.G.t ->
+  (Node.scope_kind, Node.misc) Node.t ->
+  (Node.scope_kind, Node.misc) Node.t
 
 val merge :
   ?parent_fun:int ->
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
-  this:(Node2.scope_kind, Node2.misc) Node2.t ->
-  other:(Node2.scope_kind, Node2.misc) Node2.t ->
+  this:(Node.scope_kind, Node.misc) Node.t ->
+  other:(Node.scope_kind, Node.misc) Node.t ->
   unit
 
 (** Merge the symbols from other into this, creating phi nodes if necessary *)
 
 val merge_loop :
   ?parent_fun:int ->
-  Node2.G.readwrite Node2.G.t ->
-  this:(Node2.scope_kind, Node2.misc) Node2.t ->
-  body:(Node2.scope_kind, Node2.misc) Node2.t ->
-  exit:(Node2.scope_kind, Node2.misc) Node2.t ->
+  Node.G.readwrite Node.G.t ->
+  this:(Node.scope_kind, Node.misc) Node.t ->
+  body:(Node.scope_kind, Node.misc) Node.t ->
+  exit:(Node.scope_kind, Node.misc) Node.t ->
   unit
 
-val get_ctrl :
-  Node2.G.readwrite Node2.G.t -> (Node2.scope_kind, Node2.misc) Node2.t -> Node2.any_ctrl
+val get_ctrl : Node.G.readwrite Node.G.t -> (Node.scope_kind, Node.misc) Node.t -> Node.any_ctrl
 
 val set_ctrl :
-  Node2.G.readwrite Node2.G.t ->
-  (Node2.scope_kind, Node2.misc) Node2.t ->
-  ('a, Node2.ctrl) Node2.t ->
-  unit
+  Node.G.readwrite Node.G.t -> (Node.scope_kind, Node.misc) Node.t -> ('a, Node.ctrl) Node.t -> unit
 
-val get_mem : Node2.G.readwrite Node2.G.t -> (Node2.scope_kind, Node2.misc) Node2.t -> Node2.any_mem
+val get_mem : Node.G.readwrite Node.G.t -> (Node.scope_kind, Node.misc) Node.t -> Node.any_mem
 
 val set_mem :
-  Node2.G.readwrite Node2.G.t ->
-  (Node2.scope_kind, Node2.misc) Node2.t ->
-  ('a, Node2.mem) Node2.t ->
-  unit
+  Node.G.readwrite Node.G.t -> (Node.scope_kind, Node.misc) Node.t -> ('a, Node.mem) Node.t -> unit
 
 val ret_identifier : string
-
-val get_ret_ptr :
-  Node2.G.readwrite Node2.G.t -> (Node2.scope_kind, Node2.misc) Node2.t -> Node2.any_data
+val get_ret_ptr : Node.G.readwrite Node.G.t -> (Node.scope_kind, Node.misc) Node.t -> Node.any_data
 
 val set_ret_ptr :
-  Node2.G.readwrite Node2.G.t ->
-  (Node2.scope_kind, Node2.misc) Node2.t ->
-  ('a, Node2.data) Node2.t ->
-  unit
+  Node.G.readwrite Node.G.t -> (Node.scope_kind, Node.misc) Node.t -> ('a, Node.data) Node.t -> unit

@@ -1,7 +1,7 @@
 open Core
 
 type t = {
-    functions : (string * (Node2.fun_def, Node2.ctrl) Node2.t) Dynarray.t;
+    functions : (string * (Node.fun_def, Node.ctrl) Node.t) Dynarray.t;
     mutable universe : Int.Set.t; (* cache it to not have to recreate the set on each link call *)
   }
 
@@ -29,10 +29,10 @@ let link linker g call_node =
     let (AnyData fun_ptr) = Fun_node.get_call_fun_ptr g call_node in
     Types.iter_fun_indices fun_ptr.typ linker.universe ~f:(fun fun_idx ->
         let fun_node = Dynarray.get linker.functions (fun_idx - 1) |> snd in
-        [%log.debug "Linking %a to %s" Node2.pp call_node (get_name linker fun_idx)];
+        [%log.debug "Linking %a to %s" Node.pp call_node (get_name linker fun_idx)];
         if
-          List.exists (Node2.G.get_dependants g call_node) ~f:(fun (AnyNode n) ->
-              Node2.equal n fun_node)
+          List.exists (Node.G.get_dependants g call_node) ~f:(fun (AnyNode n) ->
+              Node.equal n fun_node)
         then
           ()
         else (

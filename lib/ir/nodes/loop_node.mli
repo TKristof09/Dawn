@@ -1,14 +1,11 @@
 val create :
-  Node2.G.readwrite Node2.G.t ->
+  Node.G.readwrite Node.G.t ->
   Ast.loc ->
   ?parent_fun:int ->
-  ('a, Node2.ctrl) Node2.t ->
-  (Node2.loop, Node2.ctrl) Node2.t
+  ('a, Node.ctrl) Node.t ->
+  (Node.loop, Node.ctrl) Node.t
 (** Loop regions have two inputs, the first is the back edge the second is the head. The back edge
     will get filled later on. *)
 
 val set_back_edge :
-  Node2.G.readwrite Node2.G.t ->
-  (Node2.loop, Node2.ctrl) Node2.t ->
-  ('a, Node2.ctrl) Node2.t ->
-  unit
+  Node.G.readwrite Node.G.t -> (Node.loop, Node.ctrl) Node.t -> ('a, Node.ctrl) Node.t -> unit

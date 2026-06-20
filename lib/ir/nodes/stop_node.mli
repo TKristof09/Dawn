@@ -1,1 +1,1 @@
-val create : Ast.loc -> (Node2.stop, Node2.ctrl) Node2.t
+val create : Ast.loc -> (Node.stop, Node.ctrl) Node.t

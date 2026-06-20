@@ -2,7 +2,7 @@ open Core
 
 let node_to_dot_id id = Printf.sprintf "n%d" id
 
-let node_shape : type a b. (a, b) Node2.t -> string =
+let node_shape : type a b. (a, b) Node.t -> string =
    fun node ->
     match node.kind with
     | Data _ -> "circle"
@@ -11,7 +11,7 @@ let node_shape : type a b. (a, b) Node2.t -> string =
     | Mem _ -> "box"
     | ForwardRef _ -> "box"
 
-let node_label : type a b. (a, b) Node2.t -> string =
+let node_label : type a b. (a, b) Node.t -> string =
    fun node ->
     let kind_str =
         let show_sexp s =
@@ -33,15 +33,15 @@ let node_label : type a b. (a, b) Node2.t -> string =
         | Data (Load s) -> Printf.sprintf "Load %s" s
         | Data (AddrOfField s) -> Printf.sprintf "AddrOfField %s" s
         | Mem (Store s) -> Printf.sprintf "Store %s" s
-        | Data d -> show_sexp (Node2.sexp_of_data_kind (Fun.const (Sexp.Atom "")) d)
-        | Ctrl c -> show_sexp (Node2.sexp_of_ctrl_kind (Fun.const (Sexp.Atom "")) c)
-        | Mem m -> show_sexp (Node2.sexp_of_mem_kind (Fun.const (Sexp.Atom "")) m)
+        | Data d -> show_sexp (Node.sexp_of_data_kind (Fun.const (Sexp.Atom "")) d)
+        | Ctrl c -> show_sexp (Node.sexp_of_ctrl_kind (Fun.const (Sexp.Atom "")) c)
+        | Mem m -> show_sexp (Node.sexp_of_mem_kind (Fun.const (Sexp.Atom "")) m)
         | Scope _ -> Printf.sprintf "Scope %d" node.id
         | ForwardRef name -> Printf.sprintf "Forward ref %s" name
     in
     kind_str
 
-let get_edge_style : type a b c d. (a, b) Node2.t -> (c, d) Node2.t -> string =
+let get_edge_style : type a b c d. (a, b) Node.t -> (c, d) Node.t -> string =
    fun def use ->
     let rec aux (def_typ : Types.t) (use_typ : Types.t) =
         match def_typ with
@@ -84,13 +84,13 @@ let pp_dot fmt g =
 
     (* First pass: Add normal nodes *)
     let functions = Hashtbl.create (module Int) in
-    Node2.G.iter g ~f:(fun (AnyNode node) ->
+    Node.G.iter g ~f:(fun (AnyNode node) ->
         match node.kind with
         | Data Constant ->
-            Node2.G.get_dependants g node
+            Node.G.get_dependants g node
             |> List.iter ~f:(fun (AnyNode dep) ->
                 match dep.parent_fun with
-                | None -> Hashtbl.add_multi functions ~key:0 ~data:(Node2.AnyNode node)
+                | None -> Hashtbl.add_multi functions ~key:0 ~data:(Node.AnyNode node)
                 | Some fun_idx -> Hashtbl.add_multi functions ~key:fun_idx ~data:(AnyNode node))
         | _ -> (
             match node.parent_fun with
@@ -120,7 +120,7 @@ let pp_dot fmt g =
                   |> String.substr_replace_all ~pattern:"\n" ~with_:" "
                   |> String.escaped)
             | Data Constant ->
-                Node2.G.get_dependants g node
+                Node.G.get_dependants g node
                 |> List.filter ~f:(fun (AnyNode use) ->
                     match use.parent_fun with
                     | None -> 0 = fun_idx
@@ -141,13 +141,13 @@ let pp_dot fmt g =
         Format.fprintf fmt "}\n");
 
     (* Second pass: Add edges *)
-    Node2.G.iter g ~f:(fun (AnyNode node) ->
+    Node.G.iter g ~f:(fun (AnyNode node) ->
         match node.kind with
         | Scope _ -> ()
         | Data Constant -> ()
         | _ ->
-            let deps = Node2.G.get_dependencies_list g node in
-            let ctrl = Node2.G.get_ctrl g node in
+            let deps = Node.G.get_dependencies_list g node in
+            let ctrl = Node.G.get_ctrl g node in
             List.iteri (ctrl :: deps) ~f:(fun i dep ->
                 match dep with
                 | None -> ()
@@ -170,7 +170,7 @@ let pp_dot fmt g =
     Format.fprintf fmt "}@\n";
 
     (* Third pass: Add scope subgraphs *)
-    Node2.G.iter g ~f:(fun (AnyNode node) ->
+    Node.G.iter g ~f:(fun (AnyNode node) ->
         match node.kind with
         | Scope tbl ->
             Format.fprintf fmt "subgraph cluster_scope_%d {@\n" node.id;
@@ -280,7 +280,7 @@ let show_node_compact g node =
     let kind_str = node_label node in
     let type_str = Types.show node.typ |> String.substr_replace_all ~pattern:"\n" ~with_:" " in
     let deps_str =
-        Node2.G.get_dependencies_list g node
+        Node.G.get_dependencies_list g node
         |> List.map ~f:(function
           | None -> "_"
           | Some (AnyNode n) -> Printf.sprintf "%%%d" n.id)
@@ -297,15 +297,15 @@ let pp_linear fmt g =
     Format.fprintf fmt "=== Ideal Graph (Linearized) ===@\n";
 
     let control_nodes =
-        Node2.G.fold g ~init:[] ~f:(fun acc (AnyNode n) ->
-            if Node2.is_blockhead n then Node2.AnyNode n :: acc else acc)
+        Node.G.fold g ~init:[] ~f:(fun acc (AnyNode n) ->
+            if Node.is_blockhead n then Node.AnyNode n :: acc else acc)
         |> List.sort ~compare:(fun (AnyNode a) (AnyNode b) -> Int.compare a.id b.id)
     in
 
     List.iter control_nodes ~f:(fun (AnyNode block) ->
-        Format.fprintf fmt "Block %d (%s):@\n" block.id (Node2.show_kind block.kind);
+        Format.fprintf fmt "Block %d (%s):@\n" block.id (Node.show_kind block.kind);
 
-        let dependants = Node2.G.get_dependants g block in
+        let dependants = Node.G.get_dependants g block in
         List.iter dependants ~f:(fun (AnyNode n) ->
             match n.kind with
             | Data Phi -> Format.fprintf fmt "  %a@\n" (pp_node_compact g) n
@@ -313,14 +313,14 @@ let pp_linear fmt g =
 
         (* Print control edges *)
         List.iter dependants ~f:(fun (AnyNode n) ->
-            if Node2.is_ctrl n then
-              Format.fprintf fmt "  -> %d (%s)@\n" n.id (Node2.show_kind n.kind));
+            if Node.is_ctrl n then
+              Format.fprintf fmt "  -> %d (%s)@\n" n.id (Node.show_kind n.kind));
         Format.fprintf fmt "@\n");
 
     Format.fprintf fmt "--- Floating Data Nodes ---@\n";
-    Node2.G.iter g ~f:(fun (AnyNode n) ->
+    Node.G.iter g ~f:(fun (AnyNode n) ->
         if
-          (not (Node2.is_ctrl n))
+          (not (Node.is_ctrl n))
           &&
           match n.kind with
           | Data Phi -> false

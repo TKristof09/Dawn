@@ -11,19 +11,19 @@ let compile filename =
     | Ok ast ->
         let linker = Linker.create () in
         let son = Son.of_ast ast linker in
-        [%log.debug "\n%s" (Ir_printer.to_dot (Node2.G.readonly son))];
+        [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
         Sccp.run son linker;
-        let type_errors = Type_check.run (Node2.G.readonly son) in
-        [%log.debug "\n%s" (Ir_printer.to_dot (Node2.G.readonly son))];
+        let type_errors = Type_check.run (Node.G.readonly son) in
+        [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
         if not (List.is_empty type_errors) then (
           List.iter type_errors ~f:(fun err -> [%log.error err]);
           exit 1)
         else (
           Struct_fun_args.run son;
-          [%log.debug "\n%s" (Ir_printer.to_dot (Node2.G.readonly son))];
+          [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
           Integer_widening.run son;
-          [%log.debug "\n%s" (Ir_printer.to_dot (Node2.G.readonly son))];
-          let schedules = Scheduler.schedule (Node2.G.readonly son) in
+          [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
+          let schedules = Scheduler.schedule (Node.G.readonly son) in
           (* only do code gen on non external functions *)
           let functions =
               Core.List.filter schedules ~f:(fun (g, _) ->

@@ -146,7 +146,7 @@ module N = struct
   and ('a, 'b) t = {
       id : int;
       mutable kind : 'a kind;
-      ir_node : Node2.any;
+      ir_node : Node.any;
       list_of_inputs : 'a -> any option list;
       inputs_of_list : any option list -> 'a;
       (* We only need this because the Graph.NODE interface needs two
@@ -985,7 +985,7 @@ let get_register_kills : type a b. (a, b) t -> Registers.Mask.t option =
         Some (Registers.Mask.of_list [ Reg RCX ])
     | _ -> None
 
-let create_node : type a. a kind -> Node2.any -> (a, unit) t =
+let create_node : type a. a kind -> Node.any -> (a, unit) t =
    fun kind ir_node ->
     {
       id = next_id ();
@@ -1002,35 +1002,35 @@ let get_phi_backedge g phi =
     List.nth_exn phi_inputs 1
 
 let rec of_data_node : type a.
-    (Node2.any, any) Hashtbl.t ->
-    Node2.G.readonly Node2.G.t ->
+    (Node.any, any) Hashtbl.t ->
+    Node.G.readonly Node.G.t ->
     G.readwrite G.t ->
-    (a, Node2.data) Node2.t ->
+    (a, Node.data) Node.t ->
     any =
    fun memo g machine_g n ->
     let set_ctrl : type a b. (a, b) t -> unit =
        fun node ->
         let ctrl =
-            Node2.G.get_ctrl g n
+            Node.G.get_ctrl g n
             |> Option.map ~f:(fun (AnyNode ctrl) -> convert_node memo g machine_g ctrl)
         in
         match ctrl with
         | None -> ()
         | Some (AnyNode ctrl) -> G.set_ctrl machine_g node ctrl
     in
-    let get_const (Node2.AnyData n) =
+    let get_const (Node.AnyData n) =
         if Types.is_constant n.typ && Z.fits_int32 (Types.get_integer_const_exn n.typ) then
           Some (Types.get_integer_const_exn n.typ)
         else
           None
     in
-    let binop_commutative kind kind_imm (n : (Node2.binop, Node2.data) Node2.t) =
-        let deps = Node2.G.get_dependencies_exn g n in
+    let binop_commutative kind kind_imm (n : (Node.binop, Node.data) Node.t) =
+        let deps = Node.G.get_dependencies_exn g n in
         let lhs = Option.value_exn deps.lhs in
         let rhs = Option.value_exn deps.rhs in
         match (get_const lhs, get_const rhs) with
         | None, None ->
-            let node = create_node kind (Node2.AnyNode n) in
+            let node = create_node kind (Node.AnyNode n) in
             Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
             let (AnyData lhs) = lhs in
             let lhs = convert_node memo g machine_g lhs in
@@ -1058,8 +1058,8 @@ let rec of_data_node : type a.
             set_ctrl node;
             AnyNode node
     in
-    let binop_non_commutative kind kind_imm (n : (Node2.binop, Node2.data) Node2.t) =
-        let deps = Node2.G.get_dependencies_exn g n in
+    let binop_non_commutative kind kind_imm (n : (Node.binop, Node.data) Node.t) =
+        let deps = Node.G.get_dependencies_exn g n in
         let (AnyData rhs) = Option.value_exn deps.rhs in
         match rhs.typ with
         | Integer _
@@ -1074,7 +1074,7 @@ let rec of_data_node : type a.
             set_ctrl node;
             AnyNode node
         | _ ->
-            let node = create_node kind (Node2.AnyNode n) in
+            let node = create_node kind (Node.AnyNode n) in
             Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
             let (AnyData lhs) = Option.value_exn deps.lhs in
             let lhs = convert_node memo g machine_g lhs in
@@ -1083,11 +1083,11 @@ let rec of_data_node : type a.
             set_ctrl node;
             AnyNode node
     in
-    let simple : type a b t. a kind -> (b, t) Node2.t -> (b -> a) -> any =
+    let simple : type a b t. a kind -> (b, t) Node.t -> (b -> a) -> any =
        fun kind n f ->
         let node = create_node kind (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        let inputs = Node2.G.get_dependencies_exn g n in
+        let inputs = Node.G.get_dependencies_exn g n in
         G.add_node machine_g node (f inputs);
         set_ctrl node;
         AnyNode node
@@ -1101,7 +1101,7 @@ let rec of_data_node : type a.
         let kind = Div in
         let node = create_node kind (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        let { Node2.lhs; rhs } = Node2.G.get_dependencies_exn g n in
+        let { Node.lhs; rhs } = Node.G.get_dependencies_exn g n in
         let (AnyData lhs) = Option.value_exn lhs in
         let (AnyData rhs) = Option.value_exn rhs in
         let lhs = convert_node memo g machine_g lhs in
@@ -1129,7 +1129,7 @@ let rec of_data_node : type a.
         let kind = DProj i in
         let node = create_node kind (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        let { Node2.input } = Node2.G.get_dependencies_exn g n in
+        let { Node.input } = Node.G.get_dependencies_exn g n in
         let (AnyNode input) = Option.value_exn input in
         let input = convert_node memo g machine_g input in
         G.add_node machine_g node { input };
@@ -1141,7 +1141,7 @@ let rec of_data_node : type a.
     | Data LEq
     | Data Gt
     | Data GEq -> (
-        let as_binop : type a b. (a, b) Node2.t -> (Node2.binop, Node2.data) Node2.t =
+        let as_binop : type a b. (a, b) Node.t -> (Node.binop, Node.data) Node.t =
            fun n ->
             match n.kind with
             | Data Add -> n
@@ -1159,7 +1159,7 @@ let rec of_data_node : type a.
             | _ -> assert false
         in
         let n = as_binop n in
-        let { Node2.lhs; rhs } = Node2.G.get_dependencies_exn g n in
+        let { Node.lhs; rhs } = Node.G.get_dependencies_exn g n in
         let m_cmp =
             match n.kind with
             | Data Eq -> Eq
@@ -1227,10 +1227,10 @@ let rec of_data_node : type a.
         let kind = Ideal Phi in
         let node = create_node kind (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+        let { Node.phi_inputs } = Node.G.get_dependencies_exn g n in
         let phi_inputs =
             List.map phi_inputs
-              ~f:(Option.map ~f:(fun (Node2.AnyData n) -> convert_node memo g machine_g n))
+              ~f:(Option.map ~f:(fun (Node.AnyData n) -> convert_node memo g machine_g n))
         in
         G.add_node machine_g node { phi_inputs };
         set_ctrl node;
@@ -1243,10 +1243,10 @@ let rec of_data_node : type a.
         let kind = Param i in
         let node = create_node kind (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+        let { Node.phi_inputs } = Node.G.get_dependencies_exn g n in
         let phi_inputs =
             List.map phi_inputs
-              ~f:(Option.map ~f:(fun (Node2.AnyData n) -> convert_node memo g machine_g n))
+              ~f:(Option.map ~f:(fun (Node.AnyData n) -> convert_node memo g machine_g n))
         in
         G.add_node machine_g node { phi_inputs };
         set_ctrl node;
@@ -1254,13 +1254,13 @@ let rec of_data_node : type a.
     | Data (External name) ->
         let node = create_node (Ideal (External name)) (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        let { Node2.params } = Node2.G.get_dependencies_exn g n in
+        let { Node.params } = Node.G.get_dependencies_exn g n in
         let params = List.map params ~f:(fun (AnyData n) -> convert_node memo g machine_g n) in
         G.add_node machine_g node { params };
         set_ctrl node;
         AnyNode node
     | Data Cast ->
-        let { Node2.input } = Node2.G.get_dependencies_exn g n in
+        let { Node.input } = Node.G.get_dependencies_exn g n in
         let (AnyData input) = Option.value_exn input in
         let kind =
             match input.typ with
@@ -1284,21 +1284,21 @@ let rec of_data_node : type a.
         | Struct _ ->
             let node = create_node AddrOf (AnyNode n) in
             Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-            let { Node2.mem = _; ptr } : Node2.load = Node2.G.get_dependencies_exn g n in
+            let { Node.mem = _; ptr } : Node.load = Node.G.get_dependencies_exn g n in
             let (AnyData ptr) = Option.value_exn ptr in
             let ptr = convert_node memo g machine_g ptr in
             G.add_node machine_g node { input = ptr };
             set_ctrl node;
             AnyNode node
         | _ ->
-            simple Load n (fun { Node2.mem; ptr } ->
+            simple Load n (fun { Node.mem; ptr } ->
                 let (AnyMem mem) = Option.value_exn mem in
                 let (AnyData ptr) = Option.value_exn ptr in
                 { mem = convert_node memo g machine_g mem; ptr = convert_node memo g machine_g ptr })
         )
     | Data AddrOf -> (
         let node = create_node AddrOf (AnyNode n) in
-        let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
+        let { Node.place; offset } = Node.G.get_dependencies_exn g n in
         match offset with
         | None ->
             Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
@@ -1319,7 +1319,7 @@ let rec of_data_node : type a.
             set_ctrl add_node;
             AnyNode add_node)
     | Data (AddrOfField f) ->
-        let { Node2.place; offset } = Node2.G.get_dependencies_exn g n in
+        let { Node.place; offset } = Node.G.get_dependencies_exn g n in
         let (AnyData place) = Option.value_exn place in
         let field_offset = Types.get_offset place.typ f |> Option.value_exn in
 
@@ -1357,7 +1357,7 @@ let rec of_data_node : type a.
         match n.typ with
         | Struct _ ->
             (* struct dereference isn't a real thing because structs need to be accessed by ptr anyway *)
-            let { Node2.mem; ptr } = Node2.G.get_dependencies_exn g n in
+            let { Node.mem; ptr } = Node.G.get_dependencies_exn g n in
             let (AnyData ptr) = Option.value_exn ptr in
             let ptr = convert_node memo g machine_g ptr in
             Hashtbl.set memo ~key:(AnyNode n) ~data:ptr;
@@ -1371,34 +1371,34 @@ let rec of_data_node : type a.
                 { mem; ptr }))
 
 and of_ctrl_node : type a.
-    (Node2.any, any) Hashtbl.t ->
-    Node2.G.readonly Node2.G.t ->
+    (Node.any, any) Hashtbl.t ->
+    Node.G.readonly Node.G.t ->
     G.readwrite G.t ->
-    (a, Node2.ctrl) Node2.t ->
+    (a, Node.ctrl) Node.t ->
     any =
    fun memo g machine_g n ->
     let set_ctrl : type a b. (a, b) t -> unit =
        fun node ->
         let ctrl =
-            Node2.G.get_ctrl g n
+            Node.G.get_ctrl g n
             |> Option.map ~f:(fun (AnyNode ctrl) -> convert_node memo g machine_g ctrl)
         in
         match ctrl with
         | None -> ()
         | Some (AnyNode ctrl) -> G.set_ctrl machine_g node ctrl
     in
-    let simple : type a b t. a kind -> (b, t) Node2.t -> (b -> a) -> any =
+    let simple : type a b t. a kind -> (b, t) Node.t -> (b -> a) -> any =
        fun kind n f ->
         let node = create_node kind (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        let inputs = Node2.G.get_dependencies_exn g n in
+        let inputs = Node.G.get_dependencies_exn g n in
         G.add_node machine_g node (f inputs);
         set_ctrl node;
         AnyNode node
     in
     match n.kind with
     | Ctrl If -> (
-        let { Node2.input = cond } = Node2.G.get_dependencies_exn g n in
+        let { Node.input = cond } = Node.G.get_dependencies_exn g n in
         let (AnyData cond) = Option.value_exn cond in
         let op =
             match cond.kind with
@@ -1437,7 +1437,7 @@ and of_ctrl_node : type a.
         let (AnyNode node) = G.get_stop machine_g in
         let node = unpack_exn node (Ideal Stop) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        let { Node2.mem } : Node2.stop = Node2.G.get_dependencies_exn g n in
+        let { Node.mem } : Node.stop = Node.G.get_dependencies_exn g n in
         let (AnyMem mem) = Option.value_exn mem in
         let mem = convert_node memo g machine_g mem in
         G.set_node_inputs machine_g node { mem };
@@ -1451,7 +1451,7 @@ and of_ctrl_node : type a.
 
         let node = create_node kind (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        let { Node2.input } = Node2.G.get_dependencies_exn g n in
+        let { Node.input } = Node.G.get_dependencies_exn g n in
         let (AnyNode input) = Option.value_exn input in
         let inputs = { input = convert_node memo g machine_g input } in
         G.add_node machine_g node inputs;
@@ -1470,16 +1470,16 @@ and of_ctrl_node : type a.
         simple (Ideal Region) n (fun { ctrl_inputs } ->
             let ctrl_inputs =
                 List.map ctrl_inputs
-                  ~f:(Option.map ~f:(fun (Node2.AnyCtrl n) -> convert_node memo g machine_g n))
+                  ~f:(Option.map ~f:(fun (Node.AnyCtrl n) -> convert_node memo g machine_g n))
             in
             { ctrl_inputs })
     | Ctrl (Function { ret = _; signature = _; idx }) ->
         let node = create_node (FunctionProlog idx) (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        let { Node2.call_sites } = Node2.G.get_dependencies_exn g n in
+        let { Node.call_sites } = Node.G.get_dependencies_exn g n in
         let call_sites =
             List.map call_sites
-              ~f:(Option.map ~f:(fun (Node2.AnyCtrl call) -> convert_node memo g machine_g call))
+              ~f:(Option.map ~f:(fun (Node.AnyCtrl call) -> convert_node memo g machine_g call))
         in
         G.add_node machine_g node { ctrl_inputs = call_sites };
         set_ctrl node;
@@ -1494,7 +1494,7 @@ and of_ctrl_node : type a.
               callee_saves = [];
             })
     | Ctrl FunctionCall ->
-        let { Node2.fun_ptr; mem; args } = Node2.G.get_dependencies_exn g n in
+        let { Node.fun_ptr; mem; args } = Node.G.get_dependencies_exn g n in
         let (AnyData fun_ptr) = Option.value_exn fun_ptr in
         let (AnyMem mem) = Option.value_exn mem in
         let fun_idx = Types.get_fun_idx fun_ptr.typ in
@@ -1507,7 +1507,7 @@ and of_ctrl_node : type a.
         let mem = convert_node memo g machine_g mem in
         let args =
             List.map args ~f:(fun o -> Option.value_exn o)
-            |> List.map ~f:(fun (Node2.AnyData arg) -> convert_node memo g machine_g arg)
+            |> List.map ~f:(fun (Node.AnyData arg) -> convert_node memo g machine_g arg)
         in
         G.add_node machine_g node { fun_ptr; mem; args };
         set_ctrl node;
@@ -1516,32 +1516,32 @@ and of_ctrl_node : type a.
         simple FunctionCallEnd n (fun { ret_nodes } ->
             let ret_nodes =
                 List.map ret_nodes ~f:(fun o -> Option.value_exn o)
-                |> List.map ~f:(fun (Node2.AnyCtrl ret) -> convert_node memo g machine_g ret)
+                |> List.map ~f:(fun (Node.AnyCtrl ret) -> convert_node memo g machine_g ret)
             in
             { ret_nodes })
 
 and of_mem_node : type a.
-    (Node2.any, any) Hashtbl.t ->
-    Node2.G.readonly Node2.G.t ->
+    (Node.any, any) Hashtbl.t ->
+    Node.G.readonly Node.G.t ->
     G.readwrite G.t ->
-    (a, Node2.mem) Node2.t ->
+    (a, Node.mem) Node.t ->
     any =
    fun memo g machine_g n ->
     let set_ctrl : type a b. (a, b) t -> unit =
        fun node ->
         let ctrl =
-            Node2.G.get_ctrl g n
+            Node.G.get_ctrl g n
             |> Option.map ~f:(fun (AnyNode ctrl) -> convert_node memo g machine_g ctrl)
         in
         match ctrl with
         | None -> ()
         | Some (AnyNode ctrl) -> G.set_ctrl machine_g node ctrl
     in
-    let simple : type a b t. a kind -> (b, t) Node2.t -> (b -> a) -> any =
+    let simple : type a b t. a kind -> (b, t) Node.t -> (b -> a) -> any =
        fun kind n f ->
         let node = create_node kind (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        let inputs = Node2.G.get_dependencies_exn g n in
+        let inputs = Node.G.get_dependencies_exn g n in
         G.add_node machine_g node (f inputs);
         set_ctrl node;
         AnyNode node
@@ -1554,7 +1554,7 @@ and of_mem_node : type a.
             { mem = convert_node memo g machine_g mem; size = convert_node memo g machine_g size })
     | Mem (Store _) ->
         (* TODO check for ops like add that can address memory directly *)
-        let { Node2.mem = _; ptr = _; value } = Node2.G.get_dependencies_exn g n in
+        let { Node.mem = _; ptr = _; value } = Node.G.get_dependencies_exn g n in
         let (AnyData value) = Option.value_exn value in
         let size = Types.get_size value.typ in
         assert (size <= 8);
@@ -1568,7 +1568,7 @@ and of_mem_node : type a.
               value = convert_node memo g machine_g value;
             })
     | Mem Copy ->
-        let inputs = Node2.G.get_dependencies_exn g n in
+        let inputs = Node.G.get_dependencies_exn g n in
         let (AnyData src) = Option.value_exn inputs.src in
         let size =
             match src.typ with
@@ -1587,10 +1587,10 @@ and of_mem_node : type a.
         let kind = Ideal Phi in
         let node = create_node kind (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+        let { Node.phi_inputs } = Node.G.get_dependencies_exn g n in
         let phi_inputs =
             List.map phi_inputs
-              ~f:(Option.map ~f:(fun (Node2.AnyMem n) -> convert_node memo g machine_g n))
+              ~f:(Option.map ~f:(fun (Node.AnyMem n) -> convert_node memo g machine_g n))
         in
         G.add_node machine_g node { phi_inputs };
         set_ctrl node;
@@ -1599,10 +1599,10 @@ and of_mem_node : type a.
         let kind = Param (-1) in
         let node = create_node kind (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode node);
-        let { Node2.phi_inputs } = Node2.G.get_dependencies_exn g n in
+        let { Node.phi_inputs } = Node.G.get_dependencies_exn g n in
         let phi_inputs =
             List.map phi_inputs
-              ~f:(Option.map ~f:(fun (Node2.AnyMem n) -> convert_node memo g machine_g n))
+              ~f:(Option.map ~f:(fun (Node.AnyMem n) -> convert_node memo g machine_g n))
         in
         G.add_node machine_g node { phi_inputs };
         set_ctrl node;
@@ -1613,11 +1613,8 @@ and of_mem_node : type a.
             { input = convert_node memo g machine_g input })
 
 and convert_node : type a t.
-    (Node2.any, any) Hashtbl.t ->
-    Node2.G.readonly Node2.G.t ->
-    G.readwrite G.t ->
-    (a, t) Node2.t ->
-    any =
+    (Node.any, any) Hashtbl.t -> Node.G.readonly Node.G.t -> G.readwrite G.t -> (a, t) Node.t -> any
+    =
    fun memo g machine_g n ->
     match Hashtbl.find memo (AnyNode n) with
     | Some mn -> mn
@@ -1625,13 +1622,13 @@ and convert_node : type a t.
         let res =
             match n.kind with
             | Data k ->
-                let n = Node2.as_data_exn n in
+                let n = Node.as_data_exn n in
                 of_data_node memo g machine_g n
             | Ctrl k ->
-                let n = Node2.as_ctrl_exn n in
+                let n = Node.as_ctrl_exn n in
                 of_ctrl_node memo g machine_g n
             | Mem k ->
-                let n = Node2.as_mem_exn n in
+                let n = Node.as_mem_exn n in
                 of_mem_node memo g machine_g n
             | Scope _ -> assert false
             | ForwardRef _ -> assert false
@@ -1647,7 +1644,7 @@ let post_process machine_g =
     (* when changing a node's dependency we need to add a temp node that depends on the new_dep to make sure it doesn't get removed for not having any dependants. E.g. A jmp removes it's depedendancy on a set and set's it to the cmp directly. But the set might get removed if it has no dependants which in turn might remove the cmp for not having dependants *)
     let temp_node =
         create_node (Int Z.zero)
-          (AnyNode (Node2.create_data { filename = ""; line = 0; col = 0 } Types.ANY Constant))
+          (AnyNode (Node.create_data { filename = ""; line = 0; col = 0 } Types.ANY Constant))
     in
     G.fold machine_g ~init:[] ~f:(fun acc (AnyNode n) ->
         match n.kind with
@@ -1688,12 +1685,12 @@ let post_process machine_g =
     | _ -> ()
 
 let convert_graph g =
-    let start = create_node (Ideal Start) (Node2.G.get_start g) in
-    let stop = create_node (Ideal Stop) (Node2.G.get_stop g) in
+    let start = create_node (Ideal Start) (Node.G.get_start g) in
+    let stop = create_node (Ideal Stop) (Node.G.get_stop g) in
 
     let machine_g = G.create ~start:(AnyNode start) ~stop:(AnyNode stop) in
-    let memo = Hashtbl.create ~size:(Node2.G.get_num_nodes g) (module Node2.Any) in
-    Hashtbl.add_exn memo ~key:(Node2.G.get_start g) ~data:(AnyNode start);
+    let memo = Hashtbl.create ~size:(Node.G.get_num_nodes g) (module Node.Any) in
+    Hashtbl.add_exn memo ~key:(Node.G.get_start g) ~data:(AnyNode start);
     let (AnyNode stop_ir) = stop.ir_node in
     convert_node memo g machine_g stop_ir |> ignore;
     post_process machine_g;

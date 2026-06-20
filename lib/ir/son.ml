@@ -7,7 +7,7 @@ let rec get_type g scope t =
         let (AnyNode n) = Scope_node.get g scope s in
         match n.typ with
         | Type (Value t) -> t
-        | _ -> failwithf "todo: i think this should be an error: %s" (Node2.show n) ())
+        | _ -> failwithf "todo: i think this should be an error: %s" (Node.show n) ())
     | Fn _ -> Types.of_ast_type t
     | Array (t, _) ->
         (* TODO: perhaps we want to keep the count known in the future to check
@@ -26,9 +26,9 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
         (* type annotation sets the min type. TODO: ast type should be an optional later with type inference *)
         (if not (Ast.equal_var_type typ (Type "")) then
            let typ = get_type g scope typ in
-           n.Node2.min_typ <- Some typ);
+           n.Node.min_typ <- Some typ);
 
-        (match n.Node2.kind with
+        (match n.Node.kind with
         | Data Constant -> (
             match n.typ with
             | Types.FunPtr (Value _) ->
@@ -124,7 +124,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
         Loop_node.set_back_edge g loop_node body_ctrl;
         Scope_node.merge_loop ?parent_fun g ~this:scope ~body:body_scope ~exit:exit_scope
 
-and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Node2.any_data option =
+and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Node.any_data option =
     let loc = e.loc in
     match e.node with
     | Ast.Int i -> Some (AnyData (Const_node.create_zint ?parent_fun g loc i))
@@ -134,12 +134,12 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         match idx_expr with
         | None ->
             let (AnyNode node) = Scope_node.get g scope name in
-            let node = Node2.as_data_exn node in
+            let node = Node.as_data_exn node in
             Some (AnyData node)
         | Some idx_expr ->
             let (AnyMem mem) = Scope_node.get_mem g scope in
             let (AnyNode ptr) = Scope_node.get g scope name in
-            let ptr = Node2.as_data_exn ptr in
+            let ptr = Node.as_data_exn ptr in
 
             let (AnyData index) =
                 do_expr g idx_expr scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -165,7 +165,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
             do_expr g value scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyNode ptr) = Scope_node.get g scope name in
-        let ptr = Node2.as_data_exn ptr in
+        let ptr = Node.as_data_exn ptr in
         let (AnyMem mem) = Scope_node.get_mem g scope in
         let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc ptr ~index "[]" in
         let el_typ =
@@ -184,7 +184,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Arithmetic_nodes.create_add g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Arithmetic_nodes.create_add g loc ?parent_fun lhs rhs))
     | Ast.Sub (lhs, rhs) ->
         let (AnyData lhs) =
             do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -192,7 +192,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Arithmetic_nodes.create_sub g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Arithmetic_nodes.create_sub g loc ?parent_fun lhs rhs))
     | Ast.Mul (lhs, rhs) ->
         let (AnyData lhs) =
             do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -200,7 +200,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Arithmetic_nodes.create_mul g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Arithmetic_nodes.create_mul g loc ?parent_fun lhs rhs))
     | Ast.Div (lhs, rhs) ->
         let (AnyData lhs) =
             do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -208,7 +208,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Arithmetic_nodes.create_div g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Arithmetic_nodes.create_div g loc ?parent_fun lhs rhs))
     | Ast.Lsh (lhs, rhs) ->
         let (AnyData lhs) =
             do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -216,7 +216,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Bitop_nodes.create_lsh g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Bitop_nodes.create_lsh g loc ?parent_fun lhs rhs))
     | Ast.Rsh (lhs, rhs) ->
         let (AnyData lhs) =
             do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -224,7 +224,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Bitop_nodes.create_rsh g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Bitop_nodes.create_rsh g loc ?parent_fun lhs rhs))
     | Ast.BAnd (lhs, rhs) ->
         let (AnyData lhs) =
             do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -232,7 +232,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Bitop_nodes.create_band g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Bitop_nodes.create_band g loc ?parent_fun lhs rhs))
     | Ast.BOr (lhs, rhs) ->
         let (AnyData lhs) =
             do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -240,7 +240,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Bitop_nodes.create_bor g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Bitop_nodes.create_bor g loc ?parent_fun lhs rhs))
     | Ast.Eq (lhs, rhs) ->
         let (AnyData lhs) =
             do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -248,7 +248,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Bool_nodes.create_eq g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Bool_nodes.create_eq g loc ?parent_fun lhs rhs))
     | Ast.NEq (lhs, rhs) ->
         let (AnyData lhs) =
             do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -256,7 +256,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Bool_nodes.create_neq g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Bool_nodes.create_neq g loc ?parent_fun lhs rhs))
     | Ast.Lt (lhs, rhs) ->
         let (AnyData lhs) =
             do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -264,7 +264,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Bool_nodes.create_lt g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Bool_nodes.create_lt g loc ?parent_fun lhs rhs))
     | Ast.LEq (lhs, rhs) ->
         let (AnyData lhs) =
             do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -272,7 +272,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Bool_nodes.create_leq g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Bool_nodes.create_leq g loc ?parent_fun lhs rhs))
     | Ast.Gt (lhs, rhs) ->
         let (AnyData lhs) =
             do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -280,7 +280,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Bool_nodes.create_gt g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Bool_nodes.create_gt g loc ?parent_fun lhs rhs))
     | Ast.GEq (lhs, rhs) ->
         let (AnyData lhs) =
             do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
@@ -288,7 +288,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData rhs) =
             do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
-        Some (Node2.AnyData (Bool_nodes.create_geq g loc ?parent_fun lhs rhs))
+        Some (Node.AnyData (Bool_nodes.create_geq g loc ?parent_fun lhs rhs))
     | Ast.Block (statements, expr) ->
         Scope_node.push scope;
         List.iter statements ~f:(fun s ->
@@ -352,7 +352,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
                                the recursive function has big return type *)
                     [%log.warn "Recursive functions don't yet work with big return types "];
                     None
-                | _ -> failwithf "Invalid fun ptr typ %s" (Node2.show fun_ptr) ())
+                | _ -> failwithf "Invalid fun ptr typ %s" (Node.show fun_ptr) ())
         in
         let args =
             match big_ret_type with
@@ -384,7 +384,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let return_val = Proj_node.create_data ?parent_fun g loc call_end 2 in
         let return_val =
             if Option.is_some big_ret_type then
-              Node2.AnyData (Mem_nodes.create_deref ?parent_fun g loc ~mem:return_mem return_val)
+              Node.AnyData (Mem_nodes.create_deref ?parent_fun g loc ~mem:return_mem return_val)
             else
               AnyData return_val
         in
@@ -424,8 +424,8 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         Scope_node.push scope;
         let (AnyCtrl old_ctrl) = Scope_node.get_ctrl g scope in
         let (AnyMem old_mem) = Scope_node.get_mem g scope in
-        Node2.G.toggle_node_undying g old_ctrl;
-        Node2.G.toggle_node_undying g old_mem;
+        Node.G.toggle_node_undying g old_ctrl;
+        Node.G.toggle_node_undying g old_mem;
         Scope_node.set_ctrl g scope fun_node;
         let mem = Fun_node.create_mem_param ~parent_fun:fun_idx g loc fun_node in
         Scope_node.set_mem g scope mem;
@@ -467,8 +467,8 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         Scope_node.pop g scope;
         Scope_node.set_ctrl g scope old_ctrl;
         Scope_node.set_mem g scope old_mem;
-        Node2.G.toggle_node_undying g old_ctrl;
-        Node2.G.toggle_node_undying g old_mem;
+        Node.G.toggle_node_undying g old_ctrl;
+        Node.G.toggle_node_undying g old_mem;
         Some (AnyData fun_ptr)
     | Ast.ExternalFnDeclaration (typ, _, external_name) ->
         let ret_type, param_types =
@@ -560,7 +560,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
                           match field_type with
                           | Struct _ ->
                               let src = Mem_nodes.create_addr_of ?parent_fun g loc value in
-                              Node2.AnyMem (Mem_nodes.create_copy ?parent_fun g loc ~mem ~src ~dst)
+                              Node.AnyMem (Mem_nodes.create_copy ?parent_fun g loc ~mem ~src ~dst)
                           | _ ->
                               AnyMem
                                 (Mem_nodes.create_store ?parent_fun g loc ~mem ~ptr:dst name ~value)
@@ -597,7 +597,7 @@ let of_ast ast linker =
     let loc : Ast.loc = { filename = ""; line = 0; col = 0 } in
     let start = Start_node.create loc in
     let stop = Stop_node.create loc in
-    let g = Node2.G.create ~start:(AnyNode start) ~stop:(AnyNode stop) in
+    let g = Node.G.create ~start:(AnyNode start) ~stop:(AnyNode stop) in
     let ctrl = Proj_node.create_ctrl g loc start 0 in
     let mem = Proj_node.create_mem g loc start 1 in
     let scope = Scope_node.create g in
@@ -611,13 +611,13 @@ let of_ast ast linker =
     List.iter builtin_types ~f:(define_builtin_type g scope);
     Core.List.iter ast ~f:(fun s -> do_statement g s scope None None linker);
     let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
-    Node2.G.set_ctrl g stop ctrl;
+    Node.G.set_ctrl g stop ctrl;
     Scope_node.set_ctrl g scope stop;
-    Node2.G.set_node_inputs g stop { mem = Some (Scope_node.get_mem g scope) };
+    Node.G.set_node_inputs g stop { mem = Some (Scope_node.get_mem g scope) };
     (* makes life easier and we dont need the scope anymore i think*)
-    Node2.G.remove_node g scope;
-    (* Node2.G.add_dependencies g stop (Node2.G.get_dependencies g scope |> List.tl_exn); *)
-    Node2.G.get_dependants g start
+    Node.G.remove_node g scope;
+    (* Node.G.add_dependencies g stop (Node.G.get_dependencies g scope |> List.tl_exn); *)
+    Node.G.get_dependants g start
     |> List.iter ~f:(fun (AnyNode n) ->
-        if Node2.G.get_dependants g n |> List.is_empty then Node2.G.remove_node g n);
+        if Node.G.get_dependants g n |> List.is_empty then Node.G.remove_node g n);
     g
