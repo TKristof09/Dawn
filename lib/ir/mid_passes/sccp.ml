@@ -251,7 +251,8 @@ let do_data_node : type a.
             let { Node.place; offset } = Node.G.get_dependencies_exn g n in
             let (AnyData place) = Option.value_exn place in
             match place.typ with
-            | Struct _ ->
+            | Struct _
+            | Trait _ ->
                 let t = Types.get_field_type place.typ field in
                 if Option.is_none t then
                   (~new_type:ALL, ~extra_deps:[])

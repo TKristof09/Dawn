@@ -44,6 +44,8 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
                   Linker.set_name linker fun_idx name
             | Type (Value (Struct (Value { name = _; fields }))) ->
                 n.typ <- Type (Value (Types.make_struct name fields))
+            | Type (Value (Trait (Value { name = _; fields }))) ->
+                n.typ <- Type (Value (Types.make_trait name fields))
             | Integer (Value i) when Option.is_some n.min_typ -> (
                 (* for constant integers we set the width to the type annotation's width if present *)
                 match n.min_typ |> Option.value_exn with
@@ -128,7 +130,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
         let (AnyNode base) = Scope_node.get g scope t_base in
         let trait_fields =
             match trait.typ with
-            | Type (Value (Struct (Value { name; fields }))) ->
+            | Type (Value (Trait (Value { name; fields }))) ->
                 assert (String.equal name t_trait);
                 List.map fields ~f:(fun (name, e) -> (Printf.sprintf "$%s$%s" t_trait name, e))
             | _ -> assert false
@@ -137,8 +139,9 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
         let fields =
             List.map fields ~f:(fun (name, e) -> (Printf.sprintf "$%s$%s" t_trait name, e))
         in
-        let remaining_field_names =
-            List.fold fields ~init:field_names ~f:(fun remaining_field_names (field_name, e) ->
+        let remaining_field_names, trait_fields =
+            List.fold fields ~init:(field_names, [])
+              ~f:(fun (remaining_field_names, trait_fields) (field_name, e) ->
                 if not (Set.mem remaining_field_names field_name) then
                   if Set.mem field_names field_name then
                     failwithf "%s:%d: Field %s is implemented multiple times" loc.filename loc.line
@@ -150,9 +153,20 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
                   let (AnyData field) =
                       do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn
                   in
-                  (* field name is already mangled like "$trait_name$field_name" *)
+                  let fun_idx = Types.get_fun_idx field.typ |> Option.value_exn in
+                  (* HACK: only rename function if it is still the default name.
+                   This is to prevent renaming when assigning an existing
+                   function to a variable *)
+                  if
+                    String.equal
+                      (Printf.sprintf "Anon_fn_%d" (fun_idx - 1))
+                      (Linker.get_name linker fun_idx)
+                  then
+                    Linker.set_name linker fun_idx (t_base ^ field_name)
+                  (* field name is already mangled like "$trait_name$field_name" *);
                   Scope_node.define g scope (t_base ^ field_name) field true;
-                  Set.remove remaining_field_names field_name)
+                  ( Set.remove remaining_field_names field_name,
+                    (field_name, field.typ) :: trait_fields ))
         in
         if not (Set.is_empty remaining_field_names) then
           failwithf "%s:%d: Following fields were not implemented: %s" loc.filename loc.line
@@ -396,7 +410,9 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
                                the recursive function has big return type *)
                     [%log.warn "Recursive functions don't yet work with big return types "];
                     None
-                | _ -> failwithf "Invalid fun ptr typ %s" (Node.show fun_ptr) ())
+                | _ ->
+                    [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly g))];
+                    failwithf "Invalid fun ptr typ %s" (Node.show fun_ptr) ())
         in
         let args =
             match big_ret_type with
@@ -634,10 +650,20 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
             in
             load.min_typ <- Some field_typ;
             Some (AnyData load)
+        | Trait (Value t) ->
+            let field_typ = Types.get_field_type base.typ field_name |> Option.value ~default:ALL in
+            let field_name = "$" ^ t.name ^ "$" ^ field_name in
+            let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc base field_name in
+            let load =
+                Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr field_name field_typ
+            in
+            load.min_typ <- Some field_typ;
+            Some (AnyData load)
         | Type (Value t) ->
             let base_name =
                 match t with
                 | Struct (Value { name; fields = _ }) -> name
+                | Trait (Value { name; fields = _ }) -> name
                 | _ -> assert false
             in
             let field_name =
@@ -650,6 +676,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
                           Some name
                         else
                           None)
+                | Trait (Value { name = _; fields }) -> field_name
                 | _ -> assert false
             in
             let field_typ = Types.get_field_type t field_name |> Option.value ~default:ALL in
@@ -659,7 +686,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
             let n = Node.as_data_exn n in
             Some (AnyData n)
         | _ ->
-            failwithf "%s:%d: Can't access field on type %s" loc.filename loc.line
+            failwithf "%s:%d: Can't access field %s on type %s" loc.filename loc.line field_name
               (Types.human_readable base.typ) ())
     | TraitDeclaration funs ->
         let funs =
@@ -668,7 +695,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
                 assert (Types.is_a t (FunPtr All));
                 (n, t))
         in
-        let t = Types.make_struct "" funs in
+        let t = Types.make_trait "" funs in
         let c = Const_node.create_from_type ?parent_fun g loc (Type (Value t)) in
         Some (AnyData c)
     | _ -> failwithf "TODO: unimplemented %s" (Ast.show_expr e.node) ()

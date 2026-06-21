@@ -112,7 +112,10 @@ let do_data_node : type a.
     | Data (AddrOfField field) ->
         let { Node.place; offset } = Node.G.get_dependencies_exn g n in
         let (AnyData place) = Option.value_exn place in
-        let type_errors = expect_types n.loc ~expected:[ Struct All ] ~actual:[ place.typ ] in
+        (* we expect a trait because traits are lower in the type lattice and
+           meet struct trait = trait so struct is_a trait but trait is not a
+           struct *)
+        let type_errors = expect_types n.loc ~expected:[ Trait All ] ~actual:[ place.typ ] in
         let field_type = Types.get_field_type place.typ field in
         if Option.is_none type_errors then
           match

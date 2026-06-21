@@ -218,6 +218,7 @@ let compute_call_end_type g n =
                       Types.meet acc ret_node_ret_type)
               in
               Types.Tuple (Value [ call.typ; Memory; Types.meet ret ret_type ])
+          | ANY -> ANY
           | _ -> failwith "Function ptr isn't known"
     in
     (~new_type, ~extra_deps:[])

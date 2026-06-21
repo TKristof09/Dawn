@@ -37,6 +37,7 @@ and t =
     | FunPtr of fun_ptr sub_lattice
     | Ptr of t
     | Struct of struct_type sub_lattice
+    | Trait of struct_type sub_lattice
     | Array of arr sub_lattice
     | ConstArray of arr sub_lattice
     | Type of t sub_lattice
@@ -52,6 +53,7 @@ val make_int : ?num_widens:int -> ?fixed_width:int -> Z.t -> Z.t -> t
 val make_int_const : ?fixed_width:int -> Z.t -> t
 val make_fun_ptr : ?idx:int -> t list -> t -> t
 val make_struct : string -> (string * t) list -> t
+val make_trait : string -> (string * t) list -> t
 val make_array : t -> t -> t
 val make_string : string -> t
 val of_ast_type : Ast.var_type -> t

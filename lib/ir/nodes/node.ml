@@ -174,6 +174,7 @@ module N = struct
       | Some (AnyNode n) -> (
           match n.kind with
           | Data _ -> Some (AnyData n)
+          | ForwardRef _ -> Some (AnyData n)
           | _ -> None)
 
   let[@inline] ctrl_of_any (n : any option) : any_ctrl option =
@@ -467,6 +468,7 @@ module N = struct
       | ForwardRef s -> Format.fprintf fmt "ForwardRef %s" s
 
   and pp fmt n = Format.fprintf fmt "(node #%d %a)" n.id pp_kind n.kind
+  and pp_any fmt (AnyNode n) = Format.fprintf fmt "(node #%d %a)" n.id pp_kind n.kind
   and show n = Format.asprintf "%a" pp n
   and show_kind k = Format.asprintf "%a" pp_kind k
 

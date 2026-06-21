@@ -13,12 +13,14 @@ let compile filename =
         let son = Son.of_ast ast linker in
         [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
         Sccp.run son linker;
-        let type_errors = Type_check.run (Node.G.readonly son) in
         [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
+        let type_errors = Type_check.run (Node.G.readonly son) in
         if not (List.is_empty type_errors) then (
           List.iter type_errors ~f:(fun err -> [%log.error err]);
           exit 1)
         else (
+          Insert_dynamic_dispatch.run son;
+          [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
           Struct_fun_args.run son;
           [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
           Integer_widening.run son;

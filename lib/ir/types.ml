@@ -75,6 +75,7 @@ and t =
     | FunPtr of fun_ptr sub_lattice
     | Ptr of t
     | Struct of struct_type sub_lattice
+    | Trait of struct_type sub_lattice
     | Array of arr sub_lattice
     | ConstArray of arr sub_lattice
     | Type of t sub_lattice
@@ -93,6 +94,7 @@ let get_top = function
     | FunPtr _ -> FunPtr Any
     | Ptr _ -> Ptr ANY
     | Struct _ -> Struct Any
+    | Trait _ -> Trait Any
     | ConstArray _ -> ConstArray Any
     | Array _ -> Array Any
     | Type _ -> Type Any
@@ -110,6 +112,7 @@ let get_bottom = function
     | FunPtr _ -> FunPtr All
     | Ptr _ -> Ptr ALL
     | Struct _ -> Struct All
+    | Trait _ -> Trait All
     | ConstArray _ -> ConstArray All
     | Array _ -> Array All
     | Type _ -> Type All
@@ -169,6 +172,9 @@ let rec equal a b =
     | Struct a, Struct b -> equal_sub_lattice equal_struct a b
     | Struct _, _ -> false
     | _, Struct _ -> false
+    | Trait a, Trait b -> equal_sub_lattice equal_struct a b
+    | Trait _, _ -> false
+    | _, Trait _ -> false
     | Array a, Array b -> equal_sub_lattice equal_arr a b
     | Array _, _ -> false
     | _, Array _ -> false
@@ -213,6 +219,10 @@ let rec human_readable t =
     | Bool _ -> "bool"
     | Struct (Value s) -> s.name
     | Struct _ -> "struct"
+    | Trait (Value s) ->
+        (* drop leading $ *)
+        String.drop_prefix s.name 1
+    | Trait _ -> "trait"
     | Ptr p -> "*" ^ human_readable p
     | Void -> "void"
     | FunPtr (Value { params; ret; fun_indices }) ->
@@ -229,6 +239,16 @@ let rec human_readable t =
     | ANY -> "unknown type"
     | ALL -> "invalid type"
     | _ -> failwithf "No human readable label for %s" (show t) ()
+
+let get_fun_idx t =
+    match t with
+    | FunPtr (Value { params = _; ret = _; fun_indices }) -> (
+        match fun_indices with
+        | `Include s when Set.length s = 1 -> Some (Set.choose_exn s)
+        | `Include _
+        | `Exclude _ ->
+            None)
+    | _ -> failwithf "Invalid arg: %s" (show t) ()
 
 let rec is_constant t =
     let is_constant_lattice = function
@@ -253,8 +273,9 @@ let rec is_constant t =
         | Any
         | All ->
             false
-        | Value f -> is_constant f.ret && List.for_all f.params ~f:(fun t -> is_constant t))
-    | Struct x -> (
+        | Value f -> get_fun_idx t |> Option.is_some)
+    | Struct x
+    | Trait x -> (
         match x with
         | Any
         | All ->
@@ -320,7 +341,8 @@ let make_fun_ptr ?idx params ret =
         | Bool _
         | Ptr _
         | FunPtr _
-        | Struct _ ->
+        | Struct _
+        | Trait _ ->
             true
         | _ -> false
     in
@@ -371,6 +393,15 @@ let make_struct name fields =
     in
     assert (List.for_all fields ~f:is_valid_field_type);
     Struct (Value { name; fields })
+
+let make_trait name fields =
+    let is_valid_field_type (_, t) =
+        match t with
+        | FunPtr _ -> true
+        | _ -> false
+    in
+    assert (List.for_all fields ~f:is_valid_field_type);
+    Trait (Value { name; fields })
 
 let make_array_inner name element_type len_type =
     let is_valid_element_type =
@@ -528,21 +559,92 @@ let rec meet t t' =
                 | Unequal_lengths -> All)
         in
         FunPtr l
-    | Struct s, Struct s' ->
+    | Struct s, Struct s' -> (
+        (* We don't use the meet_sub_lattice helper because we want meet s s'
+           be a trait if the structs have different names but have traits that
+           are implemented in both structs *)
+        match (s, s') with
+        | All, _ -> Struct All
+        | _, All -> Struct All
+        | _, Any -> t
+        | Any, _ -> t'
+        | Value s, Value s' -> (
+            if not (String.equal s.name s'.name) then
+              (* different structs, but they might have common implemented traits. We want those *)
+              let s_trait_impls =
+                  List.filter s.fields ~f:(fun (n, _) -> String.is_prefix n ~prefix:"$")
+                  |> String.Map.of_alist_reduce ~f:meet
+              in
+              let s'_trait_impls =
+                  List.filter s'.fields ~f:(fun (n, _) -> String.is_prefix n ~prefix:"$")
+                  |> String.Map.of_alist_reduce ~f:meet
+              in
+              let common =
+                  Map.merge s_trait_impls s'_trait_impls ~f:(fun ~key -> function
+                    | `Both (t, t') -> Some (meet t t')
+                    | _ -> None)
+              in
+              if Map.is_empty common then
+                Struct All
+              else
+                (* just concat the trait names together for now (so we get $T1+$T2+$T3...)
+                      *)
+                let name =
+                    Map.fold common ~init:[] ~f:(fun ~key ~data acc ->
+                        if equal data Void && String.count key ~f:(Char.equal '$') = 1 then
+                          key :: acc
+                        else
+                          acc)
+                in
+                let name = String.concat ~sep:"+" name in
+                Trait (Value { name; fields = Map.to_alist common })
+            else
+              match
+                List.map2 s.fields s'.fields ~f:(fun (name, t) (name', t') ->
+                    assert (String.equal name name');
+                    (name, meet t t'))
+              with
+              | Ok fields -> Struct (Value { name = s.name; fields })
+              | Unequal_lengths -> assert false))
+    | Trait t, Trait t' ->
         let l =
-            meet_sub_lattice s s' ~f:(fun s s' ->
-                if not (String.equal s.name s'.name) then
+            meet_sub_lattice t t' ~f:(fun t t' ->
+                if not (String.equal t.name t'.name) then
                   All
                 else
                   match
-                    List.map2 s.fields s'.fields ~f:(fun (name, t) (name', t') ->
+                    List.map2 t.fields t'.fields ~f:(fun (name, t) (name', t') ->
                         assert (String.equal name name');
                         (name, meet t t'))
                   with
-                  | Ok fields -> Value { name = s.name; fields }
+                  | Ok fields -> Value { name = t.name; fields }
                   | Unequal_lengths -> assert false)
         in
-        Struct l
+        Trait l
+    | Trait t, Struct s
+    | Struct s, Trait t ->
+        (* Traits are "below" structs, meeting struct with trait gives back the trait if it's implemented or we fall all way to Trait All*)
+        let l =
+            meet_sub_lattice s t ~f:(fun s t ->
+                let rec aux s_fields t_fields found_name =
+                    match (s_fields, t_fields) with
+                    | [], [] -> Ok []
+                    | [], _ -> Error ()
+                    | _, [] -> Ok []
+                    | (name, typ) :: ts, _ when String.equal name ("$" ^ t.name) ->
+                        aux ts t_fields true
+                    | (name_s, typ_s) :: ts, (name_t, typ_t) :: tt when found_name ->
+                        assert (String.equal name_s ("$" ^ t.name ^ "$" ^ name_t));
+                        Result.map (aux ts tt found_name) ~f:(fun rest ->
+                            (name_t, meet typ_s typ_t) :: rest)
+                    | _ :: t, _ -> aux t t_fields found_name
+                in
+
+                match aux s.fields t.fields false with
+                | Ok fields -> Value { name = t.name; fields }
+                | Error _ -> All)
+        in
+        Trait l
     | Ptr p, Ptr p' -> Ptr (meet p p')
     | ConstArray a, ConstArray a' ->
         (* TODO: review this code (and the join for constarrays). Is it fine to
@@ -613,6 +715,7 @@ let rec meet t t' =
     | Tuple _, _
     | FunPtr _, _
     | Struct _, _
+    | Trait _, _
     | Ptr _, _
     | Control, _
     | DeadControl, _
@@ -704,6 +807,24 @@ let rec join t t' =
                   | Unequal_lengths -> assert false)
         in
         Struct l
+    | Trait t, Trait t' ->
+        let l =
+            join_sub_lattice t t' ~f:(fun t t' ->
+                if not (String.equal t.name t'.name) then
+                  Any
+                else
+                  match
+                    List.map2 t.fields t'.fields ~f:(fun (name, t) (name', t') ->
+                        assert (String.equal name name');
+                        (name, meet t t'))
+                  with
+                  | Ok fields -> Value { name = t.name; fields }
+                  | Unequal_lengths -> assert false)
+        in
+        Trait l
+    | Trait t, Struct s
+    | Struct s, Trait t ->
+        failwithf "TODO %s" __LOC__ ()
     | Ptr p, Ptr p' -> Ptr (join p p')
     | Array a, Array a' ->
         let l =
@@ -769,6 +890,7 @@ let rec join t t' =
     | Tuple _, _
     | FunPtr _, _
     | Struct _, _
+    | Trait _, _
     | Ptr _, _
     | Control, _
     | DeadControl, _
@@ -778,16 +900,6 @@ let rec join t t' =
     | Type _, _
     | Void, _ ->
         ANY
-
-let get_fun_idx t =
-    match t with
-    | FunPtr (Value { params = _; ret = _; fun_indices }) -> (
-        match fun_indices with
-        | `Include s when Set.length s = 1 -> Some (Set.choose_exn s)
-        | `Include _
-        | `Exclude _ ->
-            None)
-    | _ -> failwithf "Invalid arg: %s" (show t) ()
 
 let iter_fun_indices t universe ~f =
     match t with
@@ -846,7 +958,8 @@ let get_string t =
 
 let rec get_field_type t field_name =
     match t with
-    | Struct (Value { name = _; fields }) ->
+    | Struct (Value { name = _; fields })
+    | Trait (Value { name = _; fields }) ->
         List.find_map fields ~f:(fun (name, t) ->
             if String.equal name field_name then
               Some t
@@ -917,6 +1030,7 @@ let rec get_size t =
                     failwith "Array with non compile time known length"
             else
               get_size t)
+    | Trait (Value t) -> List.sum (module Int) t.fields ~f:(fun (_, t) -> get_size t)
     | ConstArray (Value { element_type; values = _ }) -> get_size element_type
     | Array (Value { element_type; values = _ }) -> get_size element_type
     | Ptr _
@@ -927,7 +1041,8 @@ let rec get_size t =
 
 let rec get_offset t field =
     match t with
-    | Struct (Value { name = _; fields }) ->
+    | Struct (Value { name = _; fields })
+    | Trait (Value { name = _; fields }) ->
         List.fold_until fields ~init:0
           ~f:(fun acc (name, t) ->
             if String.equal name field then

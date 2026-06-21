@@ -1355,7 +1355,8 @@ let rec of_data_node : type a.
         addr
     | Data Deref -> (
         match n.typ with
-        | Struct _ ->
+        | Struct _
+        | Trait _ ->
             (* struct dereference isn't a real thing because structs need to be accessed by ptr anyway *)
             let { Node.mem; ptr } = Node.G.get_dependencies_exn g n in
             let (AnyData ptr) = Option.value_exn ptr in

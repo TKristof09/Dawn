@@ -162,6 +162,7 @@ val create_mem : ?parent_fun:int -> Ast.loc -> Types.t -> 'a mem_kind -> ('a, me
 val create_scope : unit -> (scope_kind, misc) t
 val create_forward_ref : string -> (unit, data) t
 val pp : Format.formatter -> ('a, 'b) t -> unit
+val pp_any : Format.formatter -> any -> unit
 val pp_kind : Format.formatter -> ('a, 'b) kind -> unit
 val show : ('a, 'b) t -> string
 val show_kind : ('a, 't) kind -> string

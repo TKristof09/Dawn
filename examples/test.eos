@@ -15,9 +15,9 @@ impl T for S {
 }
 
 const s = S{.a = 34, .b = 35};
-print_int(S.f(s.a, s.b));
+// print_int(S.f(s.a, s.b));
 
-print("\n");
+// print("\n");
 
 const SS = type {
     a: u32
@@ -25,9 +25,20 @@ const SS = type {
 
 impl T for SS {
     f = fun (x: u32, y: u32) -> u32 {
-        x * y
+        x + y + 42000
     }
 }
 
 const ss = SS{.a = 6};
-print_int(SS.f(ss.a, ss.a));
+// print_int(SS.f(ss.a, ss.a));
+
+const test_fun = fun(t: T) -> u32 {
+    // this t.f syntax is just hackily implemented (this isn't yet a "method"
+    // kind of thing, here t is basically just the vtable of the trait)
+    t.f(34,35)
+};
+
+// print("\n");
+print_int(test_fun(s));
+print("\n");
+print_int(test_fun(ss));

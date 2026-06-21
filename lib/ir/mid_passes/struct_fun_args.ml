@@ -49,7 +49,8 @@ let decompose (t : Types.t) =
       None
 
 let get_descriptors fields =
-    List.fold fields ~init:(0, []) ~f:(fun (size_acc, res) (field_name, field_type) ->
+    List.filter fields ~f:(fun (_, t) -> not (Types.equal t Void))
+    |> List.fold ~init:(0, []) ~f:(fun (size_acc, res) (field_name, field_type) ->
         let size = Types.get_size field_type in
         let offset = size_acc % 8 in
         let descriptor =
