@@ -1,5 +1,20 @@
 open Core
 
+(* This pass is to transform function calls that involve passing in structs as
+   arguments in order to conform to SystemV ABI calling convention. Structs can
+   either get broken up into "eightbytes" and passed in using normal registers
+   or they can be passed in by pointer if the struct is too big. 
+
+   Inside the function we either reconstruct the struct object if passed in via
+   eightbytes or we dereference it if passed in via pointer. This is to ensure
+   that downstream passes still see the expected types.
+
+   (NOTE: this reconstruction is rather expensive at the moment since it
+   involves a New and several Stores but in the future once we implement some
+   memory op optimisation passes that cost should probably mostly go away)
+*)
+
+(* SystemV ABI uses 6 integer registers for params *)
 let max_regs_for_params = 6
 
 (* NOTE: Whatever nodes we insert in this pass we need to make sure we
@@ -274,11 +289,9 @@ let patch_up g ~in_mem:(Node.AnyMem in_mem) ~fun_node param decomp =
     Node.G.remove_node g param;
     (mem, List.map eightbytes ~f:snd)
 
-let pass_by_ptr g p =
-    (* Memory loads/stores work both on ptr and struct types since structs are
-       actually just pointers anyway. So we don't need to patch up the body of
-       the function to take into account that we only pass in the address. This
-       is purely a type system level change *)
+let pass_by_ptr g ~mem:(Node.AnyMem mem) p =
+    (* Dereference the param afterwards so that users see the actual struct
+        type rather than a pointer *)
     let { Node.phi_inputs } = Node.G.get_dependencies_exn g p in
     let new_inputs =
         List.map phi_inputs
@@ -286,7 +299,11 @@ let pass_by_ptr g p =
             (Option.map ~f:(fun (Node.AnyData arg) ->
                  Node.AnyData (Mem_nodes.create_addr_of ?parent_fun:p.parent_fun g p.loc arg)))
     in
-    Node.G.set_node_inputs g p { Node.phi_inputs = new_inputs }
+    Node.G.set_node_inputs g p { Node.phi_inputs = new_inputs };
+    let param_users = Node.G.get_dependants g p in
+    let deref = Mem_nodes.create_deref g p.loc ?parent_fun:p.parent_fun ~mem p in
+    List.iter param_users ~f:(fun (AnyNode user) ->
+        Node.G.replace_input_unsafe g ~node:user ~from:(AnyNode p) ~to_:(AnyNode deref))
 
 let do_node g fun_node =
     let mem_param, params = Fun_node.get_param_nodes (Node.G.readonly g) fun_node in
@@ -312,11 +329,11 @@ let do_node g fun_node =
               | Struct _ -> (
                   match decompose p.typ with
                   | None ->
-                      pass_by_ptr g p;
+                      pass_by_ptr g ~mem p;
                       (used_up_regs + 1, p :: params_acc, mem, extra_param_offset)
                   | Some decomp ->
                       if decomp.integer + used_up_regs > max_regs_for_params then (
-                        pass_by_ptr g p;
+                        pass_by_ptr g ~mem p;
                         (used_up_regs, p :: params_acc, mem, extra_param_offset))
                       else
                         let mem, new_params = patch_up g ~in_mem:mem ~fun_node p decomp in

@@ -1,5 +1,14 @@
 open Core
 
+(* This SCCP pass is used both for the usual constant propagation but also for
+   dead code detection and also for type propagation which is later used for
+   type checking. These can all be done in the same pass as our type system
+   represents control/dead control and also constants. 
+
+   NOTE: we don't actually eliminate dead control nor do we replace nodes with
+   constants yet so this pass is kind of half finished for now.
+ *)
+
 module NodeSet = struct
   include Set.Make_plain (struct
     include Node.Any

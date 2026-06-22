@@ -1,5 +1,14 @@
 open Core
 
+(* This pass goes over integer operations and casts integers where necessary.
+   We only do automatic casting when the desired integer type has larger bit
+   width as the current operands. This is to ensure that e.g. arithmetic nodes
+   have the same width inputs or that a function argument is the same integer
+   size as the parameter .
+
+   This cast will get translated to either zero extension or sign extension in
+   the backend IR *)
+
 let do_node : type a b. Node.G.readwrite Node.G.t -> (a, b) Node.t -> unit =
    fun g n ->
     let create_cast : type a c d.
