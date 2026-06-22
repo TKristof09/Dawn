@@ -152,10 +152,22 @@ val kind_eq :
   ('a, 'taga) kind -> ('b, 'tagb) kind -> (('a, 'b) Type.eq * ('taga, 'tagb) Type.eq) option
 
 val unpack : ('a, 'c) t -> ('b, 'd) kind -> ('b, 'd) t option
+(** [unpack n k] tries to cast the node [n] into the kind [k]. This is mainly useful to convince the
+    type system that a node is of a certain kind. *)
+
 val unpack_exn : ('a, 'c) t -> ('b, 'd) kind -> ('b, 'd) t
+(** [unpack_exn n k] tries to cast the node [n] into the kind [k]. This is mainly useful to convince
+    the type system that a node is of a certain kind. Raises if the kind is incorrect. *)
+
 val as_ctrl_exn : ('a, 'b) t -> ('a, ctrl) t
+(** [as_ctrl_exn n] casts the node [n] to a ctrl tagged node without changing the kind. *)
+
 val as_data_exn : ('a, 'b) t -> ('a, data) t
+(** [as_data_exn n] casts the node [n] to a data tagged node without changing the kind. *)
+
 val as_mem_exn : ('a, 'b) t -> ('a, mem) t
+(** [as_mem_exn n] casts the node [n] to a mem tagged node without changing the kind. *)
+
 val create_data : ?parent_fun:int -> Ast.loc -> Types.t -> 'a data_kind -> ('a, data) t
 val create_ctrl : ?parent_fun:int -> Ast.loc -> Types.t -> 'a ctrl_kind -> ('a, ctrl) t
 val create_mem : ?parent_fun:int -> Ast.loc -> Types.t -> 'a mem_kind -> ('a, mem) t
@@ -173,6 +185,7 @@ val is_blockhead : ('a, 'b) t -> bool
 module N : Graph.NODE with type ('a, 'tag) t = ('a, 'tag) t and type any = any
 module G : Graph.S with module N := N
 
+(* Helper modules to be able to store the existential wrappers in Hahstbls, Sets, etc... *)
 module Any : sig
   type t = any
 
