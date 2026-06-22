@@ -162,7 +162,7 @@ type basic_block = {
     nodes : Machine_node.any list;
   }
 
-type reg_assignment = (Range.t, Registers.loc) Hashtbl.t
+type reg_assignment = (Range.t, Registers.loc) Hashtbl.t * int
 
 module InterferenceGraph : sig
   type t
@@ -538,9 +538,9 @@ end = struct
   let color ifg g =
       let ifg_copy = Hashtbl.copy ifg in
       let color_stack = simplify ifg ifg_copy g in
-      let reg_assoc : reg_assignment = Hashtbl.create (module Range) in
-      let failed_ranges =
-          List.fold color_stack ~init:[] ~f:(fun failed_ranges r ->
+      let reg_assoc = Hashtbl.create (module Range) in
+      let failed_ranges, max_stack_slot =
+          List.fold color_stack ~init:([], 0) ~f:(fun (failed_ranges, max_stack_slot) r ->
               let neighbours = Hashtbl.find_exn ifg r in
               let r_mask =
                   if Registers.Mask.mem r.reg_mask (Stack (-1)) then
@@ -559,16 +559,21 @@ end = struct
               match Registers.Mask.choose r_mask with
               | None ->
                   [%log.debug "No available reg for %a" Range.pp r];
-                  r :: failed_ranges
+                  (r :: failed_ranges, max_stack_slot)
               | Some loc ->
                   assert (Poly.(loc <> Stack (-1)));
                   (* TODO: we could choose smarter here, see biasColor in Simple:IFG.java *)
                   [%log.debug "Assigning %a -> %a" Registers.pp_loc loc Range.pp r];
                   Hashtbl.set reg_assoc ~key:r ~data:loc;
-                  failed_ranges)
+                  let stack_slot =
+                      match loc with
+                      | Stack s -> s
+                      | Reg _ -> 0
+                  in
+                  (failed_ranges, max stack_slot max_stack_slot))
       in
       if List.is_empty failed_ranges then
-        Ok reg_assoc
+        Ok (reg_assoc, max_stack_slot)
       else (
         [%log.debug "Coloring failed for %a" (Format.pp_print_list Range.pp) failed_ranges];
         Error { failed_ranges; self_conflicts = Hashtbl.create (module Range) })
@@ -890,6 +895,11 @@ let rec post_alloc_cleanup g program reg_assign =
               Machine_node.AnyNode h :: post_alloc_cleanup g t reg_assign
         | _ -> Machine_node.AnyNode h :: post_alloc_cleanup g t reg_assign)
 
+type allocation_result = {
+    max_stack_slot : int;
+    reg_assoc : (Machine_node.any, Registers.loc) Core.Hashtbl.t;
+  }
+
 let allocate g program =
     let ( let* ) = Stdlib.Result.bind in
     let rec loop program round =
@@ -908,9 +918,9 @@ let allocate g program =
         else
           let program = List.filter program ~f:(Graph.mem g) in
           match attempt g program with
-          | Ok reg_assoc ->
+          | Ok (reg_assoc, max_stack_slot) ->
               [%log.debug "Register allocation done in %d rounds" round];
-              (program, reg_assoc)
+              (program, reg_assoc, max_stack_slot)
           | Error { failed_ranges; self_conflicts } ->
               (* TODO: perhaps sort failed ranges to make sure we are deterministic *)
               let new_program =
@@ -924,9 +934,10 @@ let allocate g program =
               in
               loop new_program (round + 1)
     in
-    let program, lrg_to_reg = loop program 1 in
-    let reg_assign = Hashtbl.create (module Machine_node.Any) in
+    let program, lrg_to_reg, max_stack_slot = loop program 1 in
+    let reg_assoc = Hashtbl.create (module Machine_node.Any) in
     Hashtbl.iteri lrg_to_reg ~f:(fun ~key:range ~data:reg ->
-        Set.iter range.nodes ~f:(fun n -> Hashtbl.set reg_assign ~key:n ~data:reg));
-    let program = post_alloc_cleanup g program reg_assign in
-    (program, reg_assign)
+        Set.iter range.nodes ~f:(fun n -> Hashtbl.set reg_assoc ~key:n ~data:reg));
+    let program = post_alloc_cleanup g program reg_assoc in
+    let alloc_res = { max_stack_slot; reg_assoc } in
+    (program, alloc_res)

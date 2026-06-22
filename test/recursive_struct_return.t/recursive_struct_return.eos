@@ -1,0 +1,17 @@
+const print_int = fun(i: i64) -> void = @extern("print_int");
+const S = type {
+    a: i64
+};
+
+const f = fun(s: S) -> S {
+    if(s.a == 0) {
+        S { .a = 1 }
+    }
+    else {
+        const ss = S{.a = s.a - 1};
+        S { .a = s.a * f(ss).a}
+    }
+};
+
+const s = S{.a = 5};
+print_int(f(s).a);

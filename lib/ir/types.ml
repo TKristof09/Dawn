@@ -984,7 +984,7 @@ let rec get_size t =
             | Some w -> w
             | None ->
                 if Z.geq min Z.zero then
-                  Z.numbits (Z.add max Z.one)
+                  Z.numbits max
                 else
                   let bits_neg = if Z.geq min Z.zero then 0 else Z.numbits min in
                   let bits_pos = if Z.lt max Z.zero then 0 else Z.numbits (Z.add max Z.one) in

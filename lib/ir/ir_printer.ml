@@ -49,7 +49,10 @@ let get_edge_style : type a b c d. (a, b) Node.t -> (c, d) Node.t -> string =
             match use.kind with
             | Ctrl _ -> "color=red"
             | _ -> "color=green,style=dashed,arrowhead=none")
-        | DeadControl -> "color=green,style=dashed,arrowhead=none"
+        | DeadControl -> (
+            match use.kind with
+            | Ctrl _ -> "color=red,style=dashed,arrowhead=none"
+            | _ -> "color=green,style=dashed,arrowhead=none")
         | Memory -> "color=blue"
         | Tuple (Value l) -> (
             match use.kind with

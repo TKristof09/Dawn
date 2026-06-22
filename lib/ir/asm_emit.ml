@@ -82,9 +82,9 @@ let asm_of_loc (loc : Registers.loc) size =
     match loc with
     | Stack offs ->
         (* HACK: for now we consider everything as 64 bit value but this needs to be dealt with better *)
-        let offs = (offs * 8) + 256 in
+        let offs = (offs + 1) * 8 in
         let size_str = pick ~size ~r8:"qword" ~r4:"dword" ~r2:"word" ~r1:"byte" in
-        Printf.sprintf "%s [rbp %s 0x%x]" size_str (if offs > 0 then "+" else "-") (abs offs)
+        Printf.sprintf "%s [rbp - 0x%x]" size_str (abs offs)
     | Reg reg -> (
         match reg with
         | RAX -> pick ~size ~r8:"rax" ~r4:"eax" ~r2:"ax" ~r1:"al"
@@ -145,7 +145,8 @@ let get_first_blockhead g (Machine_node.AnyNode n) =
     done;
     !n'
 
-let asm_of_node g reg_assoc linker n prev_node next_node =
+let asm_of_node g reg_allocation linker n prev_node next_node =
+    let reg_assoc = reg_allocation.Reg_allocator.reg_assoc in
     let (Machine_node.AnyNode n_unwrapped) = n in
     let (AnyNode ir_node) = n_unwrapped.ir_node in
     let node_asm =
@@ -284,6 +285,9 @@ let asm_of_node g reg_assoc linker n prev_node next_node =
         | Ideal Stop ->
             let epilogue = "\t;Exit program\n\tmov rax, 60\n\txor rdi, rdi\n\tsyscall" in
             epilogue
+        | Ideal Start ->
+            Printf.sprintf "start:\n\tmov rbp, rsp\n\tsub rsp, %d"
+              ((reg_allocation.max_stack_slot + 1) * 8)
         | Ideal _ -> ""
         | Jmp cond ->
             let (AnyNode true_branch) =
@@ -430,7 +434,8 @@ let asm_of_node g reg_assoc linker n prev_node next_node =
         | DProj _ -> ""
         | FunctionProlog i ->
             let target = Linker.get_name linker i in
-            Printf.sprintf "%s:\n\tpush rbp\n\tmov rbp, rsp" target
+            Printf.sprintf "%s:\n\tpush rbp\n\tmov rbp, rsp\n\tsub rsp, %d" target
+              ((reg_allocation.max_stack_slot + 1) * 8)
         | Return -> Printf.sprintf "\tleave\n\t%s" (asm_of_op n_unwrapped.kind)
         | Param _ -> ""
         | FunctionCall (Some i) ->
@@ -476,9 +481,16 @@ let asm_of_node g reg_assoc linker n prev_node next_node =
                 let (AnyNode tmp) = value in
                 tmp.ir_node
             in
+            let (AnyNode ptr) = ptr in
+            let (AnyNode ptr_ir_node) = ptr.ir_node in
+            let ptr_size =
+                match ptr_ir_node.typ with
+                | Ptr p -> Types.get_size p
+                | _ -> assert false
+            in
+            assert (ptr_size = Types.get_size value_ir_node.typ);
             let op_str = asm_of_op n_unwrapped.kind in
-            Printf.sprintf "\t%s [%s], %s" op_str (asm_of_loc ptr_reg 8)
-              (asm_of_loc reg (Types.get_size value_ir_node.typ))
+            Printf.sprintf "\t%s [%s], %s" op_str (asm_of_loc ptr_reg 8) (asm_of_loc reg ptr_size)
         | Load ->
             let { Machine_node.mem; ptr } = Graph.get_dependencies_exn g n_unwrapped in
             let reg = Hashtbl.find_exn reg_assoc n in
@@ -495,15 +507,11 @@ let asm_of_node g reg_assoc linker n prev_node next_node =
             let dst_reg = Hashtbl.find_exn reg_assoc dst in
             assert (Poly.equal src_reg (Reg RSI));
             assert (Poly.equal dst_reg (Reg RDI));
-            let kind = 8 in
-            let op_str =
-                match kind with
-                | 8 -> "movsq"
-                | _ -> failwithf "todo %s" __LOC__ ()
-            in
-            assert (num % kind = 0);
-            let size = num / kind in
-            Printf.sprintf "\tmov rcx, %d\n\trep %s" size op_str
+            (* We use only rep movsb because apparently newer CPUs  have ERMS
+               (Ivy bridge, Zen) and FSRM (Ice lake, Zen3) which make movsb
+               actually the faster rather than trying to do rep movsq +
+               remainder *)
+            Printf.sprintf "\tmov rcx, %d\n\trep movsb" num
         | Noop -> ""
     in
     let jmp_target =
@@ -596,12 +604,12 @@ let asm_of_node g reg_assoc linker n prev_node next_node =
         let this_label_str = get_label n in
         Printf.sprintf "\t%s %s\n%s:\n%s" op_str target_label_str this_label_str node_asm
 
-let emit_function g reg_assoc program linker =
+let emit_function g (reg_allocation : Reg_allocator.allocation_result) program linker =
     let rec aux l prev =
         match l with
         | [] -> []
         | [ Machine_node.AnyNode n ] -> (
-            let node_asm = asm_of_node g reg_assoc linker (AnyNode n) prev None in
+            let node_asm = asm_of_node g reg_allocation linker (AnyNode n) prev None in
             (* Check if the last emitted control node has a CFG successor
                that won't be fallen into (since there's nothing after us). *)
             let (AnyNode last_ctrl) =
@@ -619,7 +627,8 @@ let emit_function g reg_assoc program linker =
             match trailing_jmp with
             | None -> [ node_asm ]
             | Some jmp -> [ node_asm ^ "\n" ^ jmp ])
-        | n :: n' :: t -> asm_of_node g reg_assoc linker n prev (Some n') :: aux (n' :: t) (Some n)
+        | n :: n' :: t ->
+            asm_of_node g reg_allocation linker n prev (Some n') :: aux (n' :: t) (Some n)
     in
     (* let program = add_jumps g program in *)
     (* |> invert_loop_conditions g *)
@@ -708,8 +717,8 @@ let gather_const_arrays functions =
 let emit_program functions linker =
     let header = "format ELF64 executable 3\nentry start\nsegment readable executable\n" in
     let code =
-        List.map functions ~f:(fun (g, reg_assignment, prog) ->
-            emit_function g reg_assignment prog linker)
+        List.map functions ~f:(fun (g, reg_allocation, prog) ->
+            emit_function g reg_allocation prog linker)
         |> String.concat ~sep:"\n\n"
     in
     let constants = gather_const_arrays functions in
@@ -719,7 +728,5 @@ let emit_program functions linker =
         else
           Printf.sprintf "segment readable\nalign 8\n%s" constants
     in
-    let asm_content =
-        header ^ stdlib_functions ^ "\n\n" ^ "start:\n\tmov rbp, rsp\n" ^ code ^ "\n" ^ rodata
-    in
+    let asm_content = header ^ stdlib_functions ^ "\n" ^ code ^ "\n" ^ rodata in
     asm_content

@@ -71,18 +71,20 @@ module type S = sig
   val replace_node_with : readwrite t -> from:('a, 't) N.t -> to_:('a, 't) N.t -> unit
   (** [replace_node_with g from to_] replaces [from] with [to_] in the graph. This entails removing
       all inputs of [from] (which potentially removes some nodes if [from] was their only user) and
-      setting all users of [from] to be users of [to_] instead.
+      setting all users of [from] to be users of [to_] instead. The node [from] is also removed from
+      the graph since it will no longer have any users.
 
-      This is equivalent to calling [replace_input g ~node:user ~from ~to] on every [user] of [from]
-      and then calling [remove_node g from]. *)
+      This is equivalent to calling [replace_input g ~node:user ~from ~to] on every [user] of
+      [from]. *)
 
   val replace_node_with_unsafe : readwrite t -> from:N.any -> to_:N.any -> unit
-  (** [replace_node_with g from to_] replaces [from] with [to_] in the graph. This entails removing
-      all inputs of [from] (which potentially removes some nodes if [from] was their only user) and
-      setting all users of [from] to be users of [to_] instead.
+  (** [replace_node_with_unsafe g from to_] replaces [from] with [to_] in the graph. This entails
+      removing all inputs of [from] (which potentially removes some nodes if [from] was their only
+      user) and setting all users of [from] to be users of [to_] instead. The node [from] is also
+      removed from the graph since it will no longer have any users.
 
       This is equivalent to calling [replace_input_unsafe g ~node:user ~from ~to] on every [user] of
-      [from] and then calling [remove_node g from].
+      [from].
 
       This is the unsafe version. It is up to the user to make sure that the replacement is
       compatible with what the node expects as inputs. *)

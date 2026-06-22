@@ -11,6 +11,7 @@ type decomposition = { integer : int (* TODO floats, etc.. *) }
 
 type descriptor = {
     field_name : string;
+    field_type : Types.t;
     eightbyte_idx : int;
     byte_start_inside_eightbyte : int;
     size : int;
@@ -57,6 +58,7 @@ let get_descriptors fields =
             if offset + size > 8 then (* didn't fit into eightbyte so have to put into next one *)
               {
                 field_name;
+                field_type;
                 eightbyte_idx = (size_acc / 8) + 1;
                 byte_start_inside_eightbyte = 0;
                 size;
@@ -64,6 +66,7 @@ let get_descriptors fields =
             else
               {
                 field_name;
+                field_type;
                 eightbyte_idx = size_acc / 8;
                 byte_start_inside_eightbyte = offset;
                 size;
@@ -249,10 +252,7 @@ let patch_up g ~in_mem:(Node.AnyMem in_mem) ~fun_node param decomp =
                   let masked =
                       Bitop_nodes.create_band ?parent_fun:param.parent_fun g param.loc input mask
                   in
-                  let ~new_type, ~extra_deps:_ =
-                      Bitop_nodes.compute_type (Node.G.readonly g) masked
-                  in
-                  masked.typ <- new_type;
+                  masked.typ <- desc.field_type;
                   Node.AnyData masked)
                 else
                   AnyData input

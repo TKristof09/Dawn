@@ -2,7 +2,7 @@ const print = fun(c:str) = @extern("print");
 
 
 let board_size: i32 = 30;
-let board: i32[30]; // 2*30
+let board: i32[60]; // 2*30
 
 let k: i32 = 0;
 

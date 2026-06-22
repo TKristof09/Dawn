@@ -12,6 +12,8 @@ let compile filename =
         let linker = Linker.create () in
         let son = Son.of_ast ast linker in
         [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
+        Struct_returns.run son;
+        [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
         Sccp.run son linker;
         [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
         let type_errors = Type_check.run (Node.G.readonly son) in
@@ -42,7 +44,7 @@ let compile filename =
                   let program, reg_assignment = Reg_allocator.allocate g flat_program in
                   [%log.debug
                       "\n%a" Ir_printer.pp_machine_linear_regs
-                        (Machine_node.G.readonly g, program, reg_assignment)];
+                        (Machine_node.G.readonly g, program, reg_assignment.reg_assoc)];
                   (Machine_node.G.readonly g, reg_assignment, program))
           in
           let code = Asm_emit.emit_program functions linker in

@@ -391,49 +391,9 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
             List.map args ~f:(fun arg ->
                 do_expr g arg scope parent_fun cur_ret_node linker |> Option.value_exn)
         in
-        let big_ret_type =
-            match fun_ptr.typ with
-            | FunPtr (Value { params; ret; fun_indices }) -> (
-                let first_param = List.hd params in
-                match first_param with
-                | None -> None
-                | Some (Ptr (Struct _ as s) as t) when Types.equal t ret -> Some s
-                | _ -> None)
-            | _ -> (
-                match fun_ptr.kind with
-                | ForwardRef _ ->
-                    (* TODO: how to figure out in recursive functions?
-                           Since we only have the forward ref which has no type
-                           associated with it. This will probably need to be
-                           another pass after IR construction but before SCCP
-                           .For now I just leave it so it will be incorrect if
-                               the recursive function has big return type *)
-                    [%log.warn "Recursive functions don't yet work with big return types "];
-                    None
-                | _ ->
-                    [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly g))];
-                    failwithf "Invalid fun ptr typ %s" (Node.show fun_ptr) ())
-        in
-        let args =
-            match big_ret_type with
-            | None -> args
-            | Some deref_ret_type ->
-                (* Allocate place for big return type and pass ptr as first arg *)
-                let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
-                let (AnyMem mem) = Scope_node.get_mem g scope in
-                let size =
-                    Types.get_size deref_ret_type |> Const_node.create_int ?parent_fun g loc
-                in
-                let new_node =
-                    Mem_nodes.create_new ?parent_fun g loc ~ctrl ~mem ~size deref_ret_type
-                in
-                let mem = Proj_node.create_mem ?parent_fun g loc new_node 0 in
-                let ret_struct = Proj_node.create_data ?parent_fun g loc new_node 1 in
-                ret_struct.min_typ <- Some deref_ret_type;
-                let ptr = Mem_nodes.create_addr_of ?parent_fun g loc ret_struct in
-                Scope_node.set_mem g scope mem;
-                AnyData ptr :: args
-        in
+        (* Big return type handling (hidden ret ptr) is now done in the
+           Struct_returns pass after IR construction, so recursive functions
+           work correctly *)
         let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
         let (AnyMem mem) = Scope_node.get_mem g scope in
         let call_node, call_end = Fun_node.add_call ?parent_fun g loc ~ctrl ~mem ~fun_ptr args in
@@ -442,13 +402,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let return_mem = Proj_node.create_mem ?parent_fun g loc call_end 1 in
         Scope_node.set_mem g scope return_mem;
         let return_val = Proj_node.create_data ?parent_fun g loc call_end 2 in
-        let return_val =
-            if Option.is_some big_ret_type then
-              Node.AnyData (Mem_nodes.create_deref ?parent_fun g loc ~mem:return_mem return_val)
-            else
-              AnyData return_val
-        in
-        Some return_val
+        Some (AnyData return_val)
     (* | Ast.Return ->  *)
     | Ast.FnDeclaration (typ, param_names, body) ->
         (* TODO: when return value is big the function body will allocate
@@ -465,13 +419,16 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
               (List.map param_types ~f:(get_type g scope))
               (get_type g scope ret_type)
         in
-        let param_names, param_types, big_ret =
+        let param_names, param_types =
             match fun_ptr_type with
             | FunPtr (Value { params; ret; fun_indices = _ }) ->
+                (* make_fun_ptr adds a hidden ret ptr param for struct returns,
+                   so prepend the identifier to keep param_names in sync *)
                 if List.length params = List.length param_names then
-                  (param_names, params, false)
-                else
-                  (Scope_node.ret_identifier :: param_names, params, true)
+                  (param_names, params)
+                else (
+                  assert (Types.equal (List.hd_exn params) ret);
+                  (Scope_node.ret_identifier :: param_names, params))
             | _ -> assert false
         in
         let fun_node, ret_node = Fun_node.create g loc fun_ptr_type in
@@ -491,11 +448,12 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         Scope_node.set_mem g scope mem;
         List.zip_exn param_types param_names
         |> List.iteri ~f:(fun i (ptype, pname) ->
-            let param_node = Fun_node.create_param ~parent_fun:fun_idx g loc fun_node ptype i in
-            param_node.min_typ <- Some ptype;
             if String.equal pname Scope_node.ret_identifier then
-              Scope_node.set_ret_ptr g scope param_node
+              (* skip this as it will be added in Struct_returns pass *)
+              ()
             else
+              let param_node = Fun_node.create_param ~parent_fun:fun_idx g loc fun_node ptype i in
+              param_node.min_typ <- Some ptype;
               Scope_node.define g scope pname param_node false);
         let (AnyData body_n) =
             do_expr g body scope (Some fun_idx) (Some ret_node) linker
@@ -504,26 +462,11 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
                    (AnyData (Const_node.create_from_type ~parent_fun:fun_idx g body.loc Types.Void))
         in
         body_n.min_typ <- Some (get_type g scope ret_type);
-        (if big_ret then (
-           (*  store the values into $ret if return value goes onto stack and put ptr as return value *)
-           let (AnyData ret_ptr) = Scope_node.get_ret_ptr g scope in
-           (match ret_ptr.typ with
-           | Ptr (Struct (Value { name; fields })) ->
-               let (AnyMem mem) = Scope_node.get_mem g scope in
-               let body_ptr = Mem_nodes.create_addr_of ~parent_fun:fun_idx g ret_node.loc body_n in
-               let mem =
-                   Mem_nodes.create_copy ~parent_fun:fun_idx g ret_node.loc ~mem ~src:body_ptr
-                     ~dst:ret_ptr
-               in
-               Scope_node.set_mem g scope mem
-           | _ -> assert false);
-           let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
-           let (AnyMem mem) = Scope_node.get_mem g scope in
-           Fun_node.add_return ~parent_fun:fun_idx g ret_node ~ctrl ~mem ~val_n:ret_ptr)
-         else
-           let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
-           let (AnyMem mem) = Scope_node.get_mem g scope in
-           Fun_node.add_return ~parent_fun:fun_idx g ret_node ~ctrl ~mem ~val_n:body_n);
+        (* Big return type handling (copy into ret and return ptr) is now
+           done in the Struct_returns pass after IR construction *)
+        let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
+        let (AnyMem mem) = Scope_node.get_mem g scope in
+        Fun_node.add_return ~parent_fun:fun_idx g ret_node ~ctrl ~mem ~val_n:body_n;
         Scope_node.pop g scope;
         Scope_node.set_ctrl g scope old_ctrl;
         Scope_node.set_mem g scope old_mem;
@@ -642,22 +585,10 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         let (AnyData base) = do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn in
         let (AnyMem mem) = Scope_node.get_mem g scope in
         match base.typ with
-        | Struct _ ->
-            let field_typ = Types.get_field_type base.typ field_name |> Option.value ~default:ALL in
-            let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc base field_name in
-            let load =
-                Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr field_name field_typ
-            in
-            load.min_typ <- Some field_typ;
-            Some (AnyData load)
         | Trait (Value t) ->
-            let field_typ = Types.get_field_type base.typ field_name |> Option.value ~default:ALL in
             let field_name = "$" ^ t.name ^ "$" ^ field_name in
             let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc base field_name in
-            let load =
-                Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr field_name field_typ
-            in
-            load.min_typ <- Some field_typ;
+            let load = Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr field_name ANY in
             Some (AnyData load)
         | Type (Value t) ->
             let base_name =
@@ -686,8 +617,9 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
             let n = Node.as_data_exn n in
             Some (AnyData n)
         | _ ->
-            failwithf "%s:%d: Can't access field %s on type %s" loc.filename loc.line field_name
-              (Types.human_readable base.typ) ())
+            let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc base field_name in
+            let load = Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr field_name ANY in
+            Some (AnyData load))
     | TraitDeclaration funs ->
         let funs =
             List.map funs ~f:(fun (n, t) ->

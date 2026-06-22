@@ -221,22 +221,6 @@ let do_data_node : type a.
             let { Node.mem; ptr } : Node.load = Node.G.get_dependencies_exn g n in
             let (AnyData ptr) = Option.value_exn ptr in
             match ptr.typ with
-            (* TODO remove this *)
-            (* | Struct (Value { name = _; fields }) *)
-            (* | Ptr (Struct (Value { name = _; fields })) -> ( *)
-            (*     let field_type = Types.get_field_type ptr.typ field in *)
-            (*     match field_type with *)
-            (*     | None -> (~new_type:ALL, ~extra_deps:[]) *)
-            (*     | Some (ConstArray (Value arr)) -> ( *)
-            (*         let offs = Node.G.get_dependency g n 3 |> Option.value_exn in *)
-            (*         match offs.typ with *)
-            (*         | Integer _ when Types.is_constant offs.typ -> *)
-            (*             let i = Types.get_integer_const_exn offs.typ in *)
-            (*             (* TODO: bounds check on the idx would be nice *) *)
-            (*             let idx = (Z.to_int i - 8) / Types.get_size arr.element_type in *)
-            (*             (~new_type:(List.nth_exn (arr.values :> Types.t list) idx), ~extra_deps:[]) *)
-            (*         | _ -> (~new_type:arr.element_type, ~extra_deps:[])) *)
-            (*     | Some field_type -> (~new_type:field_type, ~extra_deps:[])) *)
             | Ptr p -> (~new_type:p, ~extra_deps:[])
             | ANY -> (~new_type:ANY, ~extra_deps:[])
             | ALL -> (~new_type:ALL, ~extra_deps:[])
