@@ -75,6 +75,8 @@ let do_node : type a b. Node.G.readwrite Node.G.t -> (a, b) Node.t -> unit =
         | Data GEq -> n
         | Data BAnd -> n
         | Data BOr -> n
+        | Data Lsh -> n
+        | Data Rsh -> n
         | _ -> assert false
     in
     match n.Node.kind with
@@ -160,6 +162,26 @@ let do_node : type a b. Node.G.readwrite Node.G.t -> (a, b) Node.t -> unit =
         else if lhs_size > rhs_size then
           let rhs = create_cast g rhs n n.loc (lhs_size * 8) in
           Node.G.set_node_inputs g n { Node.lhs = Some (AnyData lhs); rhs = Some rhs }
+    | Data Lsh
+    | Data Rsh ->
+        let n = as_binop n in
+        let n_size = Types.get_size n.typ in
+        let { Node.lhs; rhs } = Node.G.get_dependencies_exn g n in
+        let (AnyData lhs) = Option.value_exn lhs in
+        let lhs_size = Types.get_size lhs.typ in
+        if Option.is_some n_fixed_width then
+          assert (n_size >= lhs_size);
+        let size = max n_size lhs_size in
+        (* Don't need to do case if n_size < size since this happens only if n
+           has no fixed_width, in which case the width will be calculated from
+           the range anyway *)
+        let lhs_casted =
+            if lhs_size < size then
+              create_cast g lhs n n.loc (size * 8)
+            else
+              AnyData lhs
+        in
+        Node.G.set_node_inputs g n { Node.lhs = Some lhs_casted; rhs }
     | Ctrl FunctionCall ->
         (* FunctionCall does the arg <-> param casting because it has easier access to all the needed nodes. *)
         let n = Node.unpack_exn n (Ctrl FunctionCall) in

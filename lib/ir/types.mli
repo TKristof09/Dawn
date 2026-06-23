@@ -29,6 +29,7 @@ and arr = {
 
 and t =
     | ANY
+    | Self
     | Integer of integer sub_lattice
     | Bool of bool sub_lattice
     | Tuple of t list sub_lattice

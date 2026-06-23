@@ -387,7 +387,7 @@ let asm_of_node g reg_allocation linker n prev_node next_node =
             let op_str = asm_of_op n_unwrapped.kind in
             Printf.sprintf "\t%s %s, %s" op_str
               (asm_of_loc lhs_reg (Types.get_size lhs_ir_node.typ))
-              (asm_of_loc rhs_reg (Types.get_size lhs_ir_node.typ))
+              (asm_of_loc rhs_reg (Types.get_size rhs_ir_node.typ))
         | Mov ->
             let { Machine_node.input } = Graph.get_dependencies_exn g n_unwrapped in
             let (AnyNode input_unwrapped) = input in

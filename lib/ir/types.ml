@@ -69,6 +69,7 @@ and arr = {
 
 and t =
     | ANY
+    | Self
     | Integer of integer sub_lattice
     | Bool of bool sub_lattice
     | Tuple of t list sub_lattice
@@ -88,6 +89,7 @@ and t =
 
 let get_top = function
     | ANY -> ANY
+    | Self -> ANY
     | Integer _ -> Integer Any
     | Bool _ -> Bool Any
     | Tuple _ -> Tuple Any
@@ -106,6 +108,7 @@ let get_top = function
 
 let get_bottom = function
     | ANY -> ALL
+    | Self -> ALL
     | Integer _ -> Integer All
     | Bool _ -> Bool All
     | Tuple _ -> Tuple All
@@ -154,6 +157,9 @@ let rec equal a b =
     | ANY, ANY -> true
     | ANY, _ -> false
     | _, ANY -> false
+    | Self, Self -> true
+    | Self, _ -> false
+    | _, Self -> false
     | Integer a, Integer b -> equal_sub_lattice equal_integer a b
     | Integer _, _ -> false
     | _, Integer _ -> false
@@ -236,6 +242,7 @@ let rec human_readable t =
     | Array (Value { element_type; values = _ })
     | ConstArray (Value { element_type; values = _ }) ->
         human_readable element_type ^ " array"
+    | Self -> "Self"
     | ANY -> "unknown type"
     | ALL -> "invalid type"
     | _ -> failwithf "No human readable label for %s" (show t) ()
@@ -260,6 +267,7 @@ let rec is_constant t =
     match t with
     | ANY
     | ALL
+    | Self
     | Control
     | DeadControl
     | Memory ->
@@ -342,7 +350,8 @@ let make_fun_ptr ?idx params ret =
         | Ptr _
         | FunPtr _
         | Struct _
-        | Trait _ ->
+        | Trait _
+        | Self ->
             true
         | _ -> false
     in
@@ -353,7 +362,8 @@ let make_fun_ptr ?idx params ret =
         | Ptr _
         | FunPtr _
         | Struct _
-        | Void ->
+        | Void
+        | Self ->
             true
         | _ -> false
     in
@@ -465,6 +475,7 @@ let rec of_ast_type (ast_type : Ast.var_type) : t =
     in
     (* FIXME actually implement *)
     match ast_type with
+    | Type "Self" -> Self
     | Type s -> (
         match try_parse_int s with
         | Some (`UInt bits) -> make_int_fixed ~fixed_width:bits ~num_widens:3 unsigned_bounds
@@ -710,6 +721,10 @@ let rec meet t t' =
         ALL
     | ANY, _ -> t'
     | _, ANY -> t
+    | Self, t
+    | t, Self ->
+        (* Self is at the top, just under ANY, meet always gives the other type except meet Self ANY '*)
+        t
     | Integer _, _
     | Bool _, _
     | Tuple _, _
@@ -885,6 +900,9 @@ let rec join t t' =
     | ANY, _
     | _, ANY ->
         ANY
+    | Self, _
+    | _, Self ->
+        failwithf "TODO: %s" __LOC__ ()
     | Integer _, _
     | Bool _, _
     | Tuple _, _

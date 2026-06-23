@@ -53,7 +53,17 @@ let do_data_node : type a.
         let actual = [ lhs.typ; rhs.typ ] in
         expect_types n.loc ~expected ~actual
     | Data Lsh
-    | Data Rsh
+    | Data Rsh ->
+        let n = as_binop n in
+        let { Node.lhs; rhs } = Node.G.get_dependencies_exn g n in
+        let (AnyData lhs) = Option.value_exn lhs in
+        let (AnyData rhs) = Option.value_exn rhs in
+        let lhs_byte_size = Types.get_size lhs.typ in
+        let expected = [ Types.i64; Types.make_int (Z.of_int 0) (Z.of_int (lhs_byte_size * 8)) ] in
+        let actual = [ lhs.typ; rhs.typ ] in
+        (* TODO: better error message for when rhs is out of range. Currently
+           it just says something like "expected u6 got u6" *)
+        expect_types n.loc ~expected ~actual
     | Data BAnd
     | Data BOr
     | Data Eq
