@@ -39,3 +39,8 @@ let link linker g call_node =
           Fun_node.link_call g ~call_node ~fun_node;
           fun_nodes := fun_node :: !fun_nodes));
     !fun_nodes
+
+let iter_fun_nodes linker t ~f =
+    Types.iter_fun_indices t linker.universe ~f:(fun idx ->
+        let _, fun_node = Dynarray.get linker.functions (idx - 1) in
+        f idx fun_node)

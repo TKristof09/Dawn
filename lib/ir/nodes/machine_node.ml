@@ -1321,7 +1321,9 @@ let rec of_data_node : type a.
     | Data (AddrOfField f) ->
         let { Node.place; offset } = Node.G.get_dependencies_exn g n in
         let (AnyData place) = Option.value_exn place in
-        let field_offset = Types.get_offset place.typ f |> Option.value_exn in
+        let field_offset =
+            Types.get_offset place.typ ~include_trait_impl:true f |> Option.value_exn
+        in
 
         let base_addr = create_node AddrOf (AnyNode n) in
         Hashtbl.add_exn memo ~key:(AnyNode n) ~data:(AnyNode base_addr);

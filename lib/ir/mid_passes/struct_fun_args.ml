@@ -300,6 +300,8 @@ let pass_by_ptr g ~mem:(Node.AnyMem mem) p =
                  Node.AnyData (Mem_nodes.create_addr_of ?parent_fun:p.parent_fun g p.loc arg)))
     in
     Node.G.set_node_inputs g p { Node.phi_inputs = new_inputs };
+    let ~new_type, ~extra_deps = Phi_node.compute_type (Node.G.readonly g) p in
+    p.typ <- new_type;
     let param_users = Node.G.get_dependants g p in
     let deref = Mem_nodes.create_deref g p.loc ?parent_fun:p.parent_fun ~mem p in
     List.iter param_users ~f:(fun (AnyNode user) ->

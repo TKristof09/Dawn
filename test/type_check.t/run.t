@@ -1,6 +1,6 @@
 Test:
   $ dawn type_check.eos
-  [ERROR]: (Main:21) type_check.eos:6: Expected str, got u11
-  [ERROR]: (Main:21) type_check.eos:19: Invalid number of arguments, got 3 expected 2
+  [ERROR]: (Main:23) type_check.eos:6: Expected str, got u11
+  [ERROR]: (Main:23) type_check.eos:19: Invalid number of arguments, got 3 expected 2
   [1]
 (* TODO: this error message should be improved probably because i11 might be confusing *)

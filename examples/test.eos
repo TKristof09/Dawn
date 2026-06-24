@@ -4,6 +4,17 @@ const S = type {
     a: u32,
     b: u32
 };
+
+const TT = trait {
+    g: (Self, u32) -> u32
+};
+
+impl TT for S {
+    g = fun(self: Self, x: u32) -> u32 {
+        self.f(self, 5,6) + x
+    }
+}
+
 const T = trait {
     f: (Self, u32, u32) -> u32 
 };
@@ -14,8 +25,9 @@ impl T for S {
     }
 }
 
+
 const s = S{.a = 34, .b = 35};
-print_int(S.f(s, s.a, s.b));
+print_int(S.g(s, 1));
 
 print("\n");
 //

@@ -126,7 +126,7 @@ let do_data_node : type a.
            meet struct trait = trait so struct is_a trait but trait is not a
            struct *)
         let type_errors = expect_types n.loc ~expected:[ Trait All ] ~actual:[ place.typ ] in
-        let field_type = Types.get_field_type place.typ field in
+        let field_type = Types.get_field_type place.typ ~include_trait_impl:true field in
         if Option.is_none type_errors then
           match
             field_type

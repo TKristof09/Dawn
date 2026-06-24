@@ -46,7 +46,7 @@ module N = struct
       | Loop : loop ctrl_kind
       | Function : {
           ret : (ret, ctrl) t;
-          signature : Types.t;
+          signature : (Types.t[@sexp.opaque]);
           idx : int;
         }
           -> fun_def ctrl_kind
@@ -135,14 +135,14 @@ module N = struct
   and scope_kind = { vars : any option list }
 
   and ('a, 'tag) t = {
-      mutable typ : Types.t;
-      mutable min_typ : Types.t option;
+      mutable typ : (Types.t[@sexp.opaque]);
+      mutable min_typ : (Types.t option[@sexp.opaque]);
       mutable kind : ('a, 'tag) kind;
       id : int;
       loc : Ast.loc;
       mutable parent_fun : int option;
-      list_of_inputs : 'a -> any option list; [@opaque]
-      inputs_of_list : any option list -> 'a; [@opaque]
+      list_of_inputs : ('a -> any option list[@sexp.opaque]);
+      inputs_of_list : (any option list -> 'a[@sexp.opaque]);
     }
   [@@deriving sexp_of]
 

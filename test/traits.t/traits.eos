@@ -1,0 +1,33 @@
+const print = fun(s: str) -> void = @extern("print");
+const print_int = fun(i: i64) -> void = @extern("print_int");
+
+const S = type { 
+    a: u32,
+    b: u32
+};
+const T = trait {
+    f: (Self, u32, u32) -> u32 
+};
+
+impl T for S {
+    f = fun (self: Self, x: u32, y: u32) -> u32 {
+        self.a + x + y
+    }
+}
+
+const TT = trait {
+    g: (Self, u32) -> u32
+};
+
+impl TT for S {
+    g = fun(self: Self, x: u32) -> u32 {
+        self.f(self, 3, 4) * x
+    }
+}
+
+const s = S{.a = 1, .b = 2};
+print_int(S.f(s, 3,4));
+print("\n");
+print_int(S.g(s, 5));
+
+print("\n");

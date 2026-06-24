@@ -2,7 +2,6 @@ type 'a sub_lattice =
     | Any
     | Value of 'a
     | All
-[@@deriving sexp_of]
 
 type integer = private {
     min : Z.t;
@@ -19,7 +18,7 @@ type fun_ptr = private {
 
 and struct_type = private {
     name : string;
-    fields : (string * t) list;
+    mutable fields : (string * t) list;
   }
 
 and arr = {
@@ -45,7 +44,6 @@ and t =
     | Control
     | DeadControl
     | ALL
-[@@deriving show { with_path = false }, sexp_of]
 
 val equal : t -> t -> bool
 
@@ -103,14 +101,23 @@ val get_string : t -> string option
 
 val is_const_array : t -> bool
 
-val get_offset : t -> string -> int option
-(** [get_offset t field] returns the offset in bytes of the field [field] in the type [t]. [t] can
+val get_offset : t -> ?include_trait_impl:bool -> string -> int option
+(** [get_offset t ?include_trait_impl field] returns the offset in bytes of the field [field] in the type [t]. [t] can
     be Struct, Trait, or Ptr to either of those. Returns [None] for any other type or if the field
-    is not found. *)
+    is not found.
 
-val get_field_type : t -> string -> t option
-(** [get_field_type t field] returns the type of field [field] in [t]. [t] can be Struct, Trait, or
-    Ptr to either of those. Returns [None] for any other type or if the field is not found. *)
+    If include_trait_impl is specified then it also searches among trait implementations. Also
+    returns [None] if multiple traits implement the same named field as the field would be
+    ambiguous. *)
+
+val get_field_type : t -> ?include_trait_impl:bool -> string -> t option
+(** [get_field_type t ?include_trait_impl field] returns the type of field [field] in [t]. [t] can
+    be Struct, Trait, or Ptr to either of those. Returns [None] for any other type or if the field
+    is not found.
+
+    If include_trait_impl is specified then it also searches among trait implementations. Also
+    returns [None] if multiple traits implement the same named field as the field would be
+    ambiguous. *)
 
 val is_a : t -> t -> bool
 (** [is_a t t'] checks if [t] is a [t']. In terms of lattice operations this is equal to
@@ -139,8 +146,17 @@ val widen_int : t -> t -> t
     integer type is limited, after widen_int is called more times than this limit it returns
     [min_type]. *)
 
+val substitute_self : t -> unit
+(** [substitute_self struct_t] substitutes every [Self] in the Struct [struct_t]'s trait
+    implementation fields with [struct_t]. This mutates the original [struct_t].
+
+    It preserves pointers so [Ptr Self] becomes [Ptr self_type]. *)
+
 val is_high : t -> bool
 (** [is_high t] checks if [t] is the top of the local sublattice *)
+
+val pp : Format.formatter -> t -> unit
+val show : t -> string
 
 (* Integer types for the common bit widths. *)
 val i64 : t

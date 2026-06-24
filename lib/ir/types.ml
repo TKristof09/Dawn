@@ -4,7 +4,7 @@ type 'a sub_lattice =
     | Any
     | Value of 'a
     | All
-[@@deriving sexp_of, equal]
+[@@deriving equal]
 
 let pp_sub_lattice pp_a fmt = function
     | Any -> Format.fprintf fmt "Any"
@@ -57,7 +57,8 @@ type fun_ptr = {
 
 and struct_type = {
     name : string;
-    fields : (string * t) list;
+    (* Struct types can be cyclic (when it implements a trait with `Self` parameter). Ocaml can handle fully cyclic types (but we need the fields to be mutable to construct them. But this also means that any functions that recurse into the fields must be cycle safe *)
+    mutable fields : (string * t) list;
   }
 
 and arr = {
@@ -85,7 +86,60 @@ and t =
     | Control
     | DeadControl
     | ALL
-[@@deriving show { with_path = false }, sexp_of]
+
+(* Stack of struct_types currently being printed, ancestor-chain only. A field
+   that re-enters a struct still on this stack is a cycle; a field
+   that points at a struct printed earlier but *not* on this stack is just
+   sharing (e.g. two fields with the same struct type), and should still
+   print in full. Checking is done with physical equality. *)
+let currently_printing_structs : struct_type list ref = ref []
+
+let rec pp_fun_ptr fmt (fp : fun_ptr) =
+    Format.fprintf fmt "@[<hv 2>{ params = [%a];@ ret = %a;@ fun_indices = %a }@]"
+      (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ") pp)
+      fp.params pp fp.ret pp_fun_indices fp.fun_indices
+
+and pp_struct_type fmt (s : struct_type) =
+    if List.mem !currently_printing_structs s ~equal:phys_equal then
+      Format.fprintf fmt "<%S>" s.name
+    else begin
+      currently_printing_structs := s :: !currently_printing_structs;
+      Exn.protect
+        ~f:(fun () ->
+          Format.fprintf fmt "@[<hv 2>{ name = %S;@ fields = [@[%a]@] }@]" s.name
+            (Format.pp_print_list
+               ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ")
+               (fun fmt (fname, ftyp) -> Format.fprintf fmt "%S : %a" fname pp ftyp))
+            s.fields)
+        ~finally:(fun () -> currently_printing_structs := List.tl_exn !currently_printing_structs)
+    end
+
+and pp_arr fmt (a : arr) =
+    Format.fprintf fmt "@[<hv 2>{ element_type = %a;@ values = [|%a|] }@]" pp a.element_type
+      (Format.pp_print_list ~pp_sep:(fun fmt () -> Format.fprintf fmt ";@ ") pp)
+      (Array.to_list a.values)
+
+and pp fmt t =
+    match t with
+    | ANY -> Format.pp_print_string fmt "ANY"
+    | Self -> Format.pp_print_string fmt "Self"
+    | Integer sl -> Format.fprintf fmt "Integer %a" (pp_sub_lattice pp_integer) sl
+    | Bool sl -> Format.fprintf fmt "Bool %a" (pp_sub_lattice Format.pp_print_bool) sl
+    | Tuple sl -> Format.fprintf fmt "Tuple %a" (pp_sub_lattice (Format.pp_print_list pp)) sl
+    | FunPtr sl -> Format.fprintf fmt "FunPtr %a" (pp_sub_lattice pp_fun_ptr) sl
+    | Ptr t -> Format.fprintf fmt "Ptr %a" pp t
+    | Struct sl -> Format.fprintf fmt "Struct %a" (pp_sub_lattice pp_struct_type) sl
+    | Trait sl -> Format.fprintf fmt "Trait %a" (pp_sub_lattice pp_struct_type) sl
+    | Array sl -> Format.fprintf fmt "Array %a" (pp_sub_lattice pp_arr) sl
+    | ConstArray sl -> Format.fprintf fmt "ConstArray %a" (pp_sub_lattice pp_arr) sl
+    | Type sl -> Format.fprintf fmt "Type %a" (pp_sub_lattice pp) sl
+    | Void -> Format.pp_print_string fmt "Void"
+    | Memory -> Format.pp_print_string fmt "Memory"
+    | Control -> Format.pp_print_string fmt "Control"
+    | DeadControl -> Format.pp_print_string fmt "DeadControl"
+    | ALL -> Format.pp_print_string fmt "ALL"
+
+let show t = Format.asprintf "%a" pp t
 
 let get_top = function
     | ANY -> ANY
@@ -138,8 +192,8 @@ let rec equal a b =
         && equal_indices a.fun_indices b.fun_indices
     in
     let equal_struct a b =
+        (* Nominative type system so struct equality is based on name not fields *)
         String.equal a.name b.name
-        && List.equal (fun (n, t) (n', t') -> String.equal n n' && equal t t') a.fields b.fields
     in
     let equal_arr a b =
         let shorter =
@@ -257,49 +311,56 @@ let get_fun_idx t =
             None)
     | _ -> failwithf "Invalid arg: %s" (show t) ()
 
-let rec is_constant t =
+let is_constant t =
     let is_constant_lattice = function
         | Any
         | All ->
             false
         | Value _ -> true
     in
-    match t with
-    | ANY
-    | ALL
-    | Self
-    | Control
-    | DeadControl
-    | Memory ->
-        false
-    | Integer (Value { min; max; num_widens = _ }) -> Z.equal min max
-    | Integer _ -> false
-    | Bool x -> is_constant_lattice x
-    | Tuple x -> is_constant_lattice x
-    | FunPtr x -> (
-        match x with
-        | Any
-        | All ->
+    let rec aux visited = function
+        | ANY
+        | ALL
+        | Self
+        | Control
+        | DeadControl
+        | Memory ->
             false
-        | Value f -> get_fun_idx t |> Option.is_some)
-    | Struct x
-    | Trait x -> (
-        match x with
-        | Any
-        | All ->
-            false
-        | Value s -> List.for_all s.fields ~f:(fun (_, t) -> is_constant t))
-    | Ptr p -> is_constant p
-    | Array a
-    | ConstArray a -> (
-        match a with
-        | Any
-        | All ->
-            false
-        | Value { element_type; values } ->
-            is_constant element_type && Array.for_all values ~f:is_constant)
-    | Type x -> is_constant_lattice x
-    | Void -> true
+        | Integer (Value { min; max; num_widens = _ }) -> Z.equal min max
+        | Integer _ -> false
+        | Bool x -> is_constant_lattice x
+        | Tuple x -> is_constant_lattice x
+        | FunPtr x -> (
+            match x with
+            | Any
+            | All ->
+                false
+            | Value f -> get_fun_idx t |> Option.is_some)
+        | Struct x
+        | Trait x -> (
+            match x with
+            | Any
+            | All ->
+                false
+            | Value s ->
+                if Set.mem visited s.name then
+                  true
+                else
+                  let visited = Set.add visited s.name in
+                  List.for_all s.fields ~f:(fun (_, t) -> aux visited t))
+        | Ptr p -> aux visited p
+        | Array a
+        | ConstArray a -> (
+            match a with
+            | Any
+            | All ->
+                false
+            | Value { element_type; values } ->
+                aux visited element_type && Array.for_all values ~f:(aux visited))
+        | Type x -> is_constant_lattice x
+        | Void -> true
+    in
+    aux String.Set.empty t
 
 let get_integer_const_exn = function
     | Integer (Value { min; max; num_widens = _ }) ->
@@ -497,7 +558,7 @@ let rec of_ast_type (ast_type : Ast.var_type) : t =
     | Struct fields -> make_struct "" (List.map fields ~f:(fun (n, t) -> (n, of_ast_type t)))
     | _ -> failwithf "Unhandled AST type %s" (Ast.show_var_type ast_type) ()
 
-let rec meet t t' =
+let rec meet_visit visited t t' =
     let meet_sub_lattice t t' ~f =
         match (t, t') with
         | All, _ -> All
@@ -549,7 +610,7 @@ let rec meet t t' =
     | Tuple t, Tuple t' ->
         let l =
             meet_sub_lattice t t' ~f:(fun x x' ->
-                match List.map2 x x' ~f:meet with
+                match List.map2 x x' ~f:(meet_visit visited) with
                 | Ok l -> Value l
                 | Unequal_lengths -> All)
         in
@@ -557,7 +618,7 @@ let rec meet t t' =
     | FunPtr t, FunPtr t' ->
         let l =
             meet_sub_lattice t t' ~f:(fun fp fp' ->
-                let ret = meet fp.ret fp'.ret in
+                let ret = meet_visit visited fp.ret fp'.ret in
                 let fun_indices =
                     match (fp.fun_indices, fp'.fun_indices) with
                     | `Include s, `Include s' -> `Include (Set.union s s')
@@ -565,7 +626,7 @@ let rec meet t t' =
                     | `Exclude s, `Include s' -> `Exclude (Set.diff s s')
                     | `Exclude s, `Exclude s' -> `Exclude (Set.inter s s')
                 in
-                match List.map2 fp.params fp'.params ~f:meet with
+                match List.map2 fp.params fp'.params ~f:(meet_visit visited) with
                 | Ok params -> Value { params; ret; fun_indices }
                 | Unequal_lengths -> All)
         in
@@ -584,15 +645,15 @@ let rec meet t t' =
               (* different structs, but they might have common implemented traits. We want those *)
               let s_trait_impls =
                   List.filter s.fields ~f:(fun (n, _) -> String.is_prefix n ~prefix:"$")
-                  |> String.Map.of_alist_reduce ~f:meet
+                  |> String.Map.of_alist_reduce ~f:(meet_visit visited)
               in
               let s'_trait_impls =
                   List.filter s'.fields ~f:(fun (n, _) -> String.is_prefix n ~prefix:"$")
-                  |> String.Map.of_alist_reduce ~f:meet
+                  |> String.Map.of_alist_reduce ~f:(meet_visit visited)
               in
               let common =
                   Map.merge s_trait_impls s'_trait_impls ~f:(fun ~key -> function
-                    | `Both (t, t') -> Some (meet t t')
+                    | `Both (t, t') -> Some (meet_visit visited t t')
                     | _ -> None)
               in
               if Map.is_empty common then
@@ -609,11 +670,22 @@ let rec meet t t' =
                 in
                 let name = String.concat ~sep:"+" name in
                 Trait (Value { name; fields = Map.to_alist common })
+            else if
+              (* same name -> cycle detection: if this struct is already in visited,
+                 we've hit a cycle, return t to avoid infinite recursion *)
+              (* We use physical equality because structs with the same name
+                 can have different "state" during constant propagation and we
+                 want to treat those differently so we can't just use equality
+                 by name *)
+              List.mem visited s ~equal:phys_equal
+            then
+              t
             else
+              let visited = s :: visited in
               match
                 List.map2 s.fields s'.fields ~f:(fun (name, t) (name', t') ->
                     assert (String.equal name name');
-                    (name, meet t t'))
+                    (name, meet_visit visited t t'))
               with
               | Ok fields -> Struct (Value { name = s.name; fields })
               | Unequal_lengths -> assert false))
@@ -622,11 +694,20 @@ let rec meet t t' =
             meet_sub_lattice t t' ~f:(fun t t' ->
                 if not (String.equal t.name t'.name) then
                   All
+                else if
+                  (* We use physical equality because structs with the same name
+                 can have different "state" during constant propagation and we
+                 want to treat those differently so we can't just use equality
+                 by name *)
+                  List.mem visited t ~equal:phys_equal
+                then
+                  Value t
                 else
+                  let visited = t :: visited in
                   match
                     List.map2 t.fields t'.fields ~f:(fun (name, t) (name', t') ->
                         assert (String.equal name name');
-                        (name, meet t t'))
+                        (name, meet_visit visited t t'))
                   with
                   | Ok fields -> Value { name = t.name; fields }
                   | Unequal_lengths -> assert false)
@@ -647,7 +728,7 @@ let rec meet t t' =
                     | (name_s, typ_s) :: ts, (name_t, typ_t) :: tt when found_name ->
                         assert (String.equal name_s ("$" ^ t.name ^ "$" ^ name_t));
                         Result.map (aux ts tt found_name) ~f:(fun rest ->
-                            (name_t, meet typ_s typ_t) :: rest)
+                            (name_t, meet_visit visited typ_s typ_t) :: rest)
                     | _ :: t, _ -> aux t t_fields found_name
                 in
 
@@ -656,7 +737,7 @@ let rec meet t t' =
                 | Error _ -> All)
         in
         Trait l
-    | Ptr p, Ptr p' -> Ptr (meet p p')
+    | Ptr p, Ptr p' -> Ptr (meet_visit visited p p')
     | ConstArray a, ConstArray a' ->
         (* TODO: review this code (and the join for constarrays). Is it fine to
            loose the values list when meeting/joining two different
@@ -667,7 +748,7 @@ let rec meet t t' =
                 if Array.equal Poly.equal x.values x'.values then
                   Value x
                 else
-                  let element_type = meet x.element_type x'.element_type in
+                  let element_type = meet_visit visited x.element_type x'.element_type in
                   if equal element_type ALL then
                     All
                   else
@@ -677,7 +758,7 @@ let rec meet t t' =
     | Array a, Array a' ->
         let l =
             meet_sub_lattice a a' ~f:(fun x x' ->
-                let element_type = meet x.element_type x'.element_type in
+                let element_type = meet_visit visited x.element_type x'.element_type in
                 let padded_map2 a b ~f ~pad =
                     let len_a = Array.length a in
                     let len_b = Array.length b in
@@ -693,18 +774,20 @@ let rec meet t t' =
                   Value
                     {
                       element_type;
-                      values = padded_map2 x.values x'.values ~f:meet ~pad:(get_bottom element_type);
+                      values =
+                        padded_map2 x.values x'.values ~f:(meet_visit visited)
+                          ~pad:(get_bottom element_type);
                     })
         in
         Array l
     | Array a, ConstArray c
     | ConstArray c, Array a ->
         (* demote the constant array into normal array *)
-        meet (Array a) (Array c)
+        meet_visit visited (Array a) (Array c)
     | Type t, Type t' ->
         let l =
             meet_sub_lattice t t' ~f:(fun t t' ->
-                match meet t t' with
+                match meet_visit visited t t' with
                 | ALL -> All
                 | ANY -> Any
                 | x -> Value x)
@@ -741,9 +824,10 @@ let rec meet t t' =
     | Void, _ ->
         ALL
 
+let meet t t' = meet_visit [] t t'
 let is_a lhs rhs = equal (meet lhs rhs) rhs
 
-let rec join t t' =
+let rec join_visit visited t t' =
     let join_sub_lattice t t' ~f =
         match (t, t') with
         | All, _ -> t'
@@ -786,7 +870,7 @@ let rec join t t' =
     | Tuple t, Tuple t' ->
         let l =
             join_sub_lattice t t' ~f:(fun x x' ->
-                match List.map2 x x' ~f:join with
+                match List.map2 x x' ~f:(join_visit visited) with
                 | Ok l -> Value l
                 | Unequal_lengths -> Any)
         in
@@ -794,7 +878,7 @@ let rec join t t' =
     | FunPtr t, FunPtr t' ->
         let l =
             join_sub_lattice t t' ~f:(fun fp fp' ->
-                let ret = meet fp.ret fp'.ret in
+                let ret = meet_visit visited fp.ret fp'.ret in
                 let fun_indices =
                     match (fp.fun_indices, fp'.fun_indices) with
                     | `Include s, `Include s' -> `Include (Set.inter s s')
@@ -802,7 +886,7 @@ let rec join t t' =
                     | `Exclude s, `Include s' -> `Include (Set.diff s' s)
                     | `Exclude s, `Exclude s' -> `Exclude (Set.union s s')
                 in
-                match List.map2 fp.params fp'.params ~f:meet with
+                match List.map2 fp.params fp'.params ~f:(meet_visit visited) with
                 | Ok params -> Value { params; ret; fun_indices }
                 | Unequal_lengths -> All)
         in
@@ -812,11 +896,20 @@ let rec join t t' =
             join_sub_lattice s s' ~f:(fun s s' ->
                 if not (String.equal s.name s'.name) then
                   Any
+                else if
+                  (* We use physical equality because structs with the same name
+                 can have different "state" during constant propagation and we
+                 want to treat those differently so we can't just use equality
+                 by name *)
+                  List.mem visited s ~equal:phys_equal
+                then
+                  Value s
                 else
+                  let visited = s :: visited in
                   match
                     List.map2 s.fields s'.fields ~f:(fun (name, t) (name', t') ->
                         assert (String.equal name name');
-                        (name, join t t'))
+                        (name, join_visit visited t t'))
                   with
                   | Ok fields -> Value { name = s.name; fields }
                   | Unequal_lengths -> assert false)
@@ -827,11 +920,20 @@ let rec join t t' =
             join_sub_lattice t t' ~f:(fun t t' ->
                 if not (String.equal t.name t'.name) then
                   Any
+                else if
+                  (* We use physical equality because structs with the same name
+                 can have different "state" during constant propagation and we
+                 want to treat those differently so we can't just use equality
+                 by name *)
+                  List.mem visited t ~equal:phys_equal
+                then
+                  Value t
                 else
+                  let visited = t :: visited in
                   match
                     List.map2 t.fields t'.fields ~f:(fun (name, t) (name', t') ->
                         assert (String.equal name name');
-                        (name, meet t t'))
+                        (name, meet_visit visited t t'))
                   with
                   | Ok fields -> Value { name = t.name; fields }
                   | Unequal_lengths -> assert false)
@@ -840,11 +942,11 @@ let rec join t t' =
     | Trait t, Struct s
     | Struct s, Trait t ->
         failwithf "TODO %s" __LOC__ ()
-    | Ptr p, Ptr p' -> Ptr (join p p')
+    | Ptr p, Ptr p' -> Ptr (join_visit visited p p')
     | Array a, Array a' ->
         let l =
             join_sub_lattice a a' ~f:(fun x x' ->
-                let element_type = join x.element_type x'.element_type in
+                let element_type = join_visit visited x.element_type x'.element_type in
                 let padded_map2 a b ~f ~pad =
                     let len_a = Array.length a in
                     let len_b = Array.length b in
@@ -860,7 +962,9 @@ let rec join t t' =
                   Value
                     {
                       element_type;
-                      values = padded_map2 x.values x'.values ~f:join ~pad:(get_top element_type);
+                      values =
+                        padded_map2 x.values x'.values ~f:(join_visit visited)
+                          ~pad:(get_top element_type);
                     })
         in
         Array l
@@ -870,7 +974,7 @@ let rec join t t' =
                 if Array.equal Poly.equal x.values x'.values then
                   Value x
                 else
-                  let element_type = join x.element_type x'.element_type in
+                  let element_type = join_visit visited x.element_type x'.element_type in
                   if equal element_type ANY then
                     Any
                   else
@@ -883,7 +987,7 @@ let rec join t t' =
     | Type t, Type t' ->
         let l =
             join_sub_lattice t t' ~f:(fun t t' ->
-                match join t t' with
+                match join_visit visited t t' with
                 | ALL -> All
                 | ANY -> Any
                 | x -> Value x)
@@ -918,6 +1022,8 @@ let rec join t t' =
     | Type _, _
     | Void, _ ->
         ANY
+
+let join t t' = join_visit [] t t'
 
 let iter_fun_indices t universe ~f =
     match t with
@@ -974,16 +1080,35 @@ let get_string t =
         | _ -> None)
     | _ -> None
 
-let rec get_field_type t field_name =
+let rec get_field_type t ?(include_trait_impl = false) field_name =
     match t with
     | Struct (Value { name = _; fields })
     | Trait (Value { name = _; fields }) ->
-        List.find_map fields ~f:(fun (name, t) ->
-            if String.equal name field_name then
-              Some t
-            else
-              None)
-    | Ptr (Struct _ as s) -> get_field_type s field_name
+        let direct =
+            List.find_map fields ~f:(fun (name, t) ->
+                if String.equal name field_name then
+                  Some t
+                else
+                  None)
+        in
+        if include_trait_impl then
+          let trait_suffix = "$" ^ field_name in
+          let trait_fields =
+              List.filter_map fields ~f:(fun (name, t) ->
+                  if String.is_suffix name ~suffix:trait_suffix then
+                    Some (name, t)
+                  else
+                    None)
+          in
+          match (direct, trait_fields) with
+          | Some _, [] -> direct
+          | Some _, _ -> None
+          | None, [] -> None
+          | None, [ _ ] -> Some (snd (List.hd_exn trait_fields))
+          | None, _ -> None
+        else
+          direct
+    | Ptr (Struct _ as s) -> get_field_type s ~include_trait_impl field_name
     | _ -> None
 
 let get_array_element_type t =
@@ -1026,10 +1151,10 @@ let rec get_size t =
         List.sum
           (module Int)
           s.fields
-          ~f:(fun (name, t) ->
+          ~f:(fun (name, field_t) ->
             if String.equal name "[]" then
               match
-                t
+                field_t
               with
               | Ptr _ ->
                   (* slices *)
@@ -1042,12 +1167,14 @@ let rec get_size t =
                   in
                   if is_constant len_t then
                     let count = get_integer_const_exn len_t in
-                    let el_size = get_size t in
+                    let el_size = get_size field_t in
                     Z.to_int count * el_size
                   else
                     failwith "Array with non compile time known length"
+            else if equal t field_t then
+              failwithf "Struct %s is a cyclic type, can't get its size" s.name ()
             else
-              get_size t)
+              get_size field_t)
     | Trait (Value t) -> List.sum (module Int) t.fields ~f:(fun (_, t) -> get_size t)
     | ConstArray (Value { element_type; values = _ }) -> get_size element_type
     | Array (Value { element_type; values = _ }) -> get_size element_type
@@ -1057,18 +1184,37 @@ let rec get_size t =
     | Void -> 0
     | _ -> failwithf "todo: %s" (show t) ()
 
-let rec get_offset t field =
+let rec get_offset t ?(include_trait_impl = false) field =
     match t with
     | Struct (Value { name = _; fields })
     | Trait (Value { name = _; fields }) ->
-        List.fold_until fields ~init:0
-          ~f:(fun acc (name, t) ->
-            if String.equal name field then
-              Stop (Some acc)
-            else
-              Continue (acc + get_size t))
-          ~finish:(fun _ -> None)
-    | Ptr (Struct _ as s) -> get_offset s field
+        let direct =
+            List.fold_until fields ~init:0
+              ~f:(fun acc (name, t) ->
+                if String.equal name field then
+                  Stop (Some acc)
+                else
+                  Continue (acc + get_size t))
+              ~finish:(fun _ -> None)
+        in
+        if include_trait_impl then
+          let trait_suffix = "$" ^ field in
+          let trait_fields =
+              List.filter_map fields ~f:(fun (name, t) ->
+                  if String.is_suffix name ~suffix:trait_suffix then
+                    Some (name, t)
+                  else
+                    None)
+          in
+          match (direct, trait_fields) with
+          | Some _, [] -> direct
+          | Some _, _ -> None
+          | None, [] -> None
+          | None, [ (name, _) ] -> get_offset t ~include_trait_impl:false name
+          | None, _ -> None
+        else
+          direct
+    | Ptr (Struct _ as s) -> get_offset s ~include_trait_impl field
     | _ -> None
 
 let widen_int t min_type =
@@ -1101,3 +1247,34 @@ let rec is_high = function
         true
     | Ptr t -> is_high t
     | _ -> false
+
+let rec substitute_self t =
+    match t with
+    | Struct (Value s) ->
+        let new_fields =
+            List.map s.fields ~f:(fun (f_name, f_t) ->
+                if String.is_prefix f_name ~prefix:"$" then
+                  match
+                    f_t
+                  with
+                  | FunPtr (Value { params; ret; fun_indices }) ->
+                      let new_params =
+                          List.map params ~f:(fun p ->
+                              match p with
+                              | Self -> t
+                              | Ptr Self -> Ptr t
+                              | _ -> p)
+                      in
+                      let new_ret =
+                          match ret with
+                          | Self -> t
+                          | Ptr Self -> Ptr t
+                          | _ -> ret
+                      in
+                      (f_name, FunPtr (Value { params = new_params; ret = new_ret; fun_indices }))
+                  | _ -> (f_name, f_t)
+                else
+                  (f_name, f_t))
+        in
+        s.fields <- new_fields
+    | _ -> assert false

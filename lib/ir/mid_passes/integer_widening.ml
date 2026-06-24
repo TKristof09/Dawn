@@ -201,7 +201,7 @@ let do_node : type a b. Node.G.readwrite Node.G.t -> (a, b) Node.t -> unit =
                 |> List.map ~f:(fun (param, arg) ->
                     match arg with
                     | None -> assert false
-                    | Some (AnyData arg) ->
+                    | Some (AnyData arg) when Types.is_a arg.typ (Integer All) ->
                         assert (Types.is_a arg.typ param.typ);
 
                         let param_size = Types.get_size param.typ in
@@ -222,7 +222,8 @@ let do_node : type a b. Node.G.readwrite Node.G.t -> (a, b) Node.t -> unit =
                           else
                             Some (Node.AnyData arg))
                         else
-                          Some (Node.AnyData arg)))
+                          Some (Node.AnyData arg)
+                    | Some arg -> Some arg))
         in
         Node.G.set_node_inputs g n { Node.fun_ptr; mem; args = new_args }
     | Data (AddrOfField f) -> (

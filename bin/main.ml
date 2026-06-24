@@ -12,6 +12,8 @@ let compile filename =
         let linker = Linker.create () in
         let son = Son.of_ast ast linker in
         [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
+        Substitute_self_type.run son linker;
+        [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
         Struct_returns.run son;
         [%log.debug "\n%s" (Ir_printer.to_dot (Node.G.readonly son))];
         Sccp.run son linker;

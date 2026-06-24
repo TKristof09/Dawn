@@ -246,7 +246,7 @@ let do_data_node : type a.
             match place.typ with
             | Struct _
             | Trait _ ->
-                let t = Types.get_field_type place.typ field in
+                let t = Types.get_field_type place.typ ~include_trait_impl:true field in
                 if Option.is_none t then
                   (~new_type:ALL, ~extra_deps:[])
                 else

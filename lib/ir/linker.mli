@@ -11,3 +11,4 @@ val link :
   (Node.fun_def, Node.ctrl) Node.t list
 
 val get_name : t -> int -> string
+val iter_fun_nodes : t -> Types.t -> f:(int -> (Node.fun_def, Node.ctrl) Node.t -> unit) -> unit

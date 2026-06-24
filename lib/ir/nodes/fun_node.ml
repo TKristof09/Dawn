@@ -89,6 +89,7 @@ let add_call : type a b c.
         | t -> (
             match fun_ptr.kind with
             | ForwardRef _ -> ALL
+            | Data (Load _) -> ANY
             | _ -> failwithf "Expected function pointer got: %s" (Types.show t) ())
     in
     let call = Node.create_ctrl ?parent_fun loc Control FunctionCall in

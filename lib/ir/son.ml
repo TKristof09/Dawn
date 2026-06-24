@@ -17,17 +17,12 @@ let rec get_type g scope t =
         Types.make_array (get_type g scope t) Types.i64
     | _ -> failwith "todo"
 
-let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_node
-    cur_trait_implementer linker =
+let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_node linker =
     let loc = s.loc in
     match s.node with
-    | Ast.ExprStatement e ->
-        do_expr g e scope parent_fun cur_ret_node cur_trait_implementer linker |> ignore
+    | Ast.ExprStatement e -> do_expr g e scope parent_fun cur_ret_node linker |> ignore
     | Ast.Declaration_assign (name, typ, e, qualifier) ->
-        let (AnyData n) =
-            do_expr g e scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
-        in
+        let (AnyData n) = do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn in
 
         (* type annotation sets the min type. TODO: ast type should be an optional later with type inference *)
         (if not (Ast.equal_var_type typ (Type "")) then
@@ -70,7 +65,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
                 let (AnyData default_init) =
                     do_expr g
                       { loc = s.loc; node = Int Z.zero }
-                      scope parent_fun cur_ret_node cur_trait_implementer linker
+                      scope parent_fun cur_ret_node linker
                     |> Option.value_exn
                 in
                 default_init.min_typ <- Some t;
@@ -82,8 +77,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
             let element_type = get_type g scope t in
             let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
             let (AnyData count) =
-                do_expr g count scope parent_fun cur_ret_node cur_trait_implementer linker
-                |> Option.value_exn
+                do_expr g count scope parent_fun cur_ret_node linker |> Option.value_exn
             in
             count.min_typ <- Some Types.i64;
             let el_size = Const_node.create_int ?parent_fun g loc (Types.get_size element_type) in
@@ -120,8 +114,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
         Scope_node.set_ctrl g body_scope loop_node;
         Scope_node.set_ctrl g scope loop_node;
         let (AnyData n_cond) =
-            do_expr g cond body_scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g cond body_scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let exit_scope = Scope_node.dup g body_scope in
         let n_if = If_node.create ?parent_fun g loc ~ctrl:loop_node ~pred:n_cond in
@@ -129,7 +122,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
         let n_false = Proj_node.create_ctrl ?parent_fun g loc n_if 1 in
         Scope_node.set_ctrl g body_scope n_true;
         Scope_node.set_ctrl g exit_scope n_false;
-        let _ = do_expr g body body_scope parent_fun cur_ret_node cur_trait_implementer linker in
+        let _ = do_expr g body body_scope parent_fun cur_ret_node linker in
         let (AnyCtrl body_ctrl) = Scope_node.get_ctrl g body_scope in
         Loop_node.set_back_edge g loop_node body_ctrl;
         Scope_node.merge_loop ?parent_fun g ~this:scope ~body:body_scope ~exit:exit_scope
@@ -152,10 +145,6 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
             | Type (Value (Struct (Value { name = _; fields }))) -> fields
             | _ -> assert false
         in
-        let new_fields = base_fields @ (("$" ^ t_trait, Void) :: trait_fields) in
-        let new_typ = Types.make_struct t_base new_fields in
-        let new_typ_node = Const_node.create_from_type g loc ?parent_fun (Type (Value new_typ)) in
-        Scope_node.assign g scope ~force:true t_base new_typ_node;
         let remaining_field_names, trait_fields =
             List.fold fields ~init:(field_names, [])
               ~f:(fun (remaining_field_names, trait_fields) (field_name, e) ->
@@ -168,8 +157,7 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
                       field_name t_trait ()
                 else
                   let (AnyData field) =
-                      do_expr g e scope parent_fun cur_ret_node (Some new_typ) linker
-                      |> Option.value_exn
+                      do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn
                   in
                   let fun_idx = Types.get_fun_idx field.typ |> Option.value_exn in
                   (* HACK: only rename function if it is still the default name.
@@ -190,10 +178,12 @@ let rec do_statement g (s : Ast.statement Ast.node) scope parent_fun cur_ret_nod
           failwithf "%s:%d: Following fields were not implemented: %s" loc.filename loc.line
             (Set.to_list remaining_field_names |> String.concat ~sep:", ")
             ();
-        ()
+        let new_fields = base_fields @ (("$" ^ t_trait, Void) :: trait_fields) in
+        let new_typ = Types.make_struct t_base new_fields in
+        let new_typ_node = Const_node.create_from_type g loc ?parent_fun (Type (Value new_typ)) in
+        Scope_node.assign g scope ~force:true t_base new_typ_node
 
-and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node
-    (cur_trait_implementer : Types.t option) linker : Node.any_data option =
+and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Node.any_data option =
     let loc = e.loc in
     match e.node with
     | Ast.Int i -> Some (AnyData (Const_node.create_zint ?parent_fun g loc i))
@@ -211,8 +201,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node
             let ptr = Node.as_data_exn ptr in
 
             let (AnyData index) =
-                do_expr g idx_expr scope parent_fun cur_ret_node cur_trait_implementer linker
-                |> Option.value_exn
+                do_expr g idx_expr scope parent_fun cur_ret_node linker |> Option.value_exn
             in
             let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc ptr ~index "[]" in
             let el_typ =
@@ -224,20 +213,15 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node
             load.min_typ <- Some el_typ;
             Some (AnyData load))
     | Ast.VarAssign (name, expr) ->
-        let (AnyData n) =
-            do_expr g expr scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
-        in
+        let (AnyData n) = do_expr g expr scope parent_fun cur_ret_node linker |> Option.value_exn in
         Scope_node.assign g scope name n;
         Some (AnyData n)
     | Ast.ArrayVarAssign (name, index, value) ->
         let (AnyData index) =
-            do_expr g index scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g index scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData value) =
-            do_expr g value scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g value scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyNode ptr) = Scope_node.get g scope name in
         let ptr = Node.as_data_exn ptr in
@@ -254,158 +238,129 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node
         Some (AnyData value)
     | Ast.Add (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Arithmetic_nodes.create_add g loc ?parent_fun lhs rhs))
     | Ast.Sub (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Arithmetic_nodes.create_sub g loc ?parent_fun lhs rhs))
     | Ast.Mul (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Arithmetic_nodes.create_mul g loc ?parent_fun lhs rhs))
     | Ast.Div (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Arithmetic_nodes.create_div g loc ?parent_fun lhs rhs))
     | Ast.Lsh (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Bitop_nodes.create_lsh g loc ?parent_fun lhs rhs))
     | Ast.Rsh (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Bitop_nodes.create_rsh g loc ?parent_fun lhs rhs))
     | Ast.BAnd (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Bitop_nodes.create_band g loc ?parent_fun lhs rhs))
     | Ast.BOr (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Bitop_nodes.create_bor g loc ?parent_fun lhs rhs))
     | Ast.Eq (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Bool_nodes.create_eq g loc ?parent_fun lhs rhs))
     | Ast.NEq (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Bool_nodes.create_neq g loc ?parent_fun lhs rhs))
     | Ast.Lt (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Bool_nodes.create_lt g loc ?parent_fun lhs rhs))
     | Ast.LEq (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Bool_nodes.create_leq g loc ?parent_fun lhs rhs))
     | Ast.Gt (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Bool_nodes.create_gt g loc ?parent_fun lhs rhs))
     | Ast.GEq (lhs, rhs) ->
         let (AnyData lhs) =
-            do_expr g lhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g lhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyData rhs) =
-            do_expr g rhs scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g rhs scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         Some (Node.AnyData (Bool_nodes.create_geq g loc ?parent_fun lhs rhs))
     | Ast.Block (statements, expr) ->
         Scope_node.push scope;
         List.iter statements ~f:(fun s ->
-            do_statement g s scope parent_fun cur_ret_node cur_trait_implementer linker |> ignore);
+            do_statement g s scope parent_fun cur_ret_node linker |> ignore);
         let n =
             Option.value_map expr ~default:None ~f:(fun e ->
-                do_expr g e scope parent_fun cur_ret_node cur_trait_implementer linker)
+                do_expr g e scope parent_fun cur_ret_node linker)
         in
         Scope_node.pop g scope;
         n
     | Ast.IfElse (cond, body, else_body) -> (
         let (AnyData n_cond) =
-            do_expr g cond scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g cond scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
         let n_if = If_node.create ?parent_fun g loc ~ctrl ~pred:n_cond in
@@ -413,16 +368,14 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node
         let n_false = Proj_node.create_ctrl ?parent_fun g loc n_if 1 in
         let false_scope = Scope_node.dup g scope in
         Scope_node.set_ctrl g scope n_true;
-        let body_true = do_expr g body scope parent_fun cur_ret_node cur_trait_implementer linker in
+        let body_true = do_expr g body scope parent_fun cur_ret_node linker in
         Scope_node.set_ctrl g false_scope n_false;
         match else_body with
         | None ->
             Scope_node.merge ?parent_fun g loc ~this:scope ~other:false_scope;
             None
         | Some else_body -> (
-            let body_false =
-                do_expr g else_body false_scope parent_fun cur_ret_node cur_trait_implementer linker
-            in
+            let body_false = do_expr g else_body false_scope parent_fun cur_ret_node linker in
             Scope_node.merge ?parent_fun g loc ~this:scope ~other:false_scope;
             match (body_true, body_false) with
             | None, None -> None
@@ -433,13 +386,11 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node
             | _, _ -> failwith "The two branches must have the same type"))
     | Ast.FnCall (expr, args) ->
         let (AnyData fun_ptr) =
-            do_expr g expr scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
+            do_expr g expr scope parent_fun cur_ret_node linker |> Option.value_exn
         in
         let args =
             List.map args ~f:(fun arg ->
-                do_expr g arg scope parent_fun cur_ret_node cur_trait_implementer linker
-                |> Option.value_exn)
+                do_expr g arg scope parent_fun cur_ret_node linker |> Option.value_exn)
         in
         (* Big return type handling (hidden ret ptr) is now done in the
            Struct_returns pass after IR construction, so recursive functions
@@ -464,30 +415,8 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node
             | Ast.Fn (ret, params) -> (ret, params)
             | _ -> assert false
         in
-        (* Replace Self types with current implementer's type*)
-        let ret_type =
-            match get_type g scope ret_type with
-            | Types.Self -> (
-                match cur_trait_implementer with
-                | Some t -> t
-                | None ->
-                    failwithf
-                      "%s:%d: use of `Self` is only allowed in trait function implementations"
-                      loc.filename loc.line ())
-            | t -> t
-        in
-        let param_types =
-            List.map param_types ~f:(fun t ->
-                match get_type g scope t with
-                | Types.Self -> (
-                    match cur_trait_implementer with
-                    | Some t -> t
-                    | None ->
-                        failwithf
-                          "%s:%d: use of `Self` is only allowed in trait function implementations"
-                          loc.filename loc.line ())
-                | t -> t)
-        in
+        let ret_type = get_type g scope ret_type in
+        let param_types = List.map param_types ~f:(get_type g scope) in
         let fun_ptr_type = Types.make_fun_ptr param_types ret_type in
         let param_names, param_types =
             match fun_ptr_type with
@@ -526,7 +455,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node
               param_node.min_typ <- Some ptype;
               Scope_node.define g scope pname param_node false);
         let (AnyData body_n) =
-            do_expr g body scope (Some fun_idx) (Some ret_node) cur_trait_implementer linker
+            do_expr g body scope (Some fun_idx) (Some ret_node) linker
             |> Option.value
                  ~default:
                    (AnyData (Const_node.create_from_type ~parent_fun:fun_idx g body.loc Types.Void))
@@ -626,8 +555,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node
                           name type_name ()
                     else
                       let (AnyData value) =
-                          do_expr g e scope parent_fun cur_ret_node cur_trait_implementer linker
-                          |> Option.value_exn
+                          do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn
                       in
                       let field_type = Types.get_field_type typ name |> Option.value_exn in
                       value.min_typ <- Some field_type;
@@ -653,10 +581,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node
             ();
         Some (AnyData struct_node)
     | FieldAccess (e, field_name) -> (
-        let (AnyData base) =
-            do_expr g e scope parent_fun cur_ret_node cur_trait_implementer linker
-            |> Option.value_exn
-        in
+        let (AnyData base) = do_expr g e scope parent_fun cur_ret_node linker |> Option.value_exn in
         let (AnyMem mem) = Scope_node.get_mem g scope in
         match base.typ with
         | Trait (Value t) ->
@@ -730,7 +655,7 @@ let of_ast ast linker =
             if i < 64 then Printf.sprintf "i%d" (i + 1) else Printf.sprintf "u%d" (i - 64 + 1))
     in
     List.iter builtin_types ~f:(define_builtin_type g scope);
-    Core.List.iter ast ~f:(fun s -> do_statement g s scope None None None linker);
+    Core.List.iter ast ~f:(fun s -> do_statement g s scope None None linker);
     let (AnyCtrl ctrl) = Scope_node.get_ctrl g scope in
     Node.G.set_ctrl g stop ctrl;
     Scope_node.set_ctrl g scope stop;
