@@ -25,7 +25,6 @@ val create_load :
   mem:('a, Node.mem) Node.t ->
   ptr:('b, Node.data) Node.t ->
   string ->
-  Types.t ->
   (Node.load, Node.data) Node.t
 
 val create_addr_of :

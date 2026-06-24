@@ -209,7 +209,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
                 | Ptr p -> p
                 | _ -> assert false
             in
-            let load = Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr "[]" el_typ in
+            let load = Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr "[]" in
             load.min_typ <- Some el_typ;
             Some (AnyData load))
     | Ast.VarAssign (name, expr) ->
@@ -587,7 +587,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
         | Trait (Value t) ->
             let field_name = "$" ^ t.name ^ "$" ^ field_name in
             let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc base field_name in
-            let load = Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr field_name ANY in
+            let load = Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr field_name in
             Some (AnyData load)
         | Type (Value t) ->
             let base_name =
@@ -617,7 +617,7 @@ and do_expr g (e : Ast.expr Ast.node) scope parent_fun cur_ret_node linker : Nod
             Some (AnyData n)
         | _ ->
             let field_ptr = Mem_nodes.create_addr_of_field ?parent_fun g loc base field_name in
-            let load = Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr field_name ANY in
+            let load = Mem_nodes.create_load ?parent_fun g loc ~mem ~ptr:field_ptr field_name in
             Some (AnyData load))
     | TraitDeclaration funs ->
         let funs =

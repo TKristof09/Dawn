@@ -11,7 +11,7 @@ const TT = trait {
 
 impl TT for S {
     g = fun(self: Self, x: u32) -> u32 {
-        self.f(self, 5,6) + x
+        self.f(5,6) + x
     }
 }
 
@@ -27,10 +27,10 @@ impl T for S {
 
 
 const s = S{.a = 34, .b = 35};
-print_int(S.g(s, 1));
+print_int(s.g(1));
 
 print("\n");
-//
+
 // const SS = type {
 //     a: u32
 // };

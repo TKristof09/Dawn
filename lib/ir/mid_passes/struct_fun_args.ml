@@ -149,7 +149,7 @@ let patch_up g ~in_mem:(Node.AnyMem in_mem) ~fun_node param decomp =
                         in
                         let field_val =
                             Mem_nodes.create_load ?parent_fun g arg.loc ~mem ~ptr:field_ptr
-                              desc.field_name arg.typ
+                              desc.field_name
                         in
                         field_val.typ <-
                           Types.get_field_type arg.typ desc.field_name |> Option.value_exn;

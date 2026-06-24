@@ -110,6 +110,9 @@ let add_call : type a b c.
     (call, call_end)
 
 let link_call g ~call_node ~fun_node =
+    (* This function links arg nodes to param nodes and also potentially adds
+       the "hidden" self arg when the function is called with method call
+       syntax *)
     let (Ctrl (Function { ret = ret_node; signature = _; idx = _ })) = fun_node.Node.kind in
     let rec find_call_end : Node.any list -> (Node.fun_call_end, Node.ctrl) Node.t = function
         | [] -> assert false
@@ -119,7 +122,47 @@ let link_call g ~call_node ~fun_node =
             | _ -> find_call_end t)
     in
     let call_end = Node.G.get_dependants g call_node |> find_call_end in
-    let { Node.fun_ptr = _; mem = mem_arg; args } = Node.G.get_dependencies_exn g call_node in
+    let { Node.fun_ptr; mem = mem_arg; args } = Node.G.get_dependencies_exn g call_node in
+    let method_caller =
+        let (AnyData fun_ptr) = Option.value_exn fun_ptr in
+        match fun_ptr.typ with
+        | FunPtr (Value { params = first_param :: _; ret = _; fun_indices = _ }) ->
+            (* A method call gets parsed to AST as FnCall(FieldAccess(base_struct, fun_name), args) 
+               which produces an IR that during SCCP would look something like this:
+               base_struct -(place)-> addroffield fun_name -(ptr)-> load -(fun_ptr)-> FunctionCall
+
+               (We'll only remove the load part and turn it into constant after SCCP) 
+                
+               If the IR looks like that then we check if the first param of
+               the function signature matches Ptr base_struct.
+            *)
+            let base =
+                match fun_ptr.kind with
+                | Data (Load _) -> (
+                    let { Node.mem; ptr } : Node.load = Node.G.get_dependencies_exn g fun_ptr in
+                    let (AnyData ptr) = Option.value_exn ptr in
+                    match ptr.kind with
+                    | Data (AddrOfField f) ->
+                        let { Node.place; offset } = Node.G.get_dependencies_exn g ptr in
+                        place
+                    | _ -> None)
+                | _ -> None
+            in
+            (* TODO: this should be Types.is_a Ptr base.typ first_param but we
+               have no pointer syntax yet so for now method calls work with
+               by-value self param. *)
+            Option.filter base ~f:(fun (AnyData base) -> Types.is_a base.typ first_param)
+        | _ -> None
+    in
+    let args =
+        match method_caller with
+        | Some (AnyData base) ->
+            [%log.debug "Method call %a with base %a" Node.pp call_node Node.pp base];
+            Some (Node.AnyData base) :: args
+        | _ -> args
+    in
+    Node.G.set_node_inputs g call_node { fun_ptr; mem = mem_arg; args };
+
     let mem_param, param_nodes = get_param_nodes g fun_node in
     match List.zip param_nodes args with
     | Unequal_lengths ->

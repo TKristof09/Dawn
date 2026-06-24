@@ -13,7 +13,12 @@ let create_store g loc ?parent_fun ~mem ~ptr field_name ~value =
       { Node.mem = Some (AnyMem mem); ptr = Some (AnyData ptr); value = Some (AnyData value) };
     n
 
-let create_load g loc ?parent_fun ~mem ~ptr field_name field_typ =
+let create_load g loc ?parent_fun ~mem ~ptr field_name =
+    let field_typ =
+        match ptr.Node.typ with
+        | Ptr p -> p
+        | _ -> assert false
+    in
     let n = Node.create_data ?parent_fun loc field_typ (Load field_name) in
     Node.G.add_node g n { Node.mem = Some (AnyMem mem); ptr = Some (AnyData ptr) };
     n
